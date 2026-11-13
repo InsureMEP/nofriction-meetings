@@ -92,6 +92,8 @@ pub mod meeting_links;
 // Students: moment markers and study guides (docs/STUDY_TOOLS.md)
 pub mod markers;
 pub mod quick_note;
+// The prompt library for reading a screen the user chose to send (screen_prompts.rs)
+pub mod screen_prompts;
 pub mod study;
 // Interactive education: portable offline lesson sets (docs/LESSONS.md)
 pub mod lessons;
