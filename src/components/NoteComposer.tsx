@@ -85,9 +85,12 @@ export function NoteComposer({ onSaved }: { onSaved: (row: StoredMarker) => void
                         {MAX_TYPED_NOTE_CHARS - length} left
                     </span>
                 ) : (
-                    <span className="note-composer__hint" aria-hidden>
-                        {text.trim() ? "Enter keeps it at this moment" : "Stamped with the moment you press Enter"}
-                    </span>
+                    // Said only while there is something to keep
+                    text.trim() && (
+                        <span className="note-composer__hint" aria-hidden>
+                            <kbd className="note-composer__key">Return</kbd> keeps it at this moment
+                        </span>
+                    )
                 )}
             </div>
         </div>

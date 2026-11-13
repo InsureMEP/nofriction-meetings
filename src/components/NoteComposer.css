@@ -59,6 +59,15 @@
   white-space: nowrap;
 }
 
+.note-composer__key {
+  padding: 1px 5px;
+  border: 1px solid var(--border-color, #262626);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-secondary, #a3a3a3);
+}
+
 .note-composer__error {
   margin: 0 2px 8px;
   font-size: 12px;
