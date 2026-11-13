@@ -54,6 +54,29 @@ iPhone side is listed where it differs.
 - Deleting a typed note has Undo, like every other delete.
 
 ### Fixed
+- **Undo on a delete could be skipped.** Where a screen passed its error
+  handler inline, the Undo toast applied the delete on the next redraw
+  instead of after five seconds (deleting a recording, a chat or a typed
+  note). The toast now keeps its timing whatever the screen does.
+- **Notes are saved in one step with their check.** A Delete or Strike that
+  landed between "the transcript is unchanged" and the save could leave
+  notes made from the removed text. The check and the save are now one
+  database transaction.
+- **Automatic notes wait for the recording to stop.** If another recording
+  (or the next part of a long one) had started, the automatic run could
+  call the AI while recording. It now waits.
+- **A typed note's detail goes with the note.** Deleting a typed note left
+  what the notes wrote under it in the database; it is now removed in the
+  same step, and the notes are sent to the other device again.
+- A note typed just before Stop is kept on that recording, stamped with the
+  moment Return was pressed.
+- Two quick clicks on **Record by itself** or **Remind me when something
+  starts** can no longer be stored out of order.
+- **Ask** on a notebook's page opens Chat on that notebook (it opened on
+  the recording that was selected).
+- A short recording that starts and stops between two looks at the
+  microphone no longer leaves its call to be offered again; "Recording …"
+  is posted only once the recording runs.
 - Notes made from a transcript that was edited while they were being
   written are no longer saved.
 - The notes' "Made" time was the time the view was opened, not when they

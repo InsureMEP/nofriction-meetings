@@ -191,7 +191,13 @@ export function RecordingsView({ onSelectMeeting, selectedMeetingId, refreshKey,
                         {meetingView === "rewind" ? (
                             <RewindGallery meetingId={selectedMeetingId} isRecording={live} seek={seek} />
                         ) : meetingView === "notes" ? (
-                            <MeetingNotesPanel meetingId={selectedMeetingId} onJump={(ms) => jumpTo(selectedMeetingId, ms)} />
+                            <MeetingNotesPanel
+                                // A new panel per recording: nothing of the last one (a run in
+                                // progress, an answer still on its way) can show under this one
+                                key={selectedMeetingId}
+                                meetingId={selectedMeetingId}
+                                onJump={(ms) => jumpTo(selectedMeetingId, ms)}
+                            />
                         ) : meetingView === "links" ? (
                             <MeetingLinksPanel meetingId={selectedMeetingId} onJump={(ms) => jumpTo(selectedMeetingId, ms)} />
                         ) : (

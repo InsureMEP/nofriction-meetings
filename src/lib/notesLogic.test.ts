@@ -2,7 +2,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { hasWhatYouWrote, parseNoteDetails, progressDetail, writtenLines } from "./notesLogic.ts";
+import { hasWhatYouWrote, mergeSyncedWritten, parseNoteDetails, progressDetail, writtenLines } from "./notesLogic.ts";
 import { syncedNotesSections } from "./syncLogic.ts";
 import type { TypedNote } from "./studyLogic.ts";
 
@@ -29,6 +29,36 @@ test("notes from the iPhone that carry the section are recognized in both headin
     assert.equal(hasWhatYouWrote(syncedNotesSections("**What you wrote**\n• pump: three sodium out")), true);
     assert.equal(hasWhatYouWrote(syncedNotesSections("## Summary\nWhat you wrote was fine.")), false);
     assert.equal(hasWhatYouWrote([]), false);
+});
+
+test("the other device's section is merged with the typed notes, and nothing written is hidden", () => {
+    const notes = [note("a", "pump 3 na out", 21_000), note("b", "2 k in", 25_000), note("c", "ask about **ATP**", 30_000)];
+    // Both bullet forms; one bullet with no typed note here yet; note c has no bullet
+    const md = "## What you wrote\n- **pump 3 na out**: Three sodium ions leave.\n- **2 k in**\n- **quiz friday**: It covers chapter 4.\n\n## Summary\nTransport.";
+    const m = mergeSyncedWritten(notes, syncedNotesSections(md));
+    assert.deepEqual(m.lines.map((l) => [l.note.id, l.detail]), [["a", "Three sodium ions leave."], ["b", null], ["c", null]]);
+    // The unmatched line stays readable in the notes; the matched ones aren't shown twice
+    assert.deepEqual(m.sections.map((s) => [s.heading, s.bullets]), [["What you wrote", ["quiz friday: It covers chapter 4."]], ["Summary", []]]);
+
+    // Everything matched: the section is gone, the rest of the notes stay
+    const all = mergeSyncedWritten(notes.slice(0, 2), syncedNotesSections("**What you wrote**\n• pump 3 na out: Three sodium ions leave.\n• 2 k in: Two potassium.\n\n**Summary**\nTransport."));
+    assert.deepEqual(all.lines.map((l) => l.detail), ["Three sodium ions leave.", "Two potassium."]);
+    assert.deepEqual(all.sections.map((s) => s.heading), ["Summary"]);
+
+    // A line that starts another is matched to the longer one; each note takes one bullet
+    const twins = [note("x", "pump", 1_000), note("y", "pump: sodium", 2_000), note("z", "pump", 3_000)];
+    const t = mergeSyncedWritten(twins, syncedNotesSections("## What you wrote\n- **pump: sodium**: Out of the cell.\n- **pump**: First.\n- **pump**: Second."));
+    assert.deepEqual(t.lines.map((l) => l.detail), ["First.", "Out of the cell.", "Second."]);
+    assert.deepEqual(t.sections, []);
+
+    // Bold marks in a typed line are quoted without them
+    const bold = mergeSyncedWritten([notes[2]], syncedNotesSections("## What you wrote\n- **ask about ATP**: The pump spends one."));
+    assert.deepEqual(bold.lines.map((l) => l.detail), ["The pump spends one."]);
+
+    // No section: every typed note is still a row; no typed notes: the section is left alone
+    assert.deepEqual(mergeSyncedWritten(notes, syncedNotesSections("## Summary\nTransport.")).lines.map((l) => l.detail), [null, null, null]);
+    const untouched = syncedNotesSections(md);
+    assert.deepEqual(mergeSyncedWritten([], untouched).sections, untouched);
 });
 
 test("the progress line adds something or stays out of the way", () => {

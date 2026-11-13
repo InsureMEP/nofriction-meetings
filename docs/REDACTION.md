@@ -144,8 +144,10 @@ exist on the platform:
      them. The typed lines themselves are the user's words and are left
      alone, like a mark's note
    - notes are never saved from a transcript that changed while they were
-     being made (Mac: the fingerprint is checked again before the save, and
-     a Delete in its undo window refuses it)
+     being made (Mac: inside one `BEGIN IMMEDIATE` transaction, a Delete in
+     its undo window refuses the save, every line the notes read must still
+     be in the transcript, and only then is the row inserted, so no Delete
+     or Strike can land between the check and the save)
    - **review guides (study guides, for a class) are deleted, not rewritten**
      (Mac `study_materials`, iOS `StudyMaterial`): summary, key terms,
      flashcards, quiz and questions paraphrase the recording, so matching the
@@ -439,7 +441,12 @@ UI in `src/components/redaction/Redaction.tsx`.
   row (kind `note`): a time-range Delete or Strike removes the ones in its
   span, word and line edits leave them alone, and deleting the recording
   takes them. `meeting_notes.note_details` is in `AI_TABLES`' column list
-  for `meeting_notes`. The notebook page (`notebook_page.rs`) stores no
+  for `meeting_notes`. What the notes wrote under a typed note never
+  outlives the note: deleting it (in Notes or Rewind, by a time-range
+  Delete or Strike, or because the other device deleted it) drops its entry
+  from `note_details` in the same step
+  (`meeting_notes::typed_notes_changed`), and notes are saved with details
+  only for typed notes that still exist. The notebook page (`notebook_page.rs`) stores no
   content: it reads the notes, marks and guides, so it changes when they do,
   and its ticks (`notebook_item_done`) are a hash of the item's text per
   recording, deleted with the recording. Up next (`up_next.rs`) stores only

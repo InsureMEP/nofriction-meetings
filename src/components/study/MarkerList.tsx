@@ -3,7 +3,7 @@
 // default) that jumps to each one, filtered by type. Labels follow the
 // recording's type (MarkKindContext). docs/STUDY_TOOLS.md
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { NoteIcon, TrashIcon } from "../icons";
 import { KindPicker, MarkerGlyph, useMarkerMeta } from "./MarkerBits";
 import { MARKERS_CHANGED_EVENT, markersApi, notifyMarkersChanged } from "../../lib/study";
@@ -23,7 +23,11 @@ import {
 export function useMarkers(meetingId: string | null, reloadKey = 0) {
     const [markers, setMarkers] = useState<Marker[]>([]);
     const [notes, setNotes] = useState<TypedNote[]>([]);
+    // Only the latest request's answer is used: one for a recording that is
+    // no longer open (or an older read of this one) is dropped
+    const request = useRef(0);
     const load = useCallback(() => {
+        const mine = ++request.current;
         if (!meetingId) {
             setMarkers([]);
             setNotes([]);
@@ -32,11 +36,13 @@ export function useMarkers(meetingId: string | null, reloadKey = 0) {
         markersApi
             .list(meetingId)
             .then((rows) => {
+                if (mine !== request.current) return;
                 const split = splitMarkers(rows);
                 setMarkers(split.marks);
                 setNotes(split.notes);
             })
             .catch(() => {
+                if (mine !== request.current) return;
                 setMarkers([]);
                 setNotes([]);
             });

@@ -184,7 +184,17 @@ these rules apply.
     setting says "Tell people you're recording." A call that was on when a
     recording stopped must not start another (`up_next::CallTracker`).
   - **No AI runs while recording.** The note field keeps what is typed; the
-    AI works after Stop. Don't bring back live AI cards.
+    AI works after Stop. Don't bring back live AI cards. Automatic notes
+    wait until no recording is running (`meeting_notes::run::after_stop`);
+    only the user's own **Make notes** may run during another recording.
+  - **Notes are saved in one transaction with their check**
+    (`meeting_notes::save_checked`: `BEGIN IMMEDIATE`, then "no pending
+    delete and every line read is still there", then the insert). A check
+    followed by a separate write lets a Delete or Strike land in between.
+  - **A typed note's detail never outlives the note.** Any new way to
+    delete or change a `note`-kind marker must call
+    `meeting_notes::typed_notes_changed` (it prunes `note_details` and
+    touches the notes row so sync resends them).
   - **Up next and the notebook's page call no AI and send nothing.** They
     are computed on the device from the calendar (only if access was
     already granted: never prompt for it there), the recordings, and which
@@ -208,6 +218,14 @@ these rules apply.
   `entitlement::require_pro()` in `ai::client::complete`.
 
 **Lessons that cost real time:**
+- **A hook's cleanup must not depend on a caller's inline callback.**
+  `useUndoDelete(onError)` built `commit` with `[onError]`, callers passed
+  an arrow function, so the "leaving the view applies the delete" cleanup
+  ran on the next render and every such delete skipped its Undo window.
+  Read caller callbacks through a ref when an effect's cleanup has a side
+  effect.
+- **Never log an AI error's text.** A provider's error body can repeat the
+  transcript it was sent. Log a kind (`meeting_notes::run::failure_kind`).
 - **Migrations run on ONE connection** (`run_migrations` acquires a single
   connection). Running them back-to-back on `&pool` opened extra connections
   mid-migration, and one could keep a stale schema ("no such table" on fresh

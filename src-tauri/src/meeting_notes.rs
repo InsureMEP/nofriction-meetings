@@ -439,42 +439,120 @@ pub async fn generate_and_save(
     );
     let (notes, details) = write(c, &input, &prompt_text, progress).await.map_err(String::from)?;
 
-    // Notes made from text that was deleted, stricken or edited meanwhile
-    // must never be written after the purge ran. Lines that arrived since
-    // (the transcriber's last ones land a few seconds after Stop) are not a
-    // reason to throw the notes away.
-    let mut conn = pool.acquire().await.map_err(err("Database busy"))?;
-    if crate::study::has_pending_delete(&mut conn, meeting_id).await?
-        || lost_lines(&read, &load_input_conn(&mut conn, meeting_id).await?.study.transcript_lines()) > 0
-    {
-        return Err(TRANSCRIPT_CHANGED.into());
-    }
-    drop(conn);
-
-    let notes_id = Uuid::new_v4().to_string();
-    database
-        .save_meeting_notes(
-            &notes_id,
-            meeting_id,
-            Some(&notes.summary),
-            Some(&to_json(&notes.key_topics)),
-            Some(&to_json(&notes.decisions)),
-            Some(&to_json(&notes.action_items)),
-            Some(&to_json(&notes.participants)),
-            Some(label),
-        )
-        .await
-        .map_err(|e| format!("Failed to save notes: {}", e))?;
-    if !details.is_empty() {
-        database
-            .set_meeting_note_details(&notes_id, &to_json(&details))
-            .await
-            .map_err(|e| format!("Failed to save notes: {}", e))?;
-    }
+    save_checked(pool, meeting_id, &read, &notes, &details, label).await?;
 
     // Topics follow the notes (docs/TOPICS_AND_CHAT.md), in the background
     crate::topics::find_after_notes(database.clone(), meeting_id.to_string());
     Ok(notes)
+}
+
+/// Save the notes if the transcript still holds every line they were made
+/// from, in one `BEGIN IMMEDIATE` transaction: the write lock is taken
+/// before the check, so no Delete or Strike can commit between the check
+/// and the insert (notes made from text that was removed meanwhile must
+/// never be written after the purge ran). Lines that only arrived since
+/// (the transcriber's last ones land a few seconds after Stop) are not a
+/// reason to throw the notes away. Details are kept only for typed notes
+/// that still exist.
+async fn save_checked(
+    pool: &Pool<Sqlite>,
+    meeting_id: &str,
+    read: &[String],
+    notes: &GeneratedNotes,
+    details: &[NoteDetail],
+    label: &str,
+) -> Result<(), String> {
+    let mut conn = pool.acquire().await.map_err(err("Database busy"))?;
+    sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await.map_err(err("Database busy"))?;
+    let result = save_locked(&mut conn, meeting_id, read, notes, details, label).await;
+    let end = if result.is_ok() { "COMMIT" } else { "ROLLBACK" };
+    match sqlx::query(end).execute(&mut *conn).await {
+        Ok(_) => result,
+        Err(e) => {
+            // Never hand a connection with an open transaction back to the pool
+            use sqlx::Connection;
+            let _ = conn.detach().close().await;
+            result.and(Err(format!("Failed to save notes: {}", e)))
+        }
+    }
+}
+
+async fn save_locked(
+    conn: &mut SqliteConnection,
+    meeting_id: &str,
+    read: &[String],
+    notes: &GeneratedNotes,
+    details: &[NoteDetail],
+    label: &str,
+) -> Result<(), String> {
+    if crate::study::has_pending_delete(conn, meeting_id).await?
+        || lost_lines(read, &load_input_conn(conn, meeting_id).await?.study.transcript_lines()) > 0
+    {
+        return Err(TRANSCRIPT_CHANGED.into());
+    }
+    let alive = typed_note_ids(conn, meeting_id).await.map_err(err("Failed to save notes"))?;
+    let kept: Vec<&NoteDetail> = details.iter().filter(|d| alive.contains(&d.marker_id)).collect();
+    sqlx::query(
+        "INSERT INTO meeting_notes \
+         (id, meeting_id, summary, key_topics, decisions, action_items, participants, model_used, generated_at, note_details) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)",
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(meeting_id)
+    .bind(&notes.summary)
+    .bind(to_json(&notes.key_topics))
+    .bind(to_json(&notes.decisions))
+    .bind(to_json(&notes.action_items))
+    .bind(to_json(&notes.participants))
+    .bind(label)
+    .bind((!kept.is_empty()).then(|| to_json(&kept)))
+    .execute(&mut *conn)
+    .await
+    .map_err(err("Failed to save notes"))?;
+    Ok(())
+}
+
+async fn typed_note_ids(conn: &mut SqliteConnection, meeting_id: &str) -> Result<std::collections::HashSet<String>, sqlx::Error> {
+    Ok(sqlx::query_scalar::<_, String>("SELECT id FROM meeting_markers WHERE meeting_id = ? AND kind = 'note'")
+        .bind(meeting_id)
+        .fetch_all(&mut *conn)
+        .await?
+        .into_iter()
+        .collect())
+}
+
+/// A typed note was added, changed or removed in this recording. What the
+/// notes wrote under a note that no longer exists is dropped (it must not
+/// outlive the note, in the live database or a backup), and the notes row
+/// is touched so sync sends the notes again: their "What you wrote" section
+/// carries the typed lines. Does nothing for a database without the column
+/// (an older backup) or a recording without notes.
+pub async fn typed_notes_changed(conn: &mut SqliteConnection, meeting_id: &str) -> Result<(), sqlx::Error> {
+    let has_column: Option<i64> =
+        sqlx::query_scalar("SELECT 1 FROM pragma_table_info('meeting_notes') WHERE name = 'note_details'")
+            .fetch_optional(&mut *conn)
+            .await?;
+    if has_column.is_none() {
+        return Ok(());
+    }
+    let alive = typed_note_ids(conn, meeting_id).await?;
+    let rows: Vec<(String, Option<String>)> = sqlx::query_as("SELECT id, note_details FROM meeting_notes WHERE meeting_id = ?")
+        .bind(meeting_id)
+        .fetch_all(&mut *conn)
+        .await?;
+    for (id, stored) in rows {
+        let kept: Option<String> = stored.as_deref().and_then(|j| serde_json::from_str::<Vec<NoteDetail>>(j).ok()).and_then(|d| {
+            let kept: Vec<NoteDetail> = d.into_iter().filter(|x| alive.contains(&x.marker_id)).collect();
+            (!kept.is_empty()).then(|| to_json(&kept))
+        });
+        // Written even when nothing was dropped: the update is what tells sync
+        sqlx::query("UPDATE meeting_notes SET note_details = ? WHERE id = ?")
+            .bind(kept)
+            .bind(id)
+            .execute(&mut *conn)
+            .await?;
+    }
+    Ok(())
 }
 
 /// How many of the lines the notes were made from are no longer in the
@@ -550,6 +628,10 @@ pub mod run {
     /// detected end (10 s after Stop), land after the recording stops.
     /// Automatic notes wait for both.
     const SETTLE_AFTER_STOP: std::time::Duration = std::time::Duration::from_secs(12);
+
+    const WAIT_STEP: std::time::Duration = std::time::Duration::from_secs(5);
+    /// A recording that outlasts this isn't waited for (make the notes by hand).
+    const MAX_WAIT_FOR_STOP: std::time::Duration = std::time::Duration::from_secs(6 * 3600);
 
     /// Take the recording's one notes slot (released when the guard drops)
     /// and tell the window a run has begun.
@@ -647,6 +729,28 @@ pub mod run {
             // The user may already have pressed Make notes: then that run is the one
             let Ok(guard) = reserve(&app, &meeting_id) else { return };
             tokio::time::sleep(SETTLE_AFTER_STOP).await;
+            // Nothing automatic runs while a recording does (a new segment or
+            // the next meeting may already have started): wait for it to stop
+            let mut waited = std::time::Duration::ZERO;
+            while state.capture_engine.read().is_recording() {
+                if waited.is_zero() {
+                    let label = "Waiting for the recording to stop…";
+                    if let Some(l) = RUNNING.lock().get_mut(&meeting_id) {
+                        *l = label.to_string();
+                    }
+                    let _ = app.emit(
+                        PROGRESS_EVENT,
+                        serde_json::json!({ "meetingId": meeting_id, "label": label, "done": 0, "total": 1 }),
+                    );
+                }
+                tokio::time::sleep(WAIT_STEP).await;
+                waited += WAIT_STEP;
+                if waited >= MAX_WAIT_FOR_STOP {
+                    drop(guard);
+                    let _ = app.emit(DONE_EVENT, serde_json::json!({ "meetingId": meeting_id, "ok": false }));
+                    return;
+                }
+            }
             let result = run_reserved(&app, &state, &meeting_id, &settings.meeting_report_prompt, "auto-report").await;
             drop(guard);
             let _ = app.emit(DONE_EVENT, serde_json::json!({ "meetingId": meeting_id, "ok": result.is_ok() }));
@@ -669,10 +773,23 @@ pub mod run {
                         crate::notifications::post(&app, "Notes are ready", &notes_ready_body(&title));
                     }
                 }
-                // The class of failure only: an error may quote the endpoint, never the transcript
-                Err(e) => log::warn!("Automatic notes: not made ({})", e.chars().take(120).collect::<String>()),
+                // The kind of failure only: a provider's error text can echo what it was sent
+                Err(e) => log::warn!("Automatic notes: not made ({})", failure_kind(&e)),
             }
         });
+    }
+
+    /// What kind of failure it was, for the log. Never the message itself: a
+    /// provider's error body can repeat the transcript it was sent.
+    pub fn failure_kind(e: &str) -> &'static str {
+        match e {
+            NO_TRANSCRIPT => "no transcript",
+            TRANSCRIPT_CHANGED => "the transcript changed",
+            UNUSABLE => "the answer was unusable",
+            _ if e.starts_with("PRO_REQUIRED") => "noFriction Pro is needed",
+            _ if e.starts_with("CONSENT_REQUIRED") => "permission to send is needed",
+            _ => "the AI or the database returned an error",
+        }
     }
 
     /// The recording's title (a calendar event or notebook name, never
@@ -1070,6 +1187,11 @@ mod tests {
         assert!(!auto_notes_due(59, 5));
         assert!(!auto_notes_due(0, 0));
         assert_eq!(run::notes_ready_body("BIO 101 — Nov 12"), "BIO 101 — Nov 12. Click to read them.");
+        // The log gets the kind of failure, never a provider's words
+        assert_eq!(run::failure_kind(TRANSCRIPT_CHANGED), "the transcript changed");
+        assert_eq!(run::failure_kind("PRO_REQUIRED: noFriction Pro unlocks the AI features."), "noFriction Pro is needed");
+        let echoed = "HTTP 400: could not process 'the launch code is tangerine'";
+        assert!(!run::failure_kind(echoed).contains("tangerine"));
         assert_eq!(run::notes_ready_body("  "), "Click to read them.");
         // Small models get a smaller answer budget
         assert_eq!(max_tokens(128_000), NOTES_MAX_TOKENS);
@@ -1143,6 +1265,26 @@ mod tests {
                 NoteDetail { marker_id: n1.id.clone(), detail: "The pump moves three sodium ions out.".into() },
             ]
         );
+
+        // Deleting a typed note takes what the notes wrote under it, and the
+        // notes row is touched so sync sends the notes again
+        let seq = |pool: sqlx::Pool<sqlx::Sqlite>| async move {
+            sqlx::query_scalar::<_, i64>("SELECT seq FROM sync_meta WHERE entity = 'notes' AND record_id = 'm1'")
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+        };
+        let before = seq(pool.clone()).await;
+        crate::markers::delete(pool, &n1.id).await.unwrap();
+        let after_delete = f.db.get_meeting_notes("m1").await.unwrap().unwrap();
+        let left: Vec<NoteDetail> = serde_json::from_str(after_delete.note_details.as_deref().unwrap()).unwrap();
+        assert_eq!(left.iter().map(|d| d.marker_id.as_str()).collect::<Vec<_>>(), vec![n2.id.as_str()]);
+        assert!(!after_delete.note_details.unwrap().contains("three sodium"));
+        assert!(seq(pool.clone()).await > before, "the notes are sent again");
+        // Editing one sends the notes again too (their section quotes the line)
+        let before = seq(pool.clone()).await;
+        crate::markers::update(pool, &n2.id, None, Some(Some("2 K in per ATP"))).await.unwrap();
+        assert!(seq(pool.clone()).await > before);
 
         // Striking a distinctive word rewrites the details like the rest of the notes
         let mut conn = pool.acquire().await.unwrap();

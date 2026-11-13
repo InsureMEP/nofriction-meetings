@@ -284,7 +284,20 @@ pub async fn add(
         .execute(pool)
         .await
         .map_err(err("Couldn't save the marker"))?;
+    if is_note(kind) {
+        typed_notes_changed(pool, meeting_id).await;
+    }
     get(pool, &id).await
+}
+
+/// Tell the notes a typed note changed (meeting_notes.rs): details of notes
+/// that are gone are dropped and the notes are sent again. Best effort: the
+/// note itself is already saved.
+async fn typed_notes_changed(pool: &Pool<Sqlite>, meeting_id: &str) {
+    let Ok(mut conn) = pool.acquire().await else { return };
+    if let Err(e) = crate::meeting_notes::typed_notes_changed(&mut conn, meeting_id).await {
+        log::warn!("Markers: couldn't update the notes after a typed note changed: {}", e);
+    }
 }
 
 /// Add a marker `offset_ms` after the meeting start (marking while
@@ -327,17 +340,44 @@ pub async fn update(
         .execute(pool)
         .await
         .map_err(err("Couldn't save the marker"))?;
+    if is_note(&kind) {
+        typed_notes_changed(pool, &current.meeting_id).await;
+    }
     get(pool, id).await
 }
 
 pub async fn delete(pool: &Pool<Sqlite>, id: &str) -> Result<(), String> {
+    let row: Option<(String, String)> = sqlx::query_as("SELECT meeting_id, kind FROM meeting_markers WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .map_err(err("Database busy"))?;
     sqlx::query("DELETE FROM meeting_markers WHERE id = ?")
         .bind(id)
         .execute(pool)
         .await
         .map_err(err("Couldn't delete the marker"))?;
+    if let Some((meeting_id, kind)) = row {
+        if is_note(&kind) {
+            typed_notes_changed(pool, &meeting_id).await;
+        }
+    }
     Ok(())
 }
+
+/// When a note typed at `at` (the moment Return was pressed) should be
+/// stamped: that moment when it is a sane one (not in the future, not more
+/// than a minute old), else now.
+pub fn note_time(at: Option<&str>, now: DateTime<Utc>) -> DateTime<Utc> {
+    at.and_then(parse_ts)
+        .filter(|t| *t <= now + chrono::Duration::seconds(2) && now - *t <= chrono::Duration::seconds(60))
+        .map(|t| t.min(now))
+        .unwrap_or(now)
+}
+
+/// A recording that stopped this recently still takes a note that was
+/// typed in it (Return, then Stop, and the save arrives after the stop).
+pub const LATE_NOTE_SECS: i64 = 120;
 
 /// A meeting's markers in time order.
 pub async fn list(pool: &Pool<Sqlite>, meeting_id: &str) -> Result<Vec<Marker>, String> {
@@ -424,12 +464,41 @@ pub mod commands {
         mark_now(&app, &state, kind.as_deref(), note.as_deref()).await
     }
 
-    /// Keep a line the user typed, stamped now, in the meeting being
-    /// recorded (the note field under the live transcript).
+    /// Keep a line the user typed in the recording in progress (the note
+    /// field under the live transcript), stamped with the moment Return was
+    /// pressed (`at`). `meeting_id` is the recording it was typed in: if
+    /// that recording stopped between the keypress and this call, the line
+    /// is still kept on it, never lost and never put on another recording.
     #[tauri::command(rename_all = "camelCase")]
-    pub async fn add_note(app: AppHandle, state: State<'_, AppState>, text: String) -> Result<Marker, String> {
-        let meeting_id = recording_meeting(&state).ok_or("Start a recording to type a note.")?;
-        let m = add(state.database.pool(), &meeting_id, Utc::now(), Some(NOTE_KIND), Some(&text), false).await?;
+    pub async fn add_note(
+        app: AppHandle,
+        state: State<'_, AppState>,
+        text: String,
+        meeting_id: Option<String>,
+        at: Option<String>,
+    ) -> Result<Marker, String> {
+        let now = Utc::now();
+        let pool = state.database.pool();
+        let live = recording_meeting(&state);
+        let (target, ts) = match (&live, &meeting_id) {
+            (Some(l), Some(m)) if l == m => (l.clone(), note_time(at.as_deref(), now)),
+            (Some(l), None) => (l.clone(), note_time(at.as_deref(), now)),
+            // Typed in a recording that has just stopped
+            (_, Some(m)) => {
+                let ended: Option<Option<String>> = sqlx::query_scalar("SELECT ended_at FROM meetings WHERE id = ?")
+                    .bind(m)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(err("Database busy"))?;
+                let ended = ended.flatten().as_deref().and_then(parse_ts);
+                match ended {
+                    Some(end) if (now - end).num_seconds() <= LATE_NOTE_SECS => (m.clone(), note_time(at.as_deref(), now).min(end)),
+                    _ => return Err("That recording has ended. Add the note in its Notes.".into()),
+                }
+            }
+            (None, None) => return Err("Start a recording to type a note.".into()),
+        };
+        let m = add(pool, &target, ts, Some(NOTE_KIND), Some(&text), false).await?;
         let _ = app.emit(NOTE_ADDED_EVENT, &m);
         Ok(m)
     }
@@ -647,6 +716,19 @@ mod tests {
         assert!(clean_typed_note(&"x".repeat(MAX_TYPED_NOTE_CHARS)).is_ok());
         assert!(clean_typed_note(&"x".repeat(MAX_TYPED_NOTE_CHARS + 1)).is_err());
         assert!(MAX_TYPED_NOTE_CHARS > MAX_NOTE_CHARS);
+    }
+
+    #[test]
+    fn a_note_is_stamped_with_the_moment_return_was_pressed_when_that_is_sane() {
+        let now = Utc::now();
+        let iso = |d: DateTime<Utc>| d.to_rfc3339();
+        let pressed = now - chrono::Duration::milliseconds(800);
+        assert_eq!(note_time(Some(&iso(pressed)), now), pressed);
+        // Missing, unreadable, too old or in the future: now
+        assert_eq!(note_time(None, now), now);
+        assert_eq!(note_time(Some("yesterday"), now), now);
+        assert_eq!(note_time(Some(&iso(now - chrono::Duration::seconds(300))), now), now);
+        assert_eq!(note_time(Some(&iso(now + chrono::Duration::seconds(30))), now), now);
     }
 
     #[tokio::test]

@@ -471,19 +471,32 @@ async fn a_typed_note_travels_as_a_mark_and_the_notes_carry_what_was_written_und
     f.db.set_meeting_note_details("n1", &details).await.unwrap();
     let (out, _) = store::collect(f.pool(), &uid(99), 0, &tk()).await.unwrap();
     let md = out.iter().find_map(|i| if let Item::Notes(n) = i { Some(n.md.clone()) } else { None }).unwrap();
-    assert_eq!(md, "## What you wrote\n- **2 k in**: Two potassium ions come in.\n\n**Lecture summary**\nTransport.");
+    // Every typed note is in the section; the one the notes wrote under has its detail
+    assert_eq!(
+        md,
+        "## What you wrote\n- **pump 3 na out**\n- **2 k in**: Two potassium ions come in.\n\n**Lecture summary**\nTransport."
+    );
+
+    // The peer deletes that note: its detail goes with it
+    let gone = Item::Gone(p::GoneItem { entity: "mark".into(), id: p::wire_id(&mine.id).unwrap(), rec: Some(REC.into()) });
+    let r = store::apply(f.pool(), &f.env, PHONE, &tk(), vec![gone]).await;
+    assert_eq!(r.applied, 1, "{:?}", r);
+    let notes = f.db.get_meeting_notes(REC).await.unwrap().unwrap();
+    assert_eq!(notes.note_details, None);
 }
 
 #[test]
-fn what_you_wrote_keeps_the_typed_order_and_only_notes_with_a_detail() {
+fn what_you_wrote_lists_every_typed_note_in_order_with_its_detail_when_there_is_one() {
     let typed = vec![("a".to_string(), "first **line**".to_string()), ("b".to_string(), "second".to_string()), ("c".to_string(), "third".to_string())];
     let details = r#"[{"marker_id": "c", "detail": "about the third"}, {"marker_id": "a", "detail": "about the first"}, {"marker_id": "gone", "detail": "x"}, {"marker_id": "b", "detail": "  "}]"#;
     assert_eq!(
         store::what_you_wrote_markdown(&typed, Some(details)).unwrap(),
-        "## What you wrote\n- **first line**: about the first\n- **third**: about the third"
+        "## What you wrote\n- **first line**: about the first\n- **second**\n- **third**: about the third"
     );
-    assert_eq!(store::what_you_wrote_markdown(&typed, None), None);
-    assert_eq!(store::what_you_wrote_markdown(&typed, Some("not json")), None);
+    // No details (or unreadable ones): the lines are still all there
+    let plain = "## What you wrote\n- **first line**\n- **second**\n- **third**";
+    assert_eq!(store::what_you_wrote_markdown(&typed, None).unwrap(), plain);
+    assert_eq!(store::what_you_wrote_markdown(&typed, Some("not json")).unwrap(), plain);
     assert_eq!(store::what_you_wrote_markdown(&[], Some(details)), None);
 }
 

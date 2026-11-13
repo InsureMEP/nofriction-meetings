@@ -67,8 +67,11 @@ export const markersApi = {
     remove: (id: string) => invoke<void>("delete_marker", { id }),
     /** Marks and typed notes, in time order */
     list: (meetingId: string) => invoke<StoredMarker[]>("list_markers", { meetingId }),
-    /** Keep a typed line, stamped now, in the recording in progress */
-    addNote: (text: string) => invoke<StoredMarker>("add_note", { text }),
+    /** Keep a typed line in the recording it was typed in (`meetingId`),
+     *  stamped with the moment Return was pressed (`at`). Kept even if that
+     *  recording stopped before this call arrived. */
+    addNote: (text: string, meetingId: string | null, at: Date) =>
+        invoke<StoredMarker>("add_note", { text, meetingId, at: at.toISOString() }),
     /** Add a typed note at a moment of a recorded meeting (ms from its start) */
     addNoteAt: (meetingId: string, offsetMs: number, text: string) =>
         invoke<StoredMarker>("add_marker", { meetingId, offsetMs: Math.max(0, Math.round(offsetMs)), kind: "note", note: text }),

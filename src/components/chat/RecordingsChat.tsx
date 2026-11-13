@@ -73,8 +73,13 @@ export function RecordingsChat({ selectedMeetingId, onOpenRecording }: Props) {
         });
     }, []);
 
-    // A different recording was opened: a fresh chat follows it
+    // A different recording was opened: a fresh chat follows it. Not on
+    // mount: the scope already starts there, and running then would replace
+    // the notebook that "Ask" on a notebook's page just set above.
+    const followed = useRef(selectedMeetingId);
     useEffect(() => {
+        if (followed.current === selectedMeetingId) return;
+        followed.current = selectedMeetingId;
         if (!thread && messages.length === 0) setScope((s) => {
             const d = defaultScope(selectedMeetingId);
             return sameScope(s, d) ? s : d;

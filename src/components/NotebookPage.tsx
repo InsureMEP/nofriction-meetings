@@ -6,7 +6,7 @@
 // page is read from the notes, marks and guides that exist.
 // docs/design/FADELL_V2.md §3 C
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { notebookApi } from "../lib/notebookPage";
 import {
@@ -60,12 +60,16 @@ export function NotebookPage({ notebook, refreshKey, isRecording, onOpenNotes, o
     const [showDone, setShowDone] = useState(false);
     const recordPicker = useRecordPicker();
 
+    // Only the latest request's answer is used (another notebook may have
+    // been opened while this one was being read)
+    const request = useRef(0);
     const load = useCallback(() => {
+        const mine = ++request.current;
         setError(null);
         notebookApi
             .overview(notebook)
-            .then(setPage)
-            .catch((e) => setError(String(e)));
+            .then((p) => mine === request.current && setPage(p))
+            .catch((e) => mine === request.current && setError(String(e)));
     }, [notebook]);
 
     useEffect(() => {

@@ -664,18 +664,27 @@ async fn notes_item(conn: &mut SqliteConnection, meeting_id: &str, modified: i64
 /// Model name stored with notes that came from the iPhone (Markdown in `summary`)
 pub const SYNCED_NOTES_MODEL: &str = "synced-markdown";
 
-/// `## What you wrote` with one `- **line**: detail` bullet per typed note
-/// the notes wrote something for, in the order typed. None when the notes
-/// have no details (the typed notes themselves travel as marks).
+/// `## What you wrote` with one bullet per typed note, in the order typed:
+/// `- **line**: detail` when the notes wrote something under it, `- **line**`
+/// when they didn't (a note typed after the notes were made, or beyond what
+/// the prompt listed). Every typed note is there, so a device that shows
+/// this section in place of its own list loses none. None without notes.
 pub fn what_you_wrote_markdown(typed: &[(String, String)], note_details: Option<&str>) -> Option<String> {
-    let details: Vec<crate::meeting_notes::NoteDetail> = serde_json::from_str(note_details?).ok()?;
+    let details: Vec<crate::meeting_notes::NoteDetail> =
+        note_details.and_then(|j| serde_json::from_str(j).ok()).unwrap_or_default();
     let one_line = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
     let bullets: Vec<String> = typed
         .iter()
         .filter_map(|(id, text)| {
-            let detail = one_line(&details.iter().find(|d| &d.marker_id == id)?.detail);
-            let text = one_line(text);
-            (!text.is_empty() && !detail.is_empty()).then(|| format!("- **{}**: {}", text.replace("**", ""), detail))
+            let text = one_line(text).replace("**", "");
+            if text.is_empty() {
+                return None;
+            }
+            let detail = details.iter().find(|d| &d.marker_id == id).map(|d| one_line(&d.detail)).filter(|d| !d.is_empty());
+            Some(match detail {
+                Some(d) => format!("- **{}**: {}", text, d),
+                None => format!("- **{}**", text),
+            })
         })
         .collect();
     (!bullets.is_empty()).then(|| format!("## What you wrote\n{}", bullets.join("\n")))
@@ -1219,12 +1228,25 @@ async fn apply_gone(pool: &Pool<Sqlite>, env: &RedactionEnv, peer: &str, g: &p::
             let Some(local) = local else { return Ok(false) };
             let mut tx = pool.begin().await.map_err(err("Database busy"))?;
             set_apply(&mut tx, peer, now).await?;
+            // A typed note: what the notes wrote under it goes with it
+            let note_of: Option<String> = if g.entity == "mark" {
+                sqlx::query_scalar("SELECT meeting_id FROM meeting_markers WHERE id = ? AND kind = 'note'")
+                    .bind(&local)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(err("Couldn't remove it"))?
+            } else {
+                None
+            };
             let n = sqlx::query(&format!("DELETE FROM {} WHERE {} = ?", table, key))
                 .bind(&local)
                 .execute(&mut *tx)
                 .await
                 .map_err(err("Couldn't remove it"))?
                 .rows_affected();
+            if let Some(meeting_id) = note_of {
+                crate::meeting_notes::typed_notes_changed(&mut tx, &meeting_id).await.map_err(err("Couldn't remove it"))?;
+            }
             if g.entity != "notes" {
                 remember_gone(&mut tx, &g.entity, &local, g.rec.as_deref().and_then(p::wire_id).as_deref(), peer).await?;
             }

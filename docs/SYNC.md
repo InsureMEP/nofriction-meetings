@@ -182,9 +182,15 @@ the iPhone are saved on the Mac as Markdown (`model_used =
   kind (Mac 3.9.0 and earlier, iPhone 1.1.0 and earlier) skips the item
   without an error and gets it the next time that note changes after it
   updates. What the notes wrote under each typed note travels in the notes'
-  Markdown, as a first section `## What you wrote` with one
-  `- **line**: detail` bullet per note. Ticks on a notebook's page and "Not
-  now" stay on the device.
+  Markdown, as a first section `## What you wrote` with one bullet per typed
+  note, in the order typed: `- **line**: detail`, or `- **line**` for a
+  note the notes wrote nothing under. Every typed note is listed. The
+  receiver merges the section with the typed notes it holds: a bullet that
+  quotes one of them becomes that note's detail, and a bullet it has no
+  note for stays in the notes, so nothing the user wrote is hidden
+  (`notesLogic.ts::mergeSyncedWritten`). Adding, changing or deleting a
+  typed note sends the recording's notes again. Ticks on a notebook's page
+  and "Not now" stay on the device.
 - **Last writer wins per record** for recordings, notes, marks and
   references: the item with the later `mod` replaces the other. The Mac
   stamps `mod` when a row changes (triggers on each table write

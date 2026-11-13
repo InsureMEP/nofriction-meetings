@@ -912,6 +912,10 @@ pub async fn start_recording(
     #[cfg(not(feature = "mas"))]
     crate::meeting_links::browser_url::start(app_for_end_monitor.clone(), meeting_id.clone());
 
+    // A call that is on now is being recorded: Up next doesn't offer it
+    // again when this recording stops (up_next.rs)
+    crate::up_next::live::recording_started();
+
     // Watch for the meeting ending (call app releases the mic, window closes,
     // calendar end, sustained silence) — see meeting_end.rs
     crate::meeting_end::start_monitor(app_for_end_monitor, meeting_id.clone(), calendar_window);

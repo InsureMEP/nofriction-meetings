@@ -53,9 +53,52 @@ export function writtenLines(notes: TypedNote[], details: Map<string, string>): 
     return notes.map((note) => ({ note, detail: details.get(note.id) ?? null }));
 }
 
-/** Notes that came from the iPhone already carry the section in their Markdown. */
+const isWhatYouWrote = (s: SyncedNotesSection) => (s.heading ?? "").trim().toLowerCase() === WHAT_YOU_WROTE.toLowerCase();
+
+/** Notes that came from the other device carry the section in their Markdown. */
 export function hasWhatYouWrote(sections: SyncedNotesSection[]): boolean {
-    return sections.some((s) => (s.heading ?? "").trim().toLowerCase() === WHAT_YOU_WROTE.toLowerCase());
+    return sections.some(isWhatYouWrote);
+}
+
+/** A typed line as the notes' Markdown quotes it: one line, no bold marks. */
+const quoted = (text: string) => text.replace(/\*\*/g, "").split(/\s+/).filter(Boolean).join(" ");
+
+/**
+ * Notes made on the other device carry "What you wrote" in their Markdown,
+ * one bullet per typed line: "line: what was being said" or just "line".
+ * The lines also arrive here as typed notes, so the two are merged:
+ *
+ * - every typed note is a row (with Rewind, edit and delete), with the
+ *   detail of the bullet that quotes it, if one does;
+ * - a bullet that was matched leaves the section;
+ * - a bullet no typed note matches (the note hasn't crossed yet, or the
+ *   other device is older) stays in the section, so nothing the user wrote
+ *   is hidden, and a typed note no bullet matches still has its row.
+ *
+ * A bullet matches the longest typed line it equals or starts with
+ * (followed by ":"), each note at most once, in the order typed.
+ */
+export function mergeSyncedWritten(notes: TypedNote[], sections: SyncedNotesSection[]): { lines: WrittenLine[]; sections: SyncedNotesSection[] } {
+    const details = new Map<string, string | null>();
+    const rest = sections
+        .map((section) => {
+            if (!isWhatYouWrote(section)) return section;
+            const bullets = section.bullets.filter((bullet) => {
+                const b = quoted(bullet);
+                let best: TypedNote | null = null;
+                for (const n of notes) {
+                    const q = quoted(n.text);
+                    if (!q || details.has(n.id)) continue;
+                    if ((b === q || b.startsWith(`${q}:`)) && (!best || q.length > quoted(best.text).length)) best = n;
+                }
+                if (!best) return true;
+                details.set(best.id, b.slice(quoted(best.text).length).replace(/^:\s*/, "").trim() || null);
+                return false;
+            });
+            return { ...section, bullets };
+        })
+        .filter((section) => !isWhatYouWrote(section) || section.bullets.length > 0 || section.paragraphs.length > 0);
+    return { lines: notes.map((note) => ({ note, detail: details.get(note.id) ?? null })), sections: rest };
 }
 
 /** "Reading the recording (2 of 5)…" → shown under "Making notes…"; the

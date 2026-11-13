@@ -16,12 +16,12 @@ import { useCapabilities, useIsPro } from "../lib/build";
 import { proSuffix, showProMark } from "../lib/pro";
 import { AiSetupNotice, useAiStatus } from "./AiSetupNotice";
 import { notesLayout, notesStyleHint } from "../lib/recordingKind";
-import { SYNCED_NOTES_MODEL, syncedNotesSections } from "../lib/syncLogic";
+import { SYNCED_NOTES_MODEL, syncedNotesSections, type SyncedNotesSection } from "../lib/syncLogic";
 import {
     NOTES_DONE_EVENT,
     NOTES_PROGRESS_EVENT,
     WHAT_YOU_WROTE,
-    hasWhatYouWrote,
+    mergeSyncedWritten,
     parseNoteDetails,
     progressDetail,
     writtenLines,
@@ -116,17 +116,23 @@ export function MeetingNotesPanel({ meetingId, onJump }: MeetingNotesPanelProps)
         if (configured) setNeedsAi(false);
     }, [configured]);
 
+    // Only the latest read is shown (an older one may arrive after it)
+    const request = useRef(0);
     const load = useCallback(async () => {
+        const mine = ++request.current;
         setLoading(true);
         setLoadError(null);
         try {
-            setNotes(await invoke<SavedNotes | null>("get_meeting_notes", { meetingId }));
+            const saved = await invoke<SavedNotes | null>("get_meeting_notes", { meetingId });
             // Without ticks the list still shows; it just has no boxes
-            setItems(await notebookApi.recordingItems(meetingId).catch(() => []));
+            const ticks = await notebookApi.recordingItems(meetingId).catch(() => []);
+            if (mine !== request.current) return;
+            setNotes(saved);
+            setItems(ticks);
         } catch (e) {
-            setLoadError(String(e));
+            if (mine === request.current) setLoadError(String(e));
         } finally {
-            setLoading(false);
+            if (mine === request.current) setLoading(false);
         }
     }, [meetingId]);
 
@@ -226,12 +232,12 @@ export function MeetingNotesPanel({ meetingId, onJump }: MeetingNotesPanelProps)
     const showSetup = configured === false || needsAi;
     const busy = generating || running !== null;
     const busyDetail = progressDetail(running);
-    // Notes made on the iPhone already carry "What you wrote" in their text
-    const synced = notes?.model_used === SYNCED_NOTES_MODEL;
-    const lines =
-        synced && hasWhatYouWrote(syncedNotesSections(notes?.summary ?? ""))
-            ? []
-            : writtenLines(typed, parseNoteDetails(notes?.note_details));
+    // Notes made on the iPhone carry "What you wrote" in their text: its
+    // details go under the typed lines here, and whatever it holds that
+    // isn't a typed line on this Mac stays in the notes (notesLogic.ts)
+    const synced =
+        notes?.model_used === SYNCED_NOTES_MODEL ? mergeSyncedWritten(typed, syncedNotesSections(notes.summary ?? "")) : null;
+    const lines = synced ? synced.lines : writtenLines(typed, parseNoteDetails(notes?.note_details));
 
     const actions = (
         <div className="mn-actions">
@@ -305,7 +311,7 @@ export function MeetingNotesPanel({ meetingId, onJump }: MeetingNotesPanelProps)
                             </button>
                         </div>
                     )}
-                    <NotesBody notes={notes} items={items} onTick={tick} />
+                    <NotesBody notes={notes} items={items} onTick={tick} syncedSections={synced?.sections} />
                     <p className="mn-meta">
                         Made {new Date(notes.generated_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
                     </p>
@@ -494,9 +500,9 @@ function ActionItems({ actions, detail, items, onTick }: { actions: ActionItem[]
     );
 }
 
-function NotesBody({ notes, items, onTick }: { notes: SavedNotes } & Ticks) {
+function NotesBody({ notes, items, onTick, syncedSections }: { notes: SavedNotes; syncedSections?: SyncedNotesSection[] } & Ticks) {
     if (notes.model_used === SYNCED_NOTES_MODEL) {
-        return <SyncedNotesBody markdown={notes.summary ?? ""} />;
+        return <SyncedNotesBody sections={syncedSections ?? syncedNotesSections(notes.summary ?? "")} />;
     }
     const topics = parseList<string>(notes.key_topics);
     const decisions = parseList<Decision>(notes.decisions);
@@ -558,8 +564,7 @@ function NotesBody({ notes, items, onTick }: { notes: SavedNotes } & Ticks) {
 
 /** Notes made on the iPhone and synced here (docs/SYNC.md): its Markdown,
  *  bold headings and bullets. */
-function SyncedNotesBody({ markdown }: { markdown: string }) {
-    const sections = syncedNotesSections(markdown);
+function SyncedNotesBody({ sections }: { sections: SyncedNotesSection[] }) {
     if (sections.length === 0) return <p className="mn-muted">No summary.</p>;
     return (
         <>

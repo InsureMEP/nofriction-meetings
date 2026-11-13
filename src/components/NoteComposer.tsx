@@ -13,7 +13,13 @@ import "./NoteComposer.css";
 /** Show how much room is left once the line is this close to the limit. */
 const COUNT_FROM = MAX_TYPED_NOTE_CHARS - 100;
 
-export function NoteComposer({ onSaved }: { onSaved: (row: StoredMarker) => void }) {
+interface NoteComposerProps {
+    /** The recording in progress: the line is kept on it even if Stop is pressed right after Return */
+    meetingId: string | null;
+    onSaved: (row: StoredMarker) => void;
+}
+
+export function NoteComposer({ meetingId, onSaved }: NoteComposerProps) {
     const [text, setText] = useState("");
     const [error, setError] = useState<string | null>(null);
     // Lines on their way to being kept
@@ -34,11 +40,13 @@ export function NoteComposer({ onSaved }: { onSaved: (row: StoredMarker) => void
             if (text.trim()) setError(`Keep a note under ${MAX_TYPED_NOTE_CHARS} characters.`);
             return;
         }
+        // The moment and the recording are taken now, not when the save arrives
+        const at = new Date();
         setText("");
         setError(null);
         setSaving((n) => n + 1);
         try {
-            onSaved(await markersApi.addNote(line));
+            onSaved(await markersApi.addNote(line, meetingId, at));
         } catch (e) {
             setText((typed) => (typed.trim() ? `${line} ${typed}` : line));
             setError(`Couldn't keep that note: ${String(e)}`);

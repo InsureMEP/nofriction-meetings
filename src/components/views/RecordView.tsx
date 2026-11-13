@@ -116,7 +116,7 @@ export function RecordView({ recording, transcripts }: RecordViewProps) {
                         {transcripts.liveTranscripts.length > 0 && <PrivacyPromiseBadge />}
                     </div>
                     {/* Type while it listens: the line lands in the transcript at this moment */}
-                    <NoteComposer onSaved={liveNotes.add} />
+                    <NoteComposer meetingId={recording.meetingId} onSaved={liveNotes.add} />
                 </div>
                 <aside className="record-view__screens">
                     <Screens isRecording />

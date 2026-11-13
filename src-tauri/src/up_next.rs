@@ -31,6 +31,8 @@ pub const MIN_MATCHES: usize = 2;
 /// A call app must hold the microphone this long before it counts (a blip
 /// from dictation or a permission check isn't a call).
 pub const CALL_HOLD_SECS: u64 = 10;
+/// How many half-seconds to wait for a recording started by itself to run
+pub const START_CONFIRM_TRIES: u32 = 40;
 
 /// Setting: post a notification when something starts ("true" unless set).
 pub const REMIND_SETTING: &str = "remind_when_something_starts";
@@ -314,37 +316,68 @@ pub fn dismiss(stored: Option<&str>, key: &str, today: &str) -> String {
 /// user hasn't been offered (or declined) yet.
 #[derive(Debug, Default)]
 pub struct CallTracker {
-    /// When the current hold was first seen
-    since: Option<std::time::Instant>,
-    /// This call was on while a recording ran, or the user said Not now:
-    /// say nothing until the microphone is released
-    blocked: bool,
+    /// The call app holding the microphone and when it was first seen
+    hold: Option<(String, std::time::Instant)>,
+    /// The call app not to offer: it was on while a recording ran, or the
+    /// user said Not now. Cleared when it lets go of the microphone.
+    blocked: Option<String>,
+    /// A recording ran since the last sample (it may have started and
+    /// stopped between two): whoever holds the microphone at the next one
+    /// was recorded
+    recorded: bool,
 }
 
 impl CallTracker {
-    /// Feed one sample; returns the call app to offer, if any.
-    pub fn tick(&mut self, apps: &[String], recording: bool, now: std::time::Instant) -> Option<String> {
+    /// Feed one sample; returns the call app to offer, if any. `apps` is
+    /// None when the system couldn't say who holds the microphone: nothing
+    /// is learned from that, so nothing changes.
+    pub fn tick(&mut self, apps: Option<&[String]>, recording: bool, now: std::time::Instant) -> Option<String> {
+        if recording {
+            self.recorded = true;
+            self.hold = None;
+        }
+        let Some(apps) = apps else {
+            return if recording { None } else { self.offer(now) };
+        };
         let Some(first) = apps.first() else {
-            self.since = None;
-            self.blocked = false;
+            *self = Self { recorded: recording, ..Self::default() };
             return None;
         };
-        if recording {
-            self.blocked = true;
-            self.since = None;
+        if self.recorded {
+            self.blocked = Some(first.clone());
+            self.recorded = recording;
+        }
+        if self.blocked.as_deref() == Some(first.as_str()) {
+            self.hold = None;
             return None;
         }
-        if self.blocked {
-            return None;
+        // Another app has the microphone now: a new call, counted from here
+        self.blocked = None;
+        if !matches!(&self.hold, Some((app, _)) if app == first) {
+            self.hold = Some((first.clone(), now));
         }
-        let since = *self.since.get_or_insert(now);
-        (now.duration_since(since).as_secs() >= CALL_HOLD_SECS).then(|| first.clone())
+        self.offer(now)
+    }
+
+    fn offer(&self, now: std::time::Instant) -> Option<String> {
+        self.hold
+            .as_ref()
+            .filter(|(_, since)| now.duration_since(*since).as_secs() >= CALL_HOLD_SECS)
+            .map(|(app, _)| app.clone())
+    }
+
+    /// A recording started (told at once, not at the next sample: a short
+    /// recording can start and stop between two).
+    pub fn recording_started(&mut self) {
+        self.recorded = true;
+        self.hold = None;
     }
 
     /// The user said Not now to this call.
     pub fn dismiss(&mut self) {
-        self.blocked = true;
-        self.since = None;
+        if let Some((app, _)) = self.hold.take() {
+            self.blocked = Some(app);
+        }
     }
 }
 
@@ -458,20 +491,52 @@ pub mod live {
         None
     }
 
-    fn call_apps_now() -> Vec<String> {
+    /// The call apps on the microphone, or None when the system can't say
+    /// (never read as "nobody": that would unblock a call that is still on)
+    fn call_apps_now() -> Option<Vec<String>> {
         let own = std::process::id() as i32;
-        crate::core_audio::audio_processes()
-            .map(|p| crate::meeting_end::active_call_apps(&p, own).into_iter().collect())
-            .unwrap_or_default()
+        crate::core_audio::audio_processes().map(|p| crate::meeting_end::active_call_apps(&p, own).into_iter().collect())
     }
 
     /// Sample who holds the microphone and advance the call tracker (the
     /// monitor only: the tracker counts time between samples).
     async fn sample_calls(state: &AppState) {
         let recording = is_recording(state);
-        let apps = tokio::task::spawn_blocking(call_apps_now).await.unwrap_or_default();
-        let offer = CALLS.lock().tick(&apps, recording, std::time::Instant::now());
+        let apps = tokio::task::spawn_blocking(call_apps_now).await.ok().flatten();
+        let offer = CALLS.lock().tick(apps.as_deref(), recording, std::time::Instant::now());
         *CALL_APP.lock() = offer;
+    }
+
+    /// A recording has started (commands::start_recording): a call that is
+    /// on now is being recorded, so it isn't offered when the recording
+    /// stops, however short it was.
+    pub fn recording_started() {
+        CALLS.lock().recording_started();
+        *CALL_APP.lock() = None;
+    }
+
+    /// "Recording BIO 101" once the recording really runs. If it doesn't
+    /// start (the window wasn't ready, a permission is missing), say what is
+    /// starting instead, when reminders are on, so nothing is claimed that
+    /// didn't happen.
+    fn confirm_started(app: AppHandle, s: UpNext) {
+        tauri::async_runtime::spawn(async move {
+            for _ in 0..START_CONFIRM_TRIES {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                let Some(state) = app.try_state::<AppState>() else { return };
+                if is_recording(&state) {
+                    let (t, b) = started_notice(&s);
+                    crate::notifications::post(&app, &t, &b);
+                    return;
+                }
+            }
+            log::warn!("Up next: the recording didn't start by itself ({})", s.source);
+            let Some(state) = app.try_state::<AppState>() else { return };
+            if setting_on(&state, REMIND_SETTING, true).await {
+                let (t, b) = reminder(&s);
+                crate::notifications::post(&app, &t, &b);
+            }
+        });
     }
 
     /// Work out the suggestion now, from the calendar, the recordings and
@@ -537,8 +602,7 @@ pub mod live {
                             if setting_on(&state, AUTO_START_SETTING, false).await {
                                 log::info!("Up next: starting by itself ({})", s.source);
                                 let _ = app.emit(START_EVENT, s);
-                                let (t, b) = started_notice(s);
-                                crate::notifications::post(&app, &t, &b);
+                                confirm_started(app.clone(), s.clone());
                             } else if !window_in_front(&app) && setting_on(&state, REMIND_SETTING, true).await {
                                 let (t, b) = reminder(s);
                                 crate::notifications::post(&app, &t, &b);
@@ -786,29 +850,90 @@ mod tests {
         use std::time::{Duration as D, Instant};
         let t0 = Instant::now();
         let zoom = vec!["Zoom".to_string()];
+        let none: Vec<String> = vec![];
+        let (zoom, none) = (Some(zoom.as_slice()), Some(none.as_slice()));
         let mut c = CallTracker::default();
-        assert_eq!(c.tick(&[], false, t0), None);
+        assert_eq!(c.tick(none, false, t0), None);
         // A blip isn't a call
-        assert_eq!(c.tick(&zoom, false, t0), None);
-        assert_eq!(c.tick(&zoom, false, t0 + D::from_secs(5)), None);
-        assert_eq!(c.tick(&[], false, t0 + D::from_secs(6)), None);
+        assert_eq!(c.tick(zoom, false, t0), None);
+        assert_eq!(c.tick(zoom, false, t0 + D::from_secs(5)), None);
+        assert_eq!(c.tick(none, false, t0 + D::from_secs(6)), None);
         // Held long enough
-        assert_eq!(c.tick(&zoom, false, t0 + D::from_secs(20)), None);
-        assert_eq!(c.tick(&zoom, false, t0 + D::from_secs(20 + CALL_HOLD_SECS)), Some("Zoom".to_string()));
+        assert_eq!(c.tick(zoom, false, t0 + D::from_secs(20)), None);
+        assert_eq!(c.tick(zoom, false, t0 + D::from_secs(20 + CALL_HOLD_SECS)), Some("Zoom".to_string()));
         // Not now: quiet until the microphone is released, then a new call counts again
         c.dismiss();
-        assert_eq!(c.tick(&zoom, false, t0 + D::from_secs(60)), None);
-        assert_eq!(c.tick(&[], false, t0 + D::from_secs(70)), None);
-        assert_eq!(c.tick(&zoom, false, t0 + D::from_secs(80)), None);
-        assert_eq!(c.tick(&zoom, false, t0 + D::from_secs(80 + CALL_HOLD_SECS)), Some("Zoom".to_string()));
+        assert_eq!(c.tick(zoom, false, t0 + D::from_secs(60)), None);
+        assert_eq!(c.tick(none, false, t0 + D::from_secs(70)), None);
+        assert_eq!(c.tick(zoom, false, t0 + D::from_secs(80)), None);
+        assert_eq!(c.tick(zoom, false, t0 + D::from_secs(80 + CALL_HOLD_SECS)), Some("Zoom".to_string()));
 
         // A call that was on while recording is never offered when the recording stops
         let mut c = CallTracker::default();
-        assert_eq!(c.tick(&zoom, true, t0), None);
-        assert_eq!(c.tick(&zoom, false, t0 + D::from_secs(100)), None, "the user just stopped: don't start again");
-        assert_eq!(c.tick(&zoom, false, t0 + D::from_secs(200)), None);
-        assert_eq!(c.tick(&[], false, t0 + D::from_secs(210)), None);
-        assert_eq!(c.tick(&zoom, false, t0 + D::from_secs(220)), None);
-        assert_eq!(c.tick(&zoom, false, t0 + D::from_secs(220 + CALL_HOLD_SECS)), Some("Zoom".to_string()));
+        assert_eq!(c.tick(zoom, true, t0), None);
+        assert_eq!(c.tick(zoom, false, t0 + D::from_secs(100)), None, "the user just stopped: don't start again");
+        assert_eq!(c.tick(zoom, false, t0 + D::from_secs(200)), None);
+        assert_eq!(c.tick(none, false, t0 + D::from_secs(210)), None);
+        assert_eq!(c.tick(zoom, false, t0 + D::from_secs(220)), None);
+        assert_eq!(c.tick(zoom, false, t0 + D::from_secs(220 + CALL_HOLD_SECS)), Some("Zoom".to_string()));
+    }
+
+    #[test]
+    fn a_short_recording_between_two_samples_still_counts_as_recorded() {
+        use std::time::{Duration as D, Instant};
+        let t0 = Instant::now();
+        let zoom = vec!["Zoom".to_string()];
+        let none: Vec<String> = vec![];
+        let (zoom, none) = (Some(zoom.as_slice()), Some(none.as_slice()));
+        let mut c = CallTracker::default();
+        assert_eq!(c.tick(zoom, false, t0), None);
+        // Record and Stop, both before the next sample
+        c.recording_started();
+        assert_eq!(c.tick(zoom, false, t0 + D::from_secs(5)), None);
+        assert_eq!(c.tick(zoom, false, t0 + D::from_secs(60)), None, "the call was recorded: not offered again");
+        // Released: the next call is a new one
+        assert_eq!(c.tick(none, false, t0 + D::from_secs(65)), None);
+        assert_eq!(c.tick(zoom, false, t0 + D::from_secs(70)), None);
+        assert_eq!(c.tick(zoom, false, t0 + D::from_secs(70 + CALL_HOLD_SECS)), Some("Zoom".to_string()));
+        // A recording with no call on blocks nothing later
+        let mut c = CallTracker::default();
+        c.recording_started();
+        assert_eq!(c.tick(none, false, t0), None);
+        assert_eq!(c.tick(zoom, false, t0 + D::from_secs(5)), None);
+        assert_eq!(c.tick(zoom, false, t0 + D::from_secs(5 + CALL_HOLD_SECS)), Some("Zoom".to_string()));
+    }
+
+    #[test]
+    fn an_unreadable_sample_changes_nothing_and_another_app_is_a_new_call() {
+        use std::time::{Duration as D, Instant};
+        let t0 = Instant::now();
+        let zoom = vec!["Zoom".to_string()];
+        let teams = vec!["Microsoft Teams".to_string()];
+        let (zoom, teams) = (Some(zoom.as_slice()), Some(teams.as_slice()));
+        // Dismissed, then the system can't say who has the microphone: still dismissed
+        let mut c = CallTracker::default();
+        c.tick(zoom, false, t0);
+        assert_eq!(c.tick(zoom, false, t0 + D::from_secs(CALL_HOLD_SECS)), Some("Zoom".to_string()));
+        c.dismiss();
+        assert_eq!(c.tick(None, false, t0 + D::from_secs(20)), None);
+        assert_eq!(c.tick(zoom, false, t0 + D::from_secs(25)), None, "not read as the microphone being released");
+        assert_eq!(c.tick(zoom, false, t0 + D::from_secs(25 + CALL_HOLD_SECS)), None);
+        // An offer in progress survives an unreadable sample
+        let mut c = CallTracker::default();
+        c.tick(zoom, false, t0);
+        assert_eq!(c.tick(None, false, t0 + D::from_secs(CALL_HOLD_SECS)), Some("Zoom".to_string()));
+        // One call ends and another app takes the microphone inside one sample:
+        // the hold starts again, it isn't inherited
+        let mut c = CallTracker::default();
+        c.tick(zoom, false, t0);
+        assert_eq!(c.tick(teams, false, t0 + D::from_secs(CALL_HOLD_SECS)), None);
+        assert_eq!(c.tick(teams, false, t0 + D::from_secs(2 * CALL_HOLD_SECS)), Some("Microsoft Teams".to_string()));
+        // ... and a dismissed Zoom doesn't silence the Teams call after it
+        let mut c = CallTracker::default();
+        c.tick(zoom, false, t0);
+        c.tick(zoom, false, t0 + D::from_secs(CALL_HOLD_SECS));
+        c.dismiss();
+        assert_eq!(c.tick(teams, false, t0 + D::from_secs(30)), None);
+        assert_eq!(c.tick(teams, false, t0 + D::from_secs(30 + CALL_HOLD_SECS)), Some("Microsoft Teams".to_string()));
     }
 }

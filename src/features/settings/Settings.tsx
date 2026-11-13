@@ -3,7 +3,7 @@
 // the silence that ends a recording is 3 minutes, what is captured follows
 // the permissions, notes are made automatically once AI is set up.
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -176,14 +176,26 @@ function RecordingSettings({ showToast }: { showToast: (text: string, error?: bo
         }
     };
 
-    const saveStarting = async (key: string, next: boolean, set: (v: boolean) => void) => {
+    // Each switch's writes go out one after another, in the order clicked,
+    // so what is stored is the last click (two quick clicks could otherwise
+    // land out of order and leave "Record by itself" on while it shows off).
+    const startingWrites = useRef<Record<string, Promise<void>>>({});
+    const startingWanted = useRef<Record<string, boolean>>({});
+    const saveStarting = (key: string, next: boolean, set: (v: boolean) => void) => {
         set(next);
-        try {
-            await invoke("set_setting", { key, value: String(next) });
-        } catch (err) {
-            set(!next);
-            showToast(`Couldn't save: ${err instanceof Error ? err.message : String(err)}`, true);
-        }
+        startingWanted.current[key] = next;
+        const before = startingWrites.current[key] ?? Promise.resolve();
+        startingWrites.current[key] = before.then(async () => {
+            try {
+                await invoke("set_setting", { key, value: String(next) });
+            } catch (err) {
+                // An older click's failure says nothing about the newest one
+                if (startingWanted.current[key] !== next) return;
+                set(!next);
+                showToast(`Couldn't save: ${err instanceof Error ? err.message : String(err)}`, true);
+            }
+        });
+        return startingWrites.current[key];
     };
 
     // Export to Obsidian is noFriction Pro (Mac App Store build): without it

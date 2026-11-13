@@ -243,6 +243,29 @@ So the Mac and the iPhone build the same thing.
   detail` bullets. Both are AI output: redaction treats them like the rest
   of the notes.
 
+**Rules the correctness review added (both platforms)**
+
+- **The save and its check are one step.** Notes are written only if every
+  line they were made from is still in the transcript and no Delete is
+  waiting, and that check and the write happen together (Mac: one
+  `BEGIN IMMEDIATE` transaction; iPhone: one synchronous step on the model
+  context, with no `await` between the check and the insert).
+- **Nothing automatic calls the AI while a recording runs.** Automatic
+  notes wait for it to stop. The user's own **Make notes** is theirs to
+  press at any time.
+- **A typed note's detail never outlives the note.** Deleting a typed note
+  (directly, by a time-range Delete or Strike, or from the other device)
+  removes what the notes wrote under it in the same step.
+- **A typed note belongs to the recording and the moment it was typed in.**
+  The moment is taken at Return, and the line is kept on that recording
+  even if Stop was pressed before the save arrived.
+- **"What you wrote" in synced notes lists every typed note** (`- **line**:
+  detail`, or `- **line**` with nothing under it). The receiver merges it
+  with the typed notes it holds and never hides a line it can't match.
+- **An answer for something that is no longer open is dropped** (switching
+  recordings or notebooks while a read is on its way).
+- **Logs name the kind of an AI failure, never its text.**
+
 **The routine (pure function, same on both)**
 
 All times are local, as minutes of the day (no wrap past midnight).
@@ -313,3 +336,28 @@ Decisions it left for the owner:
 - **A quick-note panel over other apps** (a non-activating floating field
   on a global key) is the next thing to build once the note field has
   earned it.
+
+---
+
+## 8. What the correctness review found (2026-11-12)
+
+Before merging, an independent review (Codex) read the Mac branch for
+bugs. Fifteen findings; all were checked against the code and fixed:
+
+| | Finding | Fix |
+|---|---|---|
+| 1 | The notes' "transcript unchanged" check and their save were two steps; a Delete could land between them | One transaction (`meeting_notes::save_checked`) |
+| 2 | Two quick clicks on a Starting switch could be stored out of order | Writes per switch go out in order |
+| 3 | Automatic notes could call the AI while another recording ran | They wait for it to stop |
+| 4 | A failed automatic run logged the start of the error text | The log names a kind only |
+| 5 | A deleted typed note left its detail in `note_details` (direct delete, time-range purge, synced removal) | Pruned in the same step |
+| 6 | Changing a typed note didn't send the notes again | The notes row is touched |
+| 7 | **Older than v2:** the Undo toast applied a delete on the next redraw when its error handler was passed inline (recordings, chats) | The handler is read through a ref |
+| 8 | A recording that started and stopped between two microphone samples left its call to be offered again; an unreadable sample was read as "nobody" | The tracker is told at once; an unreadable sample changes nothing |
+| 9 | **Ask** on a notebook's page opened Chat on the selected recording | The follow-the-recording effect skips its first run |
+| 10 | An answer for the previous recording could land in the next one's Notes or marks | Latest request wins; one Notes panel per recording |
+| 11 | Return, then Stop at once: the note was refused | The note carries its recording and moment |
+| 12 | Synced notes with "What you wrote" hid the typed-note rows | Merged by line; nothing hidden |
+| 13 | The same stale answer on a notebook's page | Latest request wins |
+| 14 | A second call app inherited the first one's time on the microphone | The hold is per app |
+| 15 | "Recording …" was posted before the recording ran | Posted once it runs; else the reminder |
