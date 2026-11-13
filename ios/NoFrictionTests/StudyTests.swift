@@ -68,7 +68,7 @@ final class StudyParseTests: XCTestCase {
         XCTAssertEqual(StudyParse.clean("👩‍💻 dev", max: 50), "👩‍💻 dev", "emoji sequences survive")
     }
 
-    func testClocks() {
+    func testClocks() throws {
         XCTAssertEqual(StudyParse.parseClock("12:34"), 754_000)
         XCTAssertEqual(StudyParse.parseClock("[1:02:05]"), 3_725_000)
         XCTAssertEqual(StudyParse.parseClock("95"), 95_000)
@@ -76,6 +76,17 @@ final class StudyParseTests: XCTestCase {
         XCTAssertNil(StudyParse.parseClock("1:2:3:4"))
         XCTAssertNil(StudyParse.parseClock("-5"))
         XCTAssertEqual(StudyParse.clock(3_725_000), "1:02:05")
+        // A time no recording has is dropped. (`Int(_:)` traps on a number
+        // that large: a model's answer must never stop the app.)
+        XCTAssertNil(StudyParse.parseClock("1e30"))
+        XCTAssertNil(StudyParse.parseClock("99999999999999999999999:00"))
+        XCTAssertNil(StudyParse.wholeMs(seconds: .infinity))
+        XCTAssertNil(StudyParse.wholeMs(seconds: .nan))
+        XCTAssertNil(StudyParse.wholeMs(seconds: -1))
+        XCTAssertEqual(StudyParse.wholeMs(seconds: 1.5), 1500)
+        let huge = #"{"questions": [{"question": "When?", "choices": ["a", "b"], "answer": 0, "time": 1e30}, {"question": "And then?", "choices": ["a", "b"], "answer": 1, "time": "1e30"}]}"#
+        let quiz = try XCTUnwrap(StudyParse.decode(StudyQuiz.self, try StudyParse.validate(.quiz, raw: huge, durationMs: 0)))
+        XCTAssertEqual(quiz.questions.map(\.atMs), [nil, nil])
     }
 
     func testCondensedLines() throws {

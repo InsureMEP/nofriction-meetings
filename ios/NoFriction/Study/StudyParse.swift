@@ -221,13 +221,21 @@ enum StudyParse {
 
     private static func key(_ s: String) -> String { s.lowercased().filter { $0.isLetter || $0.isNumber } }
 
+    /// Seconds as whole milliseconds. nil for a value no recording has: a
+    /// model can write "1e30", and `Int(_:)` traps on a number that large.
+    static func wholeMs(seconds: Double) -> Int? {
+        let ms = (seconds * 1000).rounded()
+        guard ms.isFinite, ms >= 0, ms <= 1e12 else { return nil }
+        return Int(ms)
+    }
+
     /// "12:34", "1:02:03", "[12:34]" or seconds → ms.
     static func parseClock(_ s: String) -> Int? {
         let t = s.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "[]")).trimmingCharacters(in: .whitespaces)
         if t.isEmpty { return nil }
         if !t.contains(":") {
             guard let secs = Double(t.hasSuffix("s") ? String(t.dropLast()) : t), secs.isFinite, secs >= 0 else { return nil }
-            return Int((secs * 1000).rounded())
+            return wholeMs(seconds: secs)
         }
         let parts = t.split(separator: ":", omittingEmptySubsequences: false)
         guard parts.count <= 3, !parts.contains(where: { $0.trimmingCharacters(in: .whitespaces).isEmpty }) else { return nil }
@@ -236,7 +244,7 @@ enum StudyParse {
             guard let n = Double(p.trimmingCharacters(in: .whitespaces)), n.isFinite, n >= 0, i == 0 || n < 60 else { return nil }
             total = total * 60 + n
         }
-        return Int((total * 1000).rounded())
+        return wholeMs(seconds: total)
     }
 
     /// 754_000 → "12:34", 3_725_000 → "1:02:05"
@@ -249,7 +257,7 @@ enum StudyParse {
         if let n = o["at_ms"] as? NSNumber, !isBool(n) {
             ms = n.intValue
         } else if let v = field(o, ["time", "t", "timestamp", "at", "source_time"]) {
-            if let s = v as? String { ms = parseClock(s) } else if let n = v as? NSNumber, !isBool(n) { ms = Int((n.doubleValue * 1000).rounded()) }
+            if let s = v as? String { ms = parseClock(s) } else if let n = v as? NSNumber, !isBool(n) { ms = wholeMs(seconds: n.doubleValue) }
         }
         guard let ms, ms >= 0, durationMs <= 0 || ms <= durationMs + 60_000 else { return nil }
         return ms
