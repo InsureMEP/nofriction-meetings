@@ -336,17 +336,19 @@ fixed; three betterments it proposed were built:
   notebook's notes still have open.
 - **Start from.** Review everything can begin at any recording.
 
-Decisions it left for the owner:
+Decisions it left for the owner, and the answers (2026-11-13):
 
 - **Inter isn't bundled.** It shows only where it is installed; most Macs
   see the system face. Bundle it (about 300 KB, OFL) or name the system
-  face in DESIGN.md.
+  face in DESIGN.md. **Answer: the system face.** The CSS no longer names
+  Inter, so the app looks the same on every Mac (DESIGN.md 1.4.0).
 - **44px targets.** DESIGN.md asks for 44px; the app's controls are
   30–40px, as desktop apps are. Either the rule or the controls should
-  change.
+  change. **Answer: the rule.** 44pt is for iPhone and iPad; the Mac keeps
+  desktop control sizes (DESIGN.md, Accessibility).
 - **A quick-note panel over other apps** (a non-activating floating field
   on a global key) is the next thing to build once the note field has
-  earned it.
+  earned it. **Answer: build it.**
 
 ---
 

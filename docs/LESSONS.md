@@ -42,7 +42,9 @@ hit its iteration ceiling, in one pass, each against a durable owner decision:
   `Lessons.css` for any non-local `http(s)://` or `url(...)` remote reference and
   **fails on a match**; a **Tauri CSP** note restricts `connect-src`/`img-src`/
   `font-src` for the Lessons surface; and an assertion confirms `Lessons.css`
-  uses only the bundled Inter font and imports no remote asset (§11.2, §15).
+  uses only the system face and imports no remote asset (§11.2, §15).
+  (It first said "the bundled Inter"; no font was ever bundled, and since
+  2026-11-13 the app names the system face: DESIGN.md.)
 - **Finding 3 [NIT] — stale Shell.tsx header comment** → added to the §17 edit
   list (updated to "one of four views (Record / Recordings / Lessons / Chat)")
   alongside the `AppMode` enum change.
@@ -222,7 +224,7 @@ call; when §13 ships, the Recordings action generates from that recording and
 the Lessons button opens a recording picker.
 
 All Lessons UI follows DESIGN.md: hazard-yellow `#facc15` tokens on matte
-black, Inter, sentence case, SVG icons from `src/components/icons.tsx`, semantic
+black, the system face, sentence case, SVG icons from `src/components/icons.tsx`, semantic
 tokens only, `prefers-reduced-motion` honored by every explainer animation and
 every lesson-player transition, WCAG (keyboard operable, visible 2px focus ring,
 4.5:1 body contrast, 44px targets, ARIA landmarks, and a screen-reader
@@ -1174,8 +1176,8 @@ produced **locally and offline** (AC 4.5.6):
 
 - Taking a lesson end-to-end does **zero network** once the bundle is present:
   no AI, no image fetch, no font/CDN fetch, no telemetry (AC 4.2.2). The bundle
-  carries everything, including figure PNGs; fonts come from the app's bundled
-  Inter, never a CDN (FR-OFF-2). Spaced repetition, trainers, diagnostic,
+  carries everything, including figure PNGs; the font is the system face,
+  never a CDN (FR-OFF-2). Spaced repetition, trainers, diagnostic,
   dashboard, exam, and certificate are all local.
 - Only acquisition (a user-initiated URL import, §5.3) and Make lesson (§13,
   the user's own AI endpoint, or none with Apple on-device) touch the network.
@@ -1212,11 +1214,11 @@ gap, with one named **authoritative**:
   that somehow slipped past the grep guard is then **blocked at runtime** by the
   webview. (The CSP is a backstop; the grep guard is the authoritative gate
   because it fails the build rather than merely blocking at runtime.)
-- **Assertion: `Lessons.css` uses only the bundled Inter font and imports no
+- **Assertion: `Lessons.css` uses only the system face and imports no
   remote asset.** The grep guard's CSS pass specifically asserts there is **no
   `@import url(http…)`**, no remote `@font-face src: url(http…)`, and that every
-  `font-family` resolves to the app's **bundled Inter** (loaded from the app's
-  local font asset, never a Google Fonts / CDN URL), matching FR-OFF-2.
+  `font-family` resolves to the **system stack** (the app bundles no font;
+  never a Google Fonts / CDN URL), matching FR-OFF-2.
 
 ### 11.3 Both Mac flavors
 
@@ -1776,7 +1778,7 @@ bundle + compiled `Lessons.css` and **fails on any non-local `http(s)://` or
 remote `url(...)` reference** (local/relative/`data:`/`tauri://`/bundled-font
 references allow-listed). It additionally asserts `Lessons.css` has **no**
 `@import url(http…)` or remote `@font-face`, and that every `font-family`
-resolves to the **bundled Inter** (FR-OFF-2). This is the authoritative proof
+resolves to the **system stack** (FR-OFF-2). This is the authoritative proof
 that the Lessons frontend fetches nothing remote; the §11.2 Tauri **CSP**
 (`connect-src`/`img-src`/`font-src` restricted to `'self'` + the asset protocol,
 no remote origin) is the runtime backstop. Together with the backend
@@ -1926,8 +1928,8 @@ mock) ship in the same PR as the TopBar change (COORDINATION.md §4).
 - `scripts/check-lessons-offline.*` (new, run in CI): the **authoritative**
   frontend offline guard (owner-decision D5, §11.2/§15) — scans the compiled
   Lessons JS bundle + `Lessons.css` and fails on any non-local `http(s)://` or
-  remote `url(...)` reference; also asserts `Lessons.css` uses only the bundled
-  Inter font with no remote `@import`/`@font-face`.
+  remote `url(...)` reference; also asserts `Lessons.css` uses only the
+  system face with no remote `@import`/`@font-face`.
 - Tauri config CSP for the Lessons surface (`connect-src`/`img-src`/`font-src`
   restricted to `'self'` + the asset protocol, no remote origin) — the runtime
   backstop for the offline guarantee (owner-decision D5, §11.2).
@@ -1993,7 +1995,7 @@ re-litigated:
   reference and **fails on a match**; a **Tauri CSP** backstop restricts
   `connect-src`/`img-src`/`font-src` for the Lessons surface to `'self'` + the
   asset protocol with no remote origin; and a CSS assertion confirms only the
-  **bundled Inter** font is used with **no** remote `@import`/`@font-face`. The
+  **system face** is used with **no** remote `@import`/`@font-face`. The
   grep guard is named authoritative (it fails the build on the actual shipped
   bytes); the backend network-stub take-test and the frontend grep guard
   together cover both halves of AC 4.2.2 / FR-OFF-1 / NFR-2.

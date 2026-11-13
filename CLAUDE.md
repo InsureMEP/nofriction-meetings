@@ -283,7 +283,8 @@ these rules apply.
 - **Controls don't inherit a font.** `button`, `input`, `select` and
   `textarea` keep the browser's control font unless told to inherit (the
   whole Record sheet rendered in it until 2026-11-12). The rule is in
-  `src/App.css`; Inter isn't bundled, so it shows only where installed.
+  `src/App.css`. The typeface is the system face (owner decision
+  2026-11-13): no font is bundled, so don't name one the app doesn't ship.
 - **Check the UI in the film harness before claiming a Mac UI change works:**
   `HARNESS_PORT=5194 npx vite --config marketing/film/mac-harness/vite.config.mjs`,
   then `http://127.0.0.1:5194/?cursor=1` (`&upnext=routine|calendar|call`).

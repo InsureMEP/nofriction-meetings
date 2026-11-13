@@ -1,7 +1,11 @@
 # noFriction — Design System
 
-**Version:** 1.3.0  
-**Last Updated:** 2026-11-12
+**Version:** 1.4.0  
+**Last Updated:** 2026-11-13
+
+> v1.4.0 (owner decisions, 2026-11-13): the typeface is the system face
+> (Inter was named but never bundled), and the 44px target rule is for
+> iPhone and iPad; the Mac keeps desktop control sizes.
 
 > v1.3.0 (v2, after `docs/design/FADELL_V2.md`): typed notes, Up next and
 > the notebook's page. No new top-level view and no new noun.
@@ -72,7 +76,7 @@
 ```css
 :root {
   /* ─── Font Family ─── */
-  --font-primary: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-primary: -apple-system, BlinkMacSystemFont, sans-serif;  /* the system face */
   --font-mono: 'JetBrains Mono', 'SF Mono', 'Menlo', monospace;
 
   /* ─── Font Sizes ─── */
@@ -100,8 +104,11 @@
 ### Rules
 - **One typeface.** `body` uses `--ds-font-primary`, and `button`, `input`,
   `select` and `textarea` inherit it (`src/App.css`); a control never keeps
-  the browser's control font. Inter isn't bundled: it shows where it is
-  installed, and the system face otherwise.
+  the browser's control font. It is the system face (owner decision
+  2026-11-13): the app bundles no font, so it looks the same on every Mac.
+  Don't name a face the app doesn't ship. (`--font-mono` still names
+  JetBrains Mono, which isn't bundled either; it shows where it is
+  installed.)
 - **Sentence case everywhere.** No `text-transform: uppercase`, no tracked
   all-caps labels. Caps read as a dashboard; this is a notebook.
 - Body text is 14px (`--text-base`), not 16px. This is a desktop app, not a website.
@@ -278,6 +285,10 @@ button says **Make lesson**, matching *Make notes* and *Make review guide*;
 - **Keyboard navigation:** Every interactive element is focusable and operable via keyboard.
 - **Focus indicators:** Visible focus ring (2px `--accent-primary`, 2px offset).
 - **Color contrast:** Minimum 4.5:1 for body text, 3:1 for large text.
-- **Touch targets:** Minimum 44px for interactive elements.
+- **Targets:** iPhone and iPad: at least 44pt. Mac: desktop control sizes
+  (top-bar tabs 30px, buttons 32–40px, switches 42×24); the 44px rule is
+  not for the pointer (owner decision 2026-11-13). A small mark still pads
+  its hit area: the tick beside an item is a 20px box with a 44px target
+  (`src/components/ItemCheck.css`).
 - **Screen readers:** Semantic HTML + ARIA landmarks for all major regions.
 - **Motion:** Respect `prefers-reduced-motion`. Disable animations when set.

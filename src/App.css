@@ -43,7 +43,7 @@
      ═══════════════════════════════════════════ */
 
   /* ─── DS: Typography ─── */
-  --ds-font-primary: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --ds-font-primary: -apple-system, BlinkMacSystemFont, sans-serif;
   --ds-font-mono: 'JetBrains Mono', 'SF Mono', 'Menlo', monospace;
   --ds-text-xs: 0.6875rem;
   --ds-text-sm: 0.8125rem;
@@ -99,8 +99,7 @@
   box-sizing: border-box;
 }
 
-/* One typeface (DESIGN.md): Inter where it is installed, the system face
-   otherwise. Controls don't inherit a font by default (they get the
+/* One typeface (DESIGN.md): the system face, on every Mac. Controls don't inherit a font by default (they get the
    browser's control font), so they are told to: a button reads like the
    text beside it. */
 button,
@@ -111,7 +110,7 @@ textarea {
 }
 
 body {
-  font-family: var(--ds-font-primary, 'Inter', -apple-system, BlinkMacSystemFont, sans-serif);
+  font-family: var(--ds-font-primary, -apple-system, BlinkMacSystemFont, sans-serif);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: var(--bg-main);
@@ -4930,7 +4929,7 @@ img.logo-icon {
   height: 100%;
   gap: 10px;
   color: rgba(255, 255, 255, 0.2);
-  font-family: 'Inter', -apple-system, sans-serif;
+  font-family: var(--ds-font-primary);
   font-size: 13px;
   font-style: italic;
   letter-spacing: 0.5px;
@@ -4978,7 +4977,7 @@ img.logo-icon {
 }
 
 .genie-transcript-text {
-  font-family: 'Inter', -apple-system, sans-serif;
+  font-family: var(--ds-font-primary);
   font-size: 13px;
   line-height: 1.55;
   color: rgba(255, 255, 255, 0.82);
@@ -5285,7 +5284,7 @@ img.logo-icon {
   --agency-text-primary: #ffffff;
   --agency-text-secondary: rgba(255, 255, 255, 0.45);
   --agency-font-mono: 'JetBrains Mono', monospace;
-  --agency-font-sans: 'Inter', -apple-system, sans-serif;
+  --agency-font-sans: var(--ds-font-primary);
 }
 
 /* ========================================

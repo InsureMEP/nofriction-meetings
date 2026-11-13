@@ -1,6 +1,6 @@
 /* Lessons subsystem (docs/LESSONS.md). Tokens from DESIGN.md only — never a
-   raw hex (except as a token fallback). The font is the app's bundled Inter via
-   the system stack; this file imports NO remote asset and declares NO remote
+   raw hex (except as a token fallback). The font is the system face
+   (DESIGN.md); this file imports NO remote asset and declares NO remote
    @font-face / @import, which the offline guard (scripts/check-lessons-offline.mjs)
    verifies on the compiled bundle (owner-decision D5, FR-OFF-2). */
 
@@ -10,7 +10,7 @@
     height: 100%;
     overflow: hidden;
     color: var(--text-primary, #f5f5f5);
-    font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: var(--ds-font-primary, -apple-system, BlinkMacSystemFont, sans-serif);
 }
 
 .lessons__header {

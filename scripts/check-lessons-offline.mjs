@@ -4,7 +4,7 @@
 // shipped bytes, not source intent) for any non-local http(s):// reference or
 // any url(...) that points at a remote host, and FAILS the build on a match.
 // It also asserts the Lessons CSS declares no remote @import / @font-face and
-// that every font-family resolves to the bundled Inter / system stack.
+// that every font-family resolves to the system stack (no font is bundled).
 //
 // Local/relative references are allow-listed: url(./…), url(../…), url(data:…),
 // url(#…) (SVG fragment refs), the Tauri asset protocol (tauri://,
@@ -157,21 +157,20 @@ for (const f of cssFiles) {
     for (const u of remoteUrlFns(text)) {
         errors.push(`${f}: remote url(...) in compiled Lessons CSS: ${u}`);
     }
-    // Every font-family must resolve to the bundled Inter / system stack —
+    // Every font-family must resolve to the system stack —
     // never a Google Fonts / CDN family loaded over the network.
     const famRe = /font-family\s*:\s*([^;}]+)/gi;
     let fam;
     while ((fam = famRe.exec(text))) {
         const value = fam[1].toLowerCase();
         const ok =
-            value.includes("inter") ||
             value.includes("-apple-system") ||
             value.includes("blinkmacsystemfont") ||
             value.includes("sans-serif") ||
             value.includes("inherit") ||
             value.includes("monospace");
         if (!ok) {
-            errors.push(`${f}: font-family does not resolve to the bundled Inter / system stack: ${fam[1].trim()}`);
+            errors.push(`${f}: font-family does not resolve to the system stack: ${fam[1].trim()}`);
         }
     }
 }
@@ -187,6 +186,6 @@ console.log(
         status: "PASS",
         guard: "Lessons frontend offline (owner-decision D5)",
         scanned: { jsChunks: jsFiles.length, cssFiles: cssFiles.length },
-        note: "No remote http(s)/url(...) references in the compiled Lessons bundle or CSS; fonts resolve to the bundled Inter / system stack.",
+        note: "No remote http(s)/url(...) references in the compiled Lessons bundle or CSS; fonts resolve to the system stack.",
     }),
 );
