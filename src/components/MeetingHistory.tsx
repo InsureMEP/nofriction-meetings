@@ -394,8 +394,9 @@ export function MeetingHistory({
                                                     <span className="class-tag" title={meeting.class_name}>{meeting.class_name}</span>
                                                 )}
                                             </div>
-                                            <div className="meeting-date">
-                                                {formatDate(meeting.started_at)} at {formatTime(meeting.started_at)}
+                                            {/* The day is the group's heading: the row says when in it */}
+                                            <div className="meeting-date" title={formatDate(meeting.started_at)}>
+                                                {formatTime(meeting.started_at)}
                                                 {meeting.duration_seconds ? <span> · {formatDuration(meeting.duration_seconds)}</span> : null}
                                             </div>
                                         </div>
