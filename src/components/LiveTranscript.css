@@ -206,3 +206,11 @@
   border-color: #404040;
   color: var(--text-primary, #f5f5f5);
 }
+
+/* Something is up next: the card, the promise and the plain Record button
+   share one column edge */
+.lt-empty.has-suggestion .nf-promise {
+  width: min(440px, 100%);
+  max-width: none;
+  margin-top: 2px;
+}

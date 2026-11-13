@@ -107,10 +107,13 @@ export function LiveTranscriptView({ transcripts, isRecording, onStartRecording,
 
     if (rows.length === 0) {
         return (
-            <div className="lt-empty">
-                <div className={`lt-empty__mark ${isRecording ? "is-listening" : ""}`}>
-                    <MicIcon size={28} strokeWidth={1.5} />
-                </div>
+            <div className={`lt-empty${idleExtra && !isRecording ? " has-suggestion" : ""}`}>
+                {/* With something up next, its card is the anchor: no second emblem above it */}
+                {!(idleExtra && !isRecording) && (
+                    <div className={`lt-empty__mark ${isRecording ? "is-listening" : ""}`}>
+                        <MicIcon size={28} strokeWidth={1.5} />
+                    </div>
+                )}
                 {/* Something is starting: that is the headline, and the promise follows it */}
                 {!(idleExtra && !isRecording) && <p className="lt-empty__title">{isRecording ? "Listening" : "Ready when you are"}</p>}
                 {!isRecording && idleExtra}
@@ -127,7 +130,8 @@ export function LiveTranscriptView({ transcripts, isRecording, onStartRecording,
                         type="button"
                         title="⌘N records with your last type and length"
                     >
-                        <span className="lt-empty__action-dot" aria-hidden />
+                        {/* One red dot per screen: the suggestion's button has it */}
+                        {!idleExtra && <span className="lt-empty__action-dot" aria-hidden />}
                         {idleExtra ? "Record something else" : "Record"}
                     </button>
                 )}
