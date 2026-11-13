@@ -270,7 +270,8 @@ function ItemRow({
                 aria-checked={item.done}
                 className="nb-item__check"
                 onClick={() => onTick(item, !item.done)}
-                aria-label={`${item.done ? "Not done" : "Done"}: ${item.task}`}
+                aria-label={item.task}
+                title={item.done ? "Mark as not done" : "Mark as done"}
             >
                 {item.done && <CheckIcon size={12} strokeWidth={3} />}
             </button>

@@ -203,7 +203,8 @@
   margin-top: 1px;
   padding: 0;
   border-radius: 6px;
-  border: 1.5px solid #525252;
+  /* 3:1 against the card, so the box reads as a control */
+  border: 1.5px solid #737373;
   background: none;
   color: #0a0a0a;
   cursor: pointer;
