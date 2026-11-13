@@ -1,0 +1,105 @@
+/* On the screens (ScreenReadings.tsx): what the AI read from a recording's
+   screens, and the confirmation before any picture is sent. Neutral: yellow
+   is for actions, focus and the ★ mark (DESIGN.md). */
+
+.sr__empty,
+.sr__status {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary, #a3a3a3);
+}
+
+.mn-section ol.sr__list {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.sr__row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 8px 0;
+}
+
+.sr__row + .sr__row {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.mn-section .sr__body p {
+  margin: 0;
+}
+
+.sr__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+/* What kind of screen it was: said quietly, before its title */
+.sr__kind {
+  padding: 1px 8px;
+  border: 1px solid var(--border-color, #262626);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--text-secondary, #a3a3a3);
+}
+
+.mn-section .sr__body ul {
+  margin: 4px 0 0;
+}
+
+.mn-section .sr__body ul.sr__terms {
+  color: var(--text-secondary, #a3a3a3);
+}
+
+.mn-section .sr__body p.sr__exact {
+  margin-top: 6px;
+  font-family: var(--ds-font-mono, 'SF Mono', Menlo, monospace);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/* The confirmation */
+.sr-confirm {
+  max-width: 520px;
+}
+
+.sr-confirm__copy {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.sr-confirm__list {
+  max-height: 180px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--border-color, #262626);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.sr-confirm__list li {
+  display: flex;
+  gap: 12px;
+  padding: 2px 0;
+}
+
+.sr-confirm__time {
+  min-width: 48px;
+  font-family: var(--ds-font-mono, 'SF Mono', Menlo, monospace);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary, #a3a3a3);
+}
+
+.sr-confirm__app {
+  color: var(--text-secondary, #a3a3a3);
+}

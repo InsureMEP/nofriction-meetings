@@ -94,6 +94,8 @@ pub mod markers;
 pub mod quick_note;
 // The prompt library for reading a screen the user chose to send (screen_prompts.rs)
 pub mod screen_prompts;
+// Read the screens: the one click that sends pictures to the user's AI
+pub mod screen_reading;
 pub mod study;
 // Interactive education: portable offline lesson sets (docs/LESSONS.md)
 pub mod lessons;
@@ -857,6 +859,9 @@ pub fn run() {
             commands::set_meeting_report_prompt,
             commands::generate_meeting_report,
             commands::fill_in_notes,
+            screen_reading::commands::plan_screen_reading,
+            screen_reading::commands::read_screens,
+            screen_reading::commands::get_screen_readings,
             commands::get_ai_automation,
             commands::draft_followup_email,
             commands::set_ai_automation,

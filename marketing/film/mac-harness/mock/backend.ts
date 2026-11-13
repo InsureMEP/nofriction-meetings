@@ -534,6 +534,68 @@ function runNotes(id: string): Promise<null> {
     });
 }
 
+// ── Read the screens (src-tauri/src/screen_reading.rs) ─────────────────
+
+interface DemoScreen {
+    state_id: string;
+    ms: number;
+    kind: string;
+    app_name: string;
+    /** What the AI reads from it; "" when it has nothing to keep */
+    text: string;
+}
+
+const DEMO_SCREENS: Record<string, DemoScreen[]> = {
+    "m-bio-membrane": [
+        { state_id: "scr-1", ms: 4 * 60_000, kind: "Slide", app_name: "Keynote", text: "Slide: The fluid mosaic model\n- The membrane is a phospholipid bilayer with proteins moving in it.\n- Cholesterol sits between the tails and steadies it.\nTerms:\n- Amphipathic: having a water-loving and a water-fearing end" },
+        { state_id: "scr-2", ms: 16 * 60_000 + 5_000, kind: "Slide", app_name: "Keynote", text: "Slide: Four parts of the membrane\n- Phospholipids\n- Proteins\n- Cholesterol\n- Carbohydrate chains" },
+        { state_id: "scr-3", ms: 24 * 60_000, kind: "Web page", app_name: "Safari", text: "" },
+        { state_id: "scr-4", ms: 38 * 60_000 + 50_000, kind: "Slide", app_name: "Keynote", text: "Slide: The sodium-potassium pump\n- Three sodium ions out, two potassium ions in, one ATP used.\nExact wording: 3 Na+ out / 2 K+ in / 1 ATP" },
+        { state_id: "scr-5", ms: 47 * 60_000 + 40_000, kind: "Document", app_name: "Preview", text: "Document: Syllabus, week 7\n- Quiz on membranes next Wednesday.\n- Read chapter 7, sections 1 to 3." },
+    ],
+};
+const screensRead = new Map<string, Map<string, string>>();
+const SCREEN_STEP_MS = 600;
+
+function screenPlan(id: string) {
+    const all = DEMO_SCREENS[id] ?? [];
+    const read = screensRead.get(id) ?? new Map<string, string>();
+    return {
+        send: all.filter((s) => !read.has(s.state_id)).slice(0, 12).map(({ state_id, ms, kind, app_name }) => ({ state_id, ms, kind, app_name })),
+        total: all.length,
+        already: read.size,
+        destination: !AI_NONE ? "ai.example.com" : null,
+        model: !AI_NONE ? "vision-model" : null,
+        local: false,
+        blocked: !AI_NONE ? null : "Reading a screen needs a model that can read images. Choose one under Settings → AI → Screens.",
+    };
+}
+
+function readScreens(id: string, expect: number): Promise<{ read: number; skipped: number; gone: number }> {
+    const plan = screenPlan(id);
+    if (plan.send.length !== expect) return Promise.reject("The screens changed since you looked. Check the number again.");
+    const all = DEMO_SCREENS[id] ?? [];
+    const read = screensRead.get(id) ?? new Map<string, string>();
+    screensRead.set(id, read);
+    return new Promise((resolve) => {
+        plan.send.forEach((item, i) =>
+            window.setTimeout(() => {
+                emitEvent("screens_progress", { meetingId: id, done: i, total: plan.send.length });
+                read.set(item.state_id, all.find((s) => s.state_id === item.state_id)?.text ?? "");
+            }, i * SCREEN_STEP_MS),
+        );
+        window.setTimeout(() => {
+            const texts = plan.send.map((item) => read.get(item.state_id) ?? "");
+            resolve({ read: texts.filter(Boolean).length, skipped: texts.filter((t) => !t).length, gone: 0 });
+        }, plan.send.length * SCREEN_STEP_MS);
+    });
+}
+
+function screenReadings(id: string) {
+    const read = screensRead.get(id) ?? new Map<string, string>();
+    return (DEMO_SCREENS[id] ?? []).filter((s) => read.get(s.state_id)).map((s) => ({ state_id: s.state_id, ms: s.ms, text: read.get(s.state_id) }));
+}
+
 // ── The notebook page (src-tauri/src/notebook_page.rs) ──────────────────
 
 const itemKey = (task: string) =>
@@ -1044,6 +1106,14 @@ function handle(cmd: string, args: Args): unknown {
             return [{ id: "builtin", name: "MacBook Pro Microphone", is_default: true, is_input: true }];
 
         // AI (Pro in the Mac App Store build: ai::client::complete → PRO_REQUIRED)
+        // Read the screens: looking sends nothing; reading is an AI feature
+        case "plan_screen_reading":
+            return screenPlan(a.meetingId);
+        case "get_screen_readings":
+            return screenReadings(a.meetingId);
+        case "read_screens":
+            if (!isPro) throw "PRO_REQUIRED: noFriction Pro unlocks the AI features.";
+            return readScreens(a.meetingId, a.expect);
         case "generate_meeting_report":
         case "fill_in_notes":
         case "draft_followup_email":

@@ -295,7 +295,8 @@ def audit(root):
     # An image leaves the device only from a function a click reaches. Every
     # file that builds an image message is listed here; a new one is added on
     # purpose, with the click that leads to it (docs/AI_PROVIDERS.md).
-    image_senders = {'src-tauri/src/vlm_client.rs', 'src-tauri/src/ai/client.rs'}
+    # screen_reading.rs: Read the screens, after a confirmation that shows the count
+    image_senders = {'src-tauri/src/vlm_client.rs', 'src-tauri/src/ai/client.rs', 'src-tauri/src/screen_reading.rs'}
     for path in sorted((root / 'src-tauri/src').rglob('*.rs')):
         rel = path.relative_to(root).as_posix()
         if rel in image_senders:

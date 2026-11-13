@@ -794,6 +794,46 @@ async fn screen_delete_removes_files_derived_files_and_rows() {
     assert_eq!(count(&f, "SELECT COUNT(*) FROM redactions").await, 0, "Delete leaves no trace");
 }
 
+/// What Read the screens kept (screen_reading.rs) is a text snapshot on the
+/// screen, so the screen's purge is its purge: no purge filters by source.
+#[tokio::test]
+async fn what_the_ai_read_from_a_screen_goes_with_the_screen() {
+    let f = setup().await;
+    let a = add_screen(&f, "a", 10).await;
+    let b = add_screen(&f, "b", 40).await;
+    let c = add_screen(&f, "c", 70).await;
+    for s in [&a, &b, &c] {
+        f.db.add_text_snapshot_full(
+            &format!("read-{}", s),
+            None,
+            Some(s),
+            Some("m1"),
+            Utc::now(),
+            "Slide: Q3 plan\n- Wire 2M to account 4471",
+            "h",
+            1.0,
+            crate::screen_reading::SOURCE,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    }
+    let readings = |id: &str| format!("SELECT COUNT(*) FROM text_snapshots WHERE source = 'screen_reading' AND state_id = '{}'", id);
+    // Deleted: gone once the undo window closes
+    let p = request_delete_screens(f.db.pool(), &f.env, "m1", &[a.clone()]).await.unwrap();
+    commit_pending(f.db.pool(), &f.env, &p.id).await.unwrap().unwrap();
+    assert_eq!(count(&f, &readings(&a)).await, 0);
+    assert_eq!(count(&f, &readings(&b)).await, 1, "another screen's reading is kept");
+    // Struck: gone at once
+    strike_screens(f.db.pool(), &f.env, "m1", &[b.clone()], None).await.unwrap();
+    assert_eq!(count(&f, &readings(&b)).await, 0);
+    assert_eq!(count(&f, &readings(&c)).await, 1);
+    // What is left to read is only the screen that is left
+    let left = crate::screen_reading::readings(f.db.pool(), "m1").await.unwrap();
+    assert_eq!(left.iter().map(|r| r.state_id.clone()).collect::<Vec<_>>(), vec![c]);
+}
+
 #[tokio::test]
 async fn screen_strike_leaves_only_a_marker() {
     let f = setup().await;
