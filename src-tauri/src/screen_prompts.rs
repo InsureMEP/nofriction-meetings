@@ -297,7 +297,7 @@ pub fn never_sent(app_name: Option<&str>, window_title: Option<&str>) -> bool {
     let app_raw = app_name.unwrap_or("").trim();
     let title_raw = window_title.unwrap_or("").trim();
     // noFriction's own window: the recording's notes, not a screen of it
-    if app_raw.eq_ignore_ascii_case("noFriction") {
+    if app_raw.eq_ignore_ascii_case(crate::privacy_filter::OWN_APP) {
         return true;
     }
     // Password managers and Terminal (the capture filter's own list)

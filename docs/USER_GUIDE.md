@@ -560,8 +560,9 @@ few lines of code). Click a time to see that screen in Rewind.
   doesn't mark private windows in their titles).
   - If you recorded one window, it goes by that window.
   - If you recorded your whole display, it goes by the app that was in
-    front on that display at that moment (noFriction's own window doesn't
-    count). Something private that was only visible behind another window
+    front on that display at that moment. noFriction's own window doesn't
+    count, unless it filled the display: that picture is of your notes and
+    is left out. Something private that was only visible behind another window
     is not recognised. Neither is anything in a photo or in a screenshot
     from your iPhone, or in a whole-display recording made before this
     version, which didn't note what was in front. Those pictures are

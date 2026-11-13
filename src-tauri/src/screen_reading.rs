@@ -1609,7 +1609,8 @@ mod tests {
         assert_eq!(forget_skipped(pool, "m1").await.unwrap(), 2);
         let p = plan(pool, "m1").await.unwrap();
         assert_eq!((p.send.len(), p.already, p.skipped), (2, 0, 0));
-        assert_eq!(n, 1);
+        let captured: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM text_snapshots WHERE snapshot_id = 'ocr1'").fetch_one(pool).await.unwrap();
+        assert_eq!(captured, 1, "text captured from the screen is not a skipped reading");
         run(&Mock::new(vec![Ok(SLIDE)]), &f, &["s0"]).await.unwrap();
         assert_eq!(forget_skipped(pool, "m1").await.unwrap(), 0, "a reading with text is not a skip");
         assert_eq!(readings(pool, "m1").await.unwrap().len(), 1);
@@ -1624,8 +1625,7 @@ mod tests {
             .execute(pool)
             .await
             .unwrap();
-        // In front: Keynote, Mail, a private browser window, and (an older capture) nothing recorded.
-        // noFriction's own window is never recorded as "in front" (privacy_filter::front_window_on)
+        // In front: Keynote, Mail, a private browser window, and (an older capture) nothing recorded
         for (id, app, title) in [("s0", "Keynote", "Lecture 7"), ("s1", "Mail", "Inbox"), ("s2", "Safari", "Private Browsing")] {
             f.db.set_screen_state_front(id, app, title).await.unwrap();
         }
@@ -1639,6 +1639,11 @@ mod tests {
         let s = run(&m, &f, &["s0", "s1", "s2", "s3"]).await.unwrap();
         assert_eq!(s, Summary { read: 2, gone: 2, ..Default::default() });
         assert_eq!(m.sent_files(), vec!["s0.png", "s3.png"]);
+        // A display that noFriction itself filled is a picture of the notes: left out
+        forget(pool, "m1", "s3").await.unwrap();
+        f.db.set_screen_state_front("s3", crate::privacy_filter::OWN_APP, "").await.unwrap();
+        let p = plan(pool, "m1").await.unwrap();
+        assert_eq!((p.send.len(), p.left_out), (0, 3));
         // What was in front is never in what is sent
         for (_, prompt) in m.sent.lock().iter() {
             assert!(!prompt.contains("Keynote") && !prompt.contains("Lecture 7") && !prompt.contains("Built-in"));

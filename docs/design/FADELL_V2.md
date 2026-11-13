@@ -674,10 +674,11 @@ next picture.
     Lecture 4" in Keynote is a slide); a title decides only for a browser
     tab or an unknown app.
   - A capture of a whole display, which is the default, has no app. The
-    capture records which app and window were in front on that display,
-    never one of noFriction's own (`privacy_filter::front_window_on`;
-    `screen_states.front_app`, `front_title`; never sent), and the display
-    is left out when that one is private. Something private that was only
+    capture records which app and window were in front on that display
+    (`privacy_filter::front_window_on`; `screen_states.front_app`,
+    `front_title`; never sent), and the display is left out when that one
+    is private. One of noFriction's own windows is passed over unless it
+    fills the display; then the picture is of noFriction and is left out. Something private that was only
     visible behind another window is not recognised; nor is anything in a
     whole-display screen recorded before this was added, a screenshot from
     the iPhone, or a photo.
@@ -796,7 +797,12 @@ in known apps; and "in front" was the front window of any display, not the
 one captured. All three are fixed, with the smaller ones: an endpoint's
 failure on the first picture now names the screen, pictures the AI kept
 nothing from can be offered again, iPhone screenshots are named, a call
-app's chat view is left out, and the guard's checks are pinned to counts.
+app's window is left out when its title says Chat or Activity, and the
+guard's checks are pinned to counts. A last check of that round found one
+more: with noFriction's own windows passed over, a display that noFriction
+itself filled was offered, or judged by a window hidden behind it. A
+display it fills is now left out, and a window counts as on a display by
+the part of it that shows there, not by its centre.
 
 **Verified.** Unit tests: the library (one prompt per kind, the kind from
 app and window, the shared rules in every prompt, the prompt carrying

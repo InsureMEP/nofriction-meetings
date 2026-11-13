@@ -232,19 +232,38 @@ pub fn should_skip_capture() -> bool {
     false
 }
 
-/// A window counts as being on a display when its centre is inside the
-/// display and it is big enough to be a window someone is looking at
-/// (helper windows of a few points are skipped). Rectangles are
-/// (x, y, width, height) in the window server's global points.
-fn window_is_on(window: (f64, f64, f64, f64), display: (f64, f64, f64, f64)) -> bool {
+/// How much of a window is on a display: the width and height of the part
+/// they share. Rectangles are (x, y, width, height) in the window server's
+/// global points.
+fn shared(window: (f64, f64, f64, f64), display: (f64, f64, f64, f64)) -> (f64, f64) {
     let (x, y, w, h) = window;
     let (dx, dy, dw, dh) = display;
-    if w < 80.0 || h < 60.0 {
-        return false;
-    }
-    let (cx, cy) = (x + w / 2.0, y + h / 2.0);
-    cx >= dx && cx < dx + dw && cy >= dy && cy < dy + dh
+    let width = (x + w).min(dx + dw) - x.max(dx);
+    let height = (y + h).min(dy + dh) - y.max(dy);
+    (width.max(0.0), height.max(0.0))
 }
+
+/// A window counts as being on a display when a part of it that someone
+/// could be looking at is there: at least 80 by 60 points. A window lying
+/// across two displays is on both (which errs toward leaving a screen
+/// out); a helper window of a few points, or a sliver at the edge, is on
+/// neither.
+fn window_is_on(window: (f64, f64, f64, f64), display: (f64, f64, f64, f64)) -> bool {
+    let (width, height) = shared(window, display);
+    width >= 80.0 && height >= 60.0
+}
+
+/// The window takes up most of the display (60% or more of its area).
+fn window_fills(window: (f64, f64, f64, f64), display: (f64, f64, f64, f64)) -> bool {
+    let (width, height) = shared(window, display);
+    let area = display.2 * display.3;
+    area > 0.0 && (width * height) / area >= 0.6
+}
+
+/// The name `front_window_on` gives when what is in front of a display is
+/// noFriction itself, filling it (screen_prompts.rs `never_sent` leaves
+/// that screen out: it is a picture of the user's notes).
+pub const OWN_APP: &str = "noFriction";
 
 /// The app and title of the frontmost window on one display, for a capture
 /// of that whole display (which has no app of its own). Kept beside the
@@ -252,8 +271,10 @@ fn window_is_on(window: (f64, f64, f64, f64), display: (f64, f64, f64, f64)) -> 
 /// the screens (screen_prompts.rs `never_sent`).
 ///
 /// "In front" is the first normal window, front to back, that is on this
-/// display, visible, and not one of noFriction's own: the user's notes
-/// window being in front says nothing about what else the display showed.
+/// display and visible. One of noFriction's own windows is passed over
+/// (the notes window being in front says nothing about what else the
+/// display showed) unless it fills the display: then the picture is of
+/// noFriction, and that is what is returned (`OWN_APP`, no title).
 /// None when there is no such window or the window server can't say; the
 /// title is empty without Screen Recording permission.
 #[cfg(target_os = "macos")]
@@ -294,19 +315,27 @@ pub fn front_window_on(display_id: u32) -> Option<(String, String)> {
         let dict: CFDictionary<CFString, CFType> =
             unsafe { CFDictionary::wrap_under_get_rule(raw as CFDictionaryRef) };
         let num = |k: &CFString| dict.find(k).and_then(|v| v.downcast::<CFNumber>());
-        // A normal window (not a menu, the Dock or an overlay), of another app, that can be seen
-        if num(&k_layer).and_then(|n| n.to_i64()) != Some(0) || num(&k_pid).and_then(|n| n.to_i64()) == Some(me) {
+        // A normal window (not a menu, the Dock or an overlay) that can be seen
+        if num(&k_layer).and_then(|n| n.to_i64()) != Some(0) {
             continue;
         }
         if num(&k_alpha).and_then(|n| n.to_f64()).is_some_and(|a| a < 0.05) {
             continue;
         }
-        let bounds = dict.find(&k_bounds).and_then(|v| {
-            let d: CFDictionary = unsafe { CFDictionary::wrap_under_get_rule(v.as_CFTypeRef() as CFDictionaryRef) };
-            CGRect::from_dict_representation(&d)
-        });
+        let bounds = dict
+            .find(&k_bounds)
+            .and_then(|v| v.downcast::<CFDictionary>())
+            .and_then(|d| CGRect::from_dict_representation(&d));
         let Some(b) = bounds else { continue };
-        if !window_is_on((b.origin.x, b.origin.y, b.size.width, b.size.height), display) {
+        let window = (b.origin.x, b.origin.y, b.size.width, b.size.height);
+        if !window_is_on(window, display) {
+            continue;
+        }
+        if num(&k_pid).and_then(|n| n.to_i64()) == Some(me) {
+            // Our own window: it is what the picture shows only if it fills the display
+            if window_fills(window, display) {
+                return Some((OWN_APP.to_string(), String::new()));
+            }
             continue;
         }
         let text = |k: &CFString| {
@@ -362,7 +391,7 @@ mod tests {
     }
 
     #[test]
-    fn a_window_is_on_the_display_its_centre_is_in() {
+    fn a_window_is_on_every_display_it_can_be_seen_on() {
         let main = (0.0, 0.0, 1512.0, 982.0);
         let projector = (1512.0, 0.0, 1920.0, 1080.0);
         // A window in the middle of the main display
@@ -371,14 +400,32 @@ mod tests {
         // Full screen on the projector
         assert!(window_is_on((1512.0, 0.0, 1920.0, 1080.0), projector));
         assert!(!window_is_on((1512.0, 0.0, 1920.0, 1080.0), main));
-        // Dragged across the edge: it belongs to the display its centre is on
+        // Lying across the edge: on both, wherever its centre is
         assert!(window_is_on((1000.0, 100.0, 800.0, 600.0), main));
-        assert!(window_is_on((1200.0, 100.0, 800.0, 600.0), projector));
+        assert!(window_is_on((1000.0, 100.0, 800.0, 600.0), projector));
+        // Mostly off the right edge of the only display, still in front of it
+        assert!(window_is_on((1200.0, 100.0, 800.0, 600.0), main));
+        // Only a sliver shows: not something on that display
+        assert!(!window_is_on((1450.0, 100.0, 800.0, 600.0), main));
         // A display above the main one has negative coordinates
         assert!(window_is_on((100.0, -900.0, 800.0, 600.0), (0.0, -1080.0, 1920.0, 1080.0)));
         // A helper window of a few points isn't something on screen
         assert!(!window_is_on((10.0, 10.0, 1.0, 1.0), main));
         assert!(!window_is_on((10.0, 10.0, 300.0, 20.0), main));
+    }
+
+    #[test]
+    fn our_own_window_is_the_picture_only_when_it_fills_the_display() {
+        let main = (0.0, 0.0, 1512.0, 982.0);
+        // Full screen, or maximised under the menu bar
+        assert!(window_fills((0.0, 0.0, 1512.0, 982.0), main));
+        assert!(window_fills((0.0, 38.0, 1512.0, 944.0), main));
+        // A notes window beside the slides: the display shows more than noFriction
+        assert!(!window_fills((0.0, 38.0, 700.0, 944.0), main));
+        assert!(!window_fills((900.0, 300.0, 500.0, 400.0), main));
+        // Filling another display says nothing about this one
+        assert!(!window_fills((1512.0, 0.0, 1920.0, 1080.0), main));
+        assert!(!window_fills((0.0, 0.0, 100.0, 100.0), (0.0, 0.0, 0.0, 0.0)));
     }
 
     /// The lookup runs on every captured frame of a whole display, so it
@@ -391,9 +438,8 @@ mod tests {
     fn the_front_window_lookup_runs_against_the_window_server() {
         let main = core_graphics::display::CGDisplay::main().id;
         for _ in 0..50 {
-            let front = front_window_on(main);
-            // Whatever is in front, it is never this process
-            if let Some((app, _)) = &front {
+            // Whatever it answers, it answers: no crash, no hang, a sane name
+            if let Some((app, _)) = front_window_on(main) {
                 assert!(app.len() < 400);
             }
         }

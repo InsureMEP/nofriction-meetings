@@ -207,8 +207,9 @@ these rules apply.
     key files, noFriction's own window);
     that is decided on the Mac, not left to the model. It works from the
     window a screen was captured from; a whole-display capture is judged
-    by the window that was in front on that display, never one of
-    noFriction's own (`privacy_filter::front_window_on`, stored in
+    by the window that was in front on that display; one of noFriction's
+    own is passed over unless it fills the display, which is then left
+    out (`privacy_filter::front_window_on`, stored in
     `screen_states.front_app` / `front_title` at capture, never sent).
     Screens recorded before that have no such note. A private window that was
     only visible behind another can't be recognised, so the confirmation

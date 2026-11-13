@@ -158,7 +158,7 @@ export function lookFirstLine(plan: ScreenPlan): string | null {
 
 /** Pictures that are never sent, and why. */
 export function leftOutLine(n: number): string {
-    return `${n} ${n === 1 ? "is" : "are"} never sent because ${n === 1 ? "it looks" : "they look"} private (mail, messages, passwords, a terminal or private browsing).`;
+    return `${n} ${n === 1 ? "is" : "are"} never sent because ${n === 1 ? "it looks" : "they look"} private (mail, messages, passwords, a terminal, private browsing, or noFriction itself).`;
 }
 
 /**

@@ -36,7 +36,11 @@ import {
 } from "../lib/screenReading";
 import "./ScreenReadings.css";
 
-function failure(e: unknown): string {
+/**
+ * Why it didn't work, in words. `midRun`: the run had already sent
+ * pictures when this stopped it, so it must not say nothing was sent.
+ */
+function failure(e: unknown, midRun = false): string {
     if (isNoProviderError(e)) return "Reading a screen needs an AI that can read images. Set one up under Settings → AI.";
     const cls = aiErrorClass(e);
     // Words in an endpoint's error are not the app's own "ask first" answer:
@@ -48,7 +52,7 @@ function failure(e: unknown): string {
         case "pro_required":
             return "Reading screens is part of noFriction Pro.";
         case "consent_required":
-            return "Reading screens needs your permission to send to your AI endpoint. Nothing was sent.";
+            return `Reading screens needs your permission to send to your AI endpoint. ${midRun ? "No more pictures were sent." : "Nothing was sent."}`;
         case "vision_unavailable":
             return "Reading a screen needs a model that can read images. Choose one under Settings → AI → Screens.";
         default:
@@ -242,7 +246,7 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
             );
             const where = summary.stopped_at_ms !== null ? ` at ${clock(summary.stopped_at_ms)}` : "";
             outcome = summary.stopped
-                ? { text: `${summaryLine(summary)} It stopped${where}: ${failure(summary.stopped)}`, error: true }
+                ? { text: `${summaryLine(summary)} It stopped${where}: ${failure(summary.stopped, true)}`, error: true }
                 : { text: summaryLine(summary), error: false };
         } catch (e) {
             outcome = { text: failure(e), error: true };
@@ -317,7 +321,7 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
             {readings.length === 0 ? (
                 <p className="sr__empty">
                     {plan.total === 0
-                        ? `This recording's screens look private (mail, messages, passwords, a terminal or private browsing), so they are never sent to an AI.`
+                        ? `This recording's screens look private (mail, messages, passwords, a terminal, private browsing, or noFriction itself), so they are never sent to an AI.`
                         : done
                           ? "The screens were read and had nothing to keep."
                           : "Slides, documents, whiteboards and photos from this recording can be read by your AI and kept here as text. Nothing is sent until you choose to."}

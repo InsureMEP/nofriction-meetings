@@ -100,9 +100,9 @@ test("the confirmation says what is left out", () => {
     // Private ones are counted apart and said plainly
     assert.equal(
         confirmScope(plan({ total: 1, more: 0, left_out: 3 })),
-        "This recording has 1 picture that can be read. 3 are never sent because they look private (mail, messages, passwords, a terminal or private browsing).",
+        "This recording has 1 picture that can be read. 3 are never sent because they look private (mail, messages, passwords, a terminal, private browsing, or noFriction itself).",
     );
-    assert.equal(leftOutLine(1), "1 is never sent because it looks private (mail, messages, passwords, a terminal or private browsing).");
+    assert.equal(leftOutLine(1), "1 is never sent because it looks private (mail, messages, passwords, a terminal, private browsing, or noFriction itself).");
 });
 
 test("the button goes away only when nothing readable is left", () => {
