@@ -511,33 +511,51 @@ AI can be wrong. Check names, numbers and dates before you send anything.
 ### Read the screens (Mac)
 
 If a recording has screens (slides, a document, a whiteboard that was on
-your Mac's screen), **Notes** has **On the screens**. Press **Read the
-screens…** and a confirmation shows:
+your Mac's screen) or photos from your iPhone, **Notes** has **On the
+screens**. Press **Read the screens…** and a confirmation shows:
 
-- how many screens will be sent, and to which address;
-- each one, with its time, what kind of screen it is and the app;
-- how many screens the recording has, and how many were read before.
+- where the pictures will go (the address of your AI, and the model);
+- every picture that would be sent, with its time, what kind it is and
+  the app, each with a tick box;
+- how many pictures the recording has, how many were read before, and how
+  many are never sent because they look private.
 
-Press **Send 12 screens** (the button says the number) and each screen goes
-to your AI as one picture, made smaller, with what was being said then.
-What the AI reads from it is kept as text under **On the screens**: a
-slide's title and points, a document's statements, the terms it defines,
-and wording kept exactly (a formula, a few lines of code). Click a time to
-see that screen in Rewind.
+Untick any picture you don't want sent. Press **Send 12 pictures** (the
+button says the number) and each ticked picture goes to your AI, made
+smaller, with a fixed instruction for its kind. Nothing else from the
+recording goes with it: no transcript, no title. What the AI reads is kept
+as text under **On the screens**: a slide's title and points, a document's
+statements, the terms it defines, and wording kept exactly (a formula, a
+few lines of code). Click a time to see that screen in Rewind.
 
-- **Nothing is sent by itself.** A screen leaves your Mac only when you
-  press that button, and only the screens the confirmation listed.
+- **Nothing is sent by itself.** A picture leaves your Mac only when you
+  press that button, only the pictures you left ticked, and only to the
+  address the confirmation named. If your AI settings change before or
+  while it runs, it stops and sends nothing more.
 - **At most 12 a time.** The screens showing when you marked a moment or
   typed a note go first; the rest are spread over the recording. Press
   **Read the screens…** again for more. A screen is read once.
+- **Stop** ends it before the next picture. The one being read has already
+  been sent.
 - **It needs a model that can read images** (Settings → AI → Screens).
   Apple's on-device model can't read pictures, so nothing is sent with it.
-- **Private screens.** The AI is told to keep nothing from a screen that
-  shows passwords, messages, email or banking, and never to describe or
-  name people. It still receives the picture, so don't send a recording's
-  screens to an AI you wouldn't show them to.
-- Deleting or striking a screen removes what was read from it. What was
-  read is not used by Make notes or Fill in the blanks.
+  If the AI refuses or fails, it stops after that one picture, and the
+  pictures it didn't answer about can be sent again.
+- **Private screens are never sent.** A window of Mail, Messages or
+  another mail or chat app, a password app, a terminal, a private or
+  incognito browser window, a tab on a sign-in page or a bank, a file that
+  holds keys, and noFriction's own window are left out on your Mac; they
+  aren't in the list. This works from the app and window a screen was
+  captured from. If you record your whole display, noFriction doesn't know
+  which app was showing, so look at the pictures in the confirmation and
+  untick any you wouldn't show your AI.
+- The AI is also told to keep nothing from a picture that shows passwords,
+  messages, email or banking, never to describe or name people, and never
+  to read a call's chat. It still receives the picture.
+- Deleting or striking a screen removes what was read from it. Nothing can
+  be read while a Delete is still in its undo time. What was read is not
+  used by Make notes, Fill in the blanks, Links, Chat or the Obsidian
+  export.
 - Part of noFriction Pro. Check what it wrote against the screen.
 
 ### Fill in the blanks

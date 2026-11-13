@@ -112,17 +112,18 @@ export function AiConsentModal() {
                         {destination && destination.name !== "Custom (OpenAI-compatible)" ? ` (${destination.name})` : ""}.
                         If you allow it, noFriction sends the transcripts, your marks and typed notes, titles,
                         attendee names and email/company details needed for AI features directly to this endpoint,
-                        using your optional API key. A screen is sent only when you press Read the screens, which shows how many first.
+                        using your optional API key. A picture of a screen is sent only when you press Read the screens, which shows each one first.
                         Its operator's privacy policy and terms apply.
                         This is optional. You can use Apple on-device or a local endpoint instead.
                         noFriction offers no hosted models and receives none of this content.
                     </p>
                     {error && <p className="ai-error-text">{error}</p>}
                     <div className="ai-consent-actions">
-                        <button className="btn-secondary" onClick={() => finish(false)} disabled={busy}>
+                        {/* The keyboard starts on Not now: a stray Enter never allows a send */}
+                        <button className="btn-secondary" onClick={() => finish(false)} disabled={busy} autoFocus>
                             Not now
                         </button>
-                        <button className="btn-primary" onClick={allow} disabled={busy || !endpoint} autoFocus>
+                        <button className="btn-primary" onClick={allow} disabled={busy || !endpoint}>
                             {busy ? "Saving…" : "Allow"}
                         </button>
                     </div>

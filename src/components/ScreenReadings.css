@@ -65,21 +65,39 @@
   overflow-wrap: anywhere;
 }
 
-/* The confirmation */
-.sr-confirm {
-  max-width: 520px;
+/* While it reads: what it is on, and the way to stop it */
+.sr__running {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 8px;
 }
 
-.sr-confirm__copy {
+.sr__running .sr__status {
+  margin: 0;
+}
+
+/* The confirmation: every picture that would go, each with its tick */
+.sr-confirm {
+  max-width: 640px;
+}
+
+/* Two classes: the app's modal and notes styles set paragraph and list
+   margins of their own */
+.sr-confirm .sr-confirm__copy {
   margin: 0 0 12px;
   font-size: 14px;
   line-height: 1.55;
 }
 
-.sr-confirm__list {
-  max-height: 180px;
+.sr-confirm ul.sr-confirm__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
+  gap: 12px 8px;
+  align-items: start;
+  max-height: min(336px, 42vh);
   margin: 0 0 12px;
-  padding: 8px 12px;
+  padding: 8px;
   overflow-y: auto;
   list-style: none;
   border: 1px solid var(--border-color, #262626);
@@ -87,19 +105,65 @@
   font-size: 13px;
 }
 
-.sr-confirm__list li {
+.sr-confirm ul.sr-confirm__grid > li {
+  margin: 0;
+  padding: 0;
+}
+
+.sr-pick label {
   display: flex;
-  gap: 12px;
-  padding: 2px 0;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.sr-pick img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border: 1px solid var(--border-color, #262626);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Unticked: it stays in view, plainly not going */
+.sr-pick.is-off img {
+  opacity: 0.3;
+}
+
+.sr-pick.is-off .sr-pick__line {
+  color: var(--text-secondary, #a3a3a3);
+  text-decoration: line-through;
+}
+
+.sr-pick__line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sr-pick input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent-primary, #facc15);
+}
+
+.sr-pick input[type='checkbox']:focus-visible {
+  outline: 2px solid var(--accent-primary, #facc15);
+  outline-offset: 2px;
 }
 
 .sr-confirm__time {
-  min-width: 48px;
   font-family: var(--ds-font-mono, 'SF Mono', Menlo, monospace);
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary, #a3a3a3);
 }
 
 .sr-confirm__app {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-secondary, #a3a3a3);
 }

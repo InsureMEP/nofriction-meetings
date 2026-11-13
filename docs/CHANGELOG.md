@@ -18,14 +18,21 @@ marked (Mac) or (iPhone) is on that platform only.
 
 ### Added
 - **Read the screens (Mac).** In a recording's Notes, **Read the screens…**
-  sends up to 12 of the recording's screens to your AI and keeps what it
-  reads from each (a slide's title and points, a document's statements, a
-  formula) as text under **On the screens**, with the time it was shown.
-  A confirmation first says how many screens go and where, and lists them;
-  nothing is sent unless you press its button. The screens at your marks
-  and typed notes go first. It needs a model that can read images
-  (Settings → AI → Screens) and is part of noFriction Pro. Deleting or
-  striking a screen removes what was read from it.
+  sends up to 12 of the recording's screens and photos to your AI and
+  keeps what it reads from each (a slide's title and points, a document's
+  statements, a formula) as text under **On the screens**, with the time
+  it was shown. A confirmation first shows every picture that would go,
+  each with a tick box, and names where they go; only the ticked ones are
+  sent, only there, and only when you press its button. Each picture goes
+  with a fixed instruction and nothing else from the recording. Screens
+  that look private (mail, messages, passwords, a terminal, private
+  browsing) are never offered. The screens at your marks and typed notes
+  go first. **Stop** ends it before the next picture. It needs a model
+  that can read images (Settings → AI → Screens) and is part of noFriction
+  Pro. Deleting or striking a screen removes what was read from it.
+- The prompt library for pictures: one instruction per kind (slide,
+  whiteboard, document, code, table, chart, web page, call, photo),
+  chosen on your Mac from the app the screen came from.
 - **Fill in the blanks.** One button in a recording's Notes. It reads the
   whole recording again beside the notes you have and adds **What you
   missed** (things that were said and aren't in the notes, each with the
@@ -153,7 +160,8 @@ On the Mac, unless marked.
   waits for the recording to stop.
 - The consent dialog said it sends "selected screenshots" when no feature
   sent a picture. It now says a screen is sent only when you press **Read
-  the screens**, which shows how many first.
+  the screens**, which shows each one first. The dialog's keyboard focus
+  starts on **Not now**, so a stray Return never allows a send.
 - **Make notes doesn't send text that is about to be deleted.** A run
   started inside a Delete's five-second undo window read the transcript as
   it still was. It now waits to be asked again (Mac and iPhone).

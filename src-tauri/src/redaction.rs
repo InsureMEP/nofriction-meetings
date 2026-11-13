@@ -2426,21 +2426,28 @@ pub async fn preview_screens(
         })
         .collect();
     if !state_ids.is_empty() {
+        // Counted apart: text captured from the screen, and what the user's
+        // AI read from its picture (screen_reading.rs). Both are removed.
         let sql = format!(
-            "SELECT COUNT(*) FROM text_snapshots WHERE state_id IN ({})",
+            "SELECT COALESCE(SUM(COALESCE(source, '') != 'screen_reading'), 0), \
+                    COALESCE(SUM(COALESCE(source, '') = 'screen_reading' AND TRIM(text) != ''), 0) \
+             FROM text_snapshots WHERE state_id IN ({})",
             placeholders(state_ids.len())
         );
-        let mut q = sqlx::query_scalar::<_, i64>(&sql);
+        let mut q = sqlx::query_as::<_, (i64, i64)>(&sql);
         for id in &state_ids {
             q = q.bind(*id);
         }
-        let snaps = q.fetch_one(&mut *conn).await.unwrap_or(0);
+        let (snaps, readings) = q.fetch_one(&mut *conn).await.unwrap_or((0, 0));
         items.push(format!(
             "The text read from {} ({} OCR/accessibility snapshot{} and nearby screen text)",
             if n == 1 { "it" } else { "them" },
             snaps,
             if snaps == 1 { "" } else { "s" }
         ));
+        if readings > 0 {
+            items.push(format!("What your AI read from {} (Notes, On the screens)", if n == 1 { "it" } else { "them" }));
+        }
     }
     items.push("AI (VLM) analysis of these screens and timeline entries built from them".into());
     items.push("Cached video frames and thumbnails for this recording".into());

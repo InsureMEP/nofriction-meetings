@@ -1643,11 +1643,14 @@ impl DatabaseManager {
             ));
         }
 
+        // Not what the AI read from a picture (screen_reading.rs): that is an
+        // AI's words, shown only in a recording's Notes, never search material
         let cond = terms.iter().map(|_| "text LIKE ?").collect::<Vec<_>>().join(" OR ");
         let sql = format!(
             "SELECT snapshot_id, ts, app_name, window_title, text FROM text_snapshots \
-             WHERE {} ORDER BY ts DESC LIMIT ?",
-            cond
+             WHERE ({}) AND COALESCE(source, '') != '{}' ORDER BY ts DESC LIMIT ?",
+            cond,
+            crate::screen_reading::SOURCE
         );
         let mut q = sqlx::query(&sql);
         for t in terms {
@@ -2256,12 +2259,16 @@ impl DatabaseManager {
         &self,
         meeting_id: &str,
     ) -> Result<Vec<TextSnapshotRecord>, sqlx::Error> {
+        // Text captured from the screen. What the AI read from a picture
+        // (screen_reading.rs) is kept in the same table so every screen purge
+        // removes it, but it is not captured text: the timeline, the
+        // accessibility view and the Obsidian export leave it out.
         let rows = sqlx::query(
             r#"
             SELECT snapshot_id, episode_id, state_id, meeting_id, ts, text, text_hash, 
                    quality_score, source, word_count, app_name, window_title
             FROM text_snapshots 
-            WHERE meeting_id = ?
+            WHERE meeting_id = ? AND COALESCE(source, '') != 'screen_reading'
             ORDER BY ts ASC
             "#,
         )

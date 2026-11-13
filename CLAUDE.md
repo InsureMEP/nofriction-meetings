@@ -190,10 +190,21 @@ these rules apply.
     user's own **Make notes** may run during another recording.
   - **A picture reaches an AI only on a click that says so.** One feature
     sends images: **Read the screens** (`screen_reading.rs`; FADELL_V2.md
-    §12). Its confirmation shows the count, the destination and each
-    screen; the count is passed back and `read_screens` refuses a
-    different one. At most 12 a click, one picture per request, never by
-    itself, never on a timer, never for the recording that is running.
+    §12). Its confirmation shows every picture that would go, with a tick
+    box each, and names the destination; the ticked ids and that host and
+    model are passed back, and `read_screens` sends those ids there and
+    nothing else. It never works the list out again, checks the
+    destination before every picture, and re-validates each screen. At
+    most 12 a click, one picture per request, never by itself, never on a
+    timer, never for the recording that is running, never while a Delete
+    is in its undo window. The prompt is fixed text: no transcript, title,
+    app or window name goes with a picture. Private screens are never
+    offered (`screen_prompts::never_sent`: mail, messages, password apps,
+    terminals, private browsing, key files, noFriction's own window);
+    that is decided on the Mac, not left to the model. The run and its
+    sender are private to `screen_reading.rs`; only the confirmation's
+    command reaches them. An endpoint error stops the run and leaves the
+    screen unread; only an answer marks a screen read.
     Captions and picture picks still send text about a picture, never the
     picture. The policy guard lists every file allowed to build an image
     message; add to that list on purpose, with the click that leads there.
@@ -202,12 +213,21 @@ these rules apply.
   - **What was read from a screen is a text snapshot on that screen**
     (`source = 'screen_reading'`), so the screen's purge is its purge
     (docs/REDACTION.md: no purge filters `text_snapshots` by source).
+    Every other reader of `text_snapshots` leaves these rows out (Links,
+    chat search, the timeline, the Obsidian export): they are an AI's
+    words, not text captured from the screen. A new reader of that table
+    must leave them out too.
     Don't give readings to Make notes, Fill in the blanks or any other AI
     prompt until a screen's purge also cleans what was made from them.
     The prompts are a library (`screen_prompts.rs`): one entry per kind
-    of screen, the kind decided on the device from the app and window,
-    and rules every prompt shares (only what is visible, never a person's
-    appearance, `skip` for private or empty screens).
+    of screen (a photo from the iPhone has its own), the kind decided on
+    the device from the app first and the window title only for a browser
+    or an unknown app, and rules every prompt shares (only what is
+    visible, never a person's appearance, a call read for what is shared
+    and never its people or chat, `[secret]` for anything like a
+    password, `skip` for private or empty screens). A rule that protects
+    someone goes in the shared rules: a whole-display capture has no app
+    name and gets the `Other` prompt.
   - **Nothing automatic asks the AI while a recording runs.** Work nobody
     clicked for (automatic notes, the topics that follow notes) goes
     through `study::BackgroundCompleter`, which waits for the recording

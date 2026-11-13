@@ -540,9 +540,11 @@ interface DemoScreen {
     state_id: string;
     ms: number;
     kind: string;
-    app_name: string;
+    app_name: string | null;
     /** What the AI reads from it; "" when it has nothing to keep */
     text: string;
+    /** Never sent: it looks private (mail, messages, passwords, a terminal) */
+    private?: boolean;
 }
 
 const DEMO_SCREENS: Record<string, DemoScreen[]> = {
@@ -550,45 +552,112 @@ const DEMO_SCREENS: Record<string, DemoScreen[]> = {
         { state_id: "scr-1", ms: 4 * 60_000, kind: "Slide", app_name: "Keynote", text: "Slide: The fluid mosaic model\n- The membrane is a phospholipid bilayer with proteins moving in it.\n- Cholesterol sits between the tails and steadies it.\nTerms:\n- Amphipathic: having a water-loving and a water-fearing end" },
         { state_id: "scr-2", ms: 16 * 60_000 + 5_000, kind: "Slide", app_name: "Keynote", text: "Slide: Four parts of the membrane\n- Phospholipids\n- Proteins\n- Cholesterol\n- Carbohydrate chains" },
         { state_id: "scr-3", ms: 24 * 60_000, kind: "Web page", app_name: "Safari", text: "" },
+        { state_id: "scr-mail", ms: 30 * 60_000, kind: "Screen", app_name: "Mail", text: "", private: true },
         { state_id: "scr-4", ms: 38 * 60_000 + 50_000, kind: "Slide", app_name: "Keynote", text: "Slide: The sodium-potassium pump\n- Three sodium ions out, two potassium ions in, one ATP used.\nExact wording: 3 Na+ out / 2 K+ in / 1 ATP" },
-        { state_id: "scr-5", ms: 47 * 60_000 + 40_000, kind: "Document", app_name: "Preview", text: "Document: Syllabus, week 7\n- Quiz on membranes next Wednesday.\n- Read chapter 7, sections 1 to 3." },
+        { state_id: "scr-5", ms: 47 * 60_000 + 40_000, kind: "Photo", app_name: null, text: "Whiteboard: Week 7\n- Quiz on membranes next Wednesday.\n- Read chapter 7, sections 1 to 3." },
     ],
 };
+/**
+ * A stand-in for the picture of a demo screen (the harness has no captured
+ * frames): its kind and title drawn as a small slide. `convertFileSrc` is
+ * the identity here, so a data URL is shown as it is.
+ */
+function demoPicture(kind: string, text: string): string {
+    const title = (text.split("\n")[0].split(": ")[1] ?? kind).replace(/[<>&"]/g, "");
+    const svg =
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200">` +
+        `<rect width="320" height="200" fill="#1c1c1e"/><rect x="20" y="24" width="120" height="10" rx="5" fill="#facc15"/>` +
+        `<text x="20" y="72" font-family="-apple-system, Helvetica, sans-serif" font-size="18" font-weight="600" fill="#f5f5f5">${title}</text>` +
+        `<rect x="20" y="96" width="250" height="8" rx="4" fill="#3a3a3c"/><rect x="20" y="116" width="210" height="8" rx="4" fill="#3a3a3c"/>` +
+        `<rect x="20" y="136" width="230" height="8" rx="4" fill="#3a3a3c"/></svg>`;
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
 const screensRead = new Map<string, Map<string, string>>();
+/** Runs under way: set to true to stop before the next picture */
+const screenRuns = new Map<string, { stop: boolean }>();
 const SCREEN_STEP_MS = 600;
+const SCREEN_HOST = "ai.example.com";
+const SCREEN_MODEL = "vision-model";
 
 function screenPlan(id: string) {
     const all = DEMO_SCREENS[id] ?? [];
+    const readable = all.filter((s) => !s.private);
     const read = screensRead.get(id) ?? new Map<string, string>();
+    const unread = readable.filter((s) => !read.has(s.state_id));
+    const send = unread.slice(0, 12);
+    const running = screenRuns.has(id);
     return {
-        send: all.filter((s) => !read.has(s.state_id)).slice(0, 12).map(({ state_id, ms, kind, app_name }) => ({ state_id, ms, kind, app_name })),
-        total: all.length,
-        already: read.size,
-        destination: !AI_NONE ? "ai.example.com" : null,
-        model: !AI_NONE ? "vision-model" : null,
+        send: send.map(({ state_id, ms, kind, app_name, text }) => ({ state_id, ms, kind, app_name, image_path: demoPicture(kind, text) })),
+        total: readable.length,
+        already: readable.length - unread.length,
+        more: unread.length - send.length,
+        left_out: all.length - readable.length,
+        destination: !AI_NONE ? SCREEN_HOST : null,
+        model: !AI_NONE ? SCREEN_MODEL : null,
         local: false,
-        blocked: !AI_NONE ? null : "Reading a screen needs a model that can read images. Choose one under Settings → AI → Screens.",
+        blocked: AI_NONE
+            ? "Reading a screen needs a model that can read images. Choose one under Settings → AI → Screens."
+            : running
+              ? "This recording's screens are already being read."
+              : send.length === 0 && readable.length > 0
+                ? "Every screen of this recording has been read."
+                : null,
+        running,
     };
 }
 
-function readScreens(id: string, expect: number): Promise<{ read: number; skipped: number; gone: number }> {
-    const plan = screenPlan(id);
-    if (plan.send.length !== expect) return Promise.reject("The screens changed since you looked. Check the number again.");
+interface ScreensConfirmed {
+    state_ids: string[];
+    destination: string;
+    model: string;
+}
+
+/** Like the app: exactly the confirmed ids, to the confirmed destination. */
+function readScreens(id: string, confirmed: ScreensConfirmed) {
+    const none = { read: 0, skipped: 0, gone: 0, failed: 0, stopped: null as string | null, cancelled: false };
+    const ids = [...new Set(confirmed?.state_ids ?? [])];
+    if (ids.length === 0) return Promise.reject("No screens were chosen.");
+    if (ids.length > 12) return Promise.reject("That is more screens than one click sends. Check the list again.");
+    if (confirmed.destination !== SCREEN_HOST || confirmed.model !== SCREEN_MODEL) {
+        return Promise.reject("Your AI settings changed since you looked, so nothing more was sent. Check the list again.");
+    }
+    if (screenRuns.has(id)) return Promise.reject("This recording's screens are already being read.");
     const all = DEMO_SCREENS[id] ?? [];
     const read = screensRead.get(id) ?? new Map<string, string>();
     screensRead.set(id, read);
-    return new Promise((resolve) => {
-        plan.send.forEach((item, i) =>
+    const run = { stop: false };
+    screenRuns.set(id, run);
+    return new Promise<typeof none>((resolve) => {
+        const out = { ...none };
+        const step = (i: number) => {
+            emitEvent("screens_progress", { meetingId: id, done: i, total: ids.length });
+            if (i >= ids.length || run.stop) {
+                out.cancelled = run.stop && i < ids.length;
+                screenRuns.delete(id);
+                resolve(out);
+                return;
+            }
+            const screen = all.find((s) => s.state_id === ids[i]);
             window.setTimeout(() => {
-                emitEvent("screens_progress", { meetingId: id, done: i, total: plan.send.length });
-                read.set(item.state_id, all.find((s) => s.state_id === item.state_id)?.text ?? "");
-            }, i * SCREEN_STEP_MS),
-        );
-        window.setTimeout(() => {
-            const texts = plan.send.map((item) => read.get(item.state_id) ?? "");
-            resolve({ read: texts.filter(Boolean).length, skipped: texts.filter((t) => !t).length, gone: 0 });
-        }, plan.send.length * SCREEN_STEP_MS);
+                if (!screen || screen.private || read.has(screen.state_id)) {
+                    out.gone += 1;
+                } else {
+                    read.set(screen.state_id, screen.text);
+                    if (screen.text) out.read += 1;
+                    else out.skipped += 1;
+                }
+                step(i + 1);
+            }, SCREEN_STEP_MS);
+        };
+        step(0);
     });
+}
+
+function stopScreenReading(id: string): boolean {
+    const run = screenRuns.get(id);
+    if (run) run.stop = true;
+    return !!run;
 }
 
 function screenReadings(id: string) {
@@ -1113,7 +1182,9 @@ function handle(cmd: string, args: Args): unknown {
             return screenReadings(a.meetingId);
         case "read_screens":
             if (!isPro) throw "PRO_REQUIRED: noFriction Pro unlocks the AI features.";
-            return readScreens(a.meetingId, a.expect);
+            return readScreens(a.meetingId, a.confirmed);
+        case "stop_screen_reading":
+            return stopScreenReading(a.meetingId);
         case "generate_meeting_report":
         case "fill_in_notes":
         case "draft_followup_email":

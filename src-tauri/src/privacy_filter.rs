@@ -232,6 +232,21 @@ pub fn should_skip_capture() -> bool {
     false
 }
 
+/// A stored window title says private or incognito browsing
+/// (screen_prompts.rs `never_sent`: such a screen is never sent to an AI).
+pub fn is_private_title(title: &str) -> bool {
+    let title = title.to_lowercase();
+    PRIVATE_PATTERNS.iter().any(|p| {
+        let p = p.to_lowercase();
+        // Whole words: "Private Browsing", not "Privateer" or "Deprivation"
+        title.match_indices(&p).any(|(i, _)| {
+            let before = title[..i].chars().next_back();
+            let after = title[i + p.len()..].chars().next();
+            !before.is_some_and(|c| c.is_alphanumeric()) && !after.is_some_and(|c| c.is_alphanumeric())
+        })
+    })
+}
+
 /// Check if a specific app is on the blocklist
 pub fn is_blocked_app(app_name: &str) -> bool {
     for blocked in BLOCKED_APPS {
@@ -251,5 +266,15 @@ mod tests {
         assert!(is_blocked_app("1Password 8"));
         assert!(is_blocked_app("Keychain Access"));
         assert!(!is_blocked_app("Visual Studio Code"));
+    }
+
+    #[test]
+    fn a_stored_title_says_private_browsing() {
+        assert!(is_private_title("Private Browsing — Start Page"));
+        assert!(is_private_title("New Incognito Tab - Google Chrome"));
+        assert!(is_private_title("InPrivate"));
+        assert!(!is_private_title("Deprivation studies.pdf"));
+        assert!(!is_private_title("Lecture 7"));
+        assert!(!is_private_title(""));
     }
 }

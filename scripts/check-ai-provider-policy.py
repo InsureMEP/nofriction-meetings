@@ -295,7 +295,8 @@ def audit(root):
     # An image leaves the device only from a function a click reaches. Every
     # file that builds an image message is listed here; a new one is added on
     # purpose, with the click that leads to it (docs/AI_PROVIDERS.md).
-    # screen_reading.rs: Read the screens, after a confirmation that shows the count
+    # screen_reading.rs: Read the screens, after a confirmation that shows the
+    # pictures and the destination; it sends the confirmed ids and nothing else
     image_senders = {'src-tauri/src/vlm_client.rs', 'src-tauri/src/ai/client.rs', 'src-tauri/src/screen_reading.rs'}
     for path in sorted((root / 'src-tauri/src').rglob('*.rs')):
         rel = path.relative_to(root).as_posix()
@@ -303,6 +304,41 @@ def audit(root):
             continue
         if re.search(r'\bMsg::user_with_image\(|\bvlm_analyze_frame\(|\bvlm_analyze_frames_batch\(|Part::Image\s*\{', path.read_text()):
             errors.append(f'Image sent to an AI outside the listed senders: {rel}')
+    # Read the screens has one way in: the confirmation's command. Its sender
+    # and its run are private to screen_reading.rs, and no other file may
+    # reach for them; lib.rs only registers the commands.
+    reading_rs = (root / 'src-tauri/src/screen_reading.rs').read_text()
+    need(re.search(r'^trait Reader\b', reading_rs, re.M) and not re.search(r'\bpub(?:\([a-z:]+\))?\s+trait Reader\b', reading_rs),
+         'screen_reading.rs: the Reader trait must stay private')
+    need(re.search(r'^async fn read_screens\(', reading_rs, re.M) is not None,
+         'screen_reading.rs: the run (read_screens) must stay private to the file')
+    need(re.search(r'^    struct Live;', reading_rs, re.M) is not None and not re.search(r'\bpub(?:\([a-z:]+\))?\s+struct Live\b', reading_rs),
+         'screen_reading.rs: the live sender must stay private to its commands module')
+    need(reading_rs.count('Msg::user_with_image(') == 1, 'screen_reading.rs: exactly one place builds an image message')
+    need('confirmed: Confirmed' in reading_rs and 'expect: usize' not in reading_rs,
+         'Read the screens must send the confirmed ids, never a count worked out again')
+    for needle, why in (
+        ('reader.destination() != named', 'check the destination before every picture'),
+        ('delete_waiting(pool, meeting_id)', 'refuse while a Delete is in its undo window'),
+        ('still_sendable(pool, meeting_id, id)', 're-validate each confirmed screen before sending it'),
+        ('cancel.load(', 'check for Stop before every picture'),
+    ):
+        need(needle in reading_rs, f'Read the screens must {why}')
+    need('said' not in (root / 'src-tauri/src/screen_prompts.rs').read_text().split('#[cfg(test)]')[0].split('pub fn prompt_for')[1],
+         'The screen prompt must carry nothing from the recording (no transcript context)')
+    for path in sorted((root / 'src-tauri/src').rglob('*.rs')):
+        rel = path.relative_to(root).as_posix()
+        if rel == 'src-tauri/src/screen_reading.rs':
+            continue
+        # The command is named only where it is registered; the run and the
+        # sender are named nowhere else (the compiler refuses them too)
+        for m in re.finditer(r'screen_reading::(?:commands::)?(?:read_screens|Reader|Live)\b', path.read_text()):
+            if rel == 'src-tauri/src/lib.rs' and m.group(0) == 'screen_reading::commands::read_screens':
+                continue
+            errors.append(f'{rel}: {m.group(0)} (Read the screens is run only by its own command)')
+    lib_rs_text = (root / 'src-tauri/src/lib.rs').read_text()
+    need(lib_rs_text.count('screen_reading::commands::read_screens') == 1,
+         'Read the screens is registered once, as the confirmation\'s command')
     scheduler_rs = (root / 'src-tauri/src/vlm_scheduler.rs').read_text()
     need('tokio::spawn' not in scheduler_rs and 'vlm_analyze' not in scheduler_rs and 'run_loop' not in scheduler_rs,
          'The background screenshot analyzer must stay retired (no loop, no AI call in vlm_scheduler.rs)')
