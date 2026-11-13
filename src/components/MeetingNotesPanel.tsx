@@ -1,11 +1,14 @@
-// Notes for one recording (Recordings → Notes): the saved AI notes (made
-// automatically after a recording over 6 minutes, or with Make notes), the
-// "made before an edit" banner, (meetings) a follow-up email draft, and the
-// Topics under the notes. The notes' style follows the recording's type:
-// meeting notes, lecture notes (class) or personal notes.
+// Notes for one recording (Recordings → Notes). First, what the user typed
+// while listening ("What you wrote"), each line with its time and, once
+// notes are made, what was being said then. Then the AI notes (made by
+// themselves when a recording stops, or with Make notes), the "made before
+// an edit" banner, (meetings) a follow-up email draft, and the Topics. The
+// notes' style follows the recording's type: meeting notes, lecture notes
+// (class) or personal notes.
 
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import * as tauri from "../lib/tauri";
 import { aiErrorClass, friendlyAiError, isNoProviderError, withAiConsent } from "../lib/ai";
@@ -14,6 +17,21 @@ import { proSuffix, showProMark } from "../lib/pro";
 import { AiSetupNotice, useAiStatus } from "./AiSetupNotice";
 import { notesLayout, notesStyleHint } from "../lib/recordingKind";
 import { SYNCED_NOTES_MODEL, syncedNotesSections } from "../lib/syncLogic";
+import {
+    NOTES_DONE_EVENT,
+    NOTES_PROGRESS_EVENT,
+    WHAT_YOU_WROTE,
+    hasWhatYouWrote,
+    parseNoteDetails,
+    progressDetail,
+    writtenLines,
+    type NotesProgress,
+    type WrittenLine,
+} from "../lib/notesLogic";
+import { markersApi, notifyMarkersChanged } from "../lib/study";
+import { MAX_TYPED_NOTE_CHARS, cleanTypedNote, clock } from "../lib/studyLogic";
+import { useMarkers } from "./study/MarkerList";
+import { NoteIcon, TrashIcon } from "./icons";
 import { useRecordingKind } from "../hooks/useRecordingKind";
 import ErrorState from "./ErrorState";
 import { TopicsEditor } from "./TopicChips";
@@ -29,6 +47,8 @@ interface SavedNotes {
     generated_at: string;
     model_used: string | null;
     stale_after_edit?: boolean;
+    /** JSON `[{marker_id, detail}]`: what was being said at each typed note */
+    note_details?: string | null;
 }
 
 interface FollowUpEmail {
@@ -62,11 +82,21 @@ function aiFailure(e: unknown, what: string): string {
     }
 }
 
-export function MeetingNotesPanel({ meetingId }: { meetingId: string }) {
+interface MeetingNotesPanelProps {
+    meetingId: string;
+    /** Open Rewind at a moment (a typed note's time) */
+    onJump?: (ms: number) => void;
+}
+
+export function MeetingNotesPanel({ meetingId, onJump }: MeetingNotesPanelProps) {
     const [notes, setNotes] = useState<SavedNotes | null>(null);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [generating, setGenerating] = useState(false);
+    // A run going in the background (automatic notes after Stop): what it is doing
+    const [running, setRunning] = useState<string | null>(null);
+    // What the user typed while listening
+    const { notes: typed, reload: reloadTyped } = useMarkers(meetingId);
     const [actionError, setActionError] = useState<string | null>(null);
     const [needsAi, setNeedsAi] = useState(false);
     const [email, setEmail] = useState<FollowUpEmail | null>(null);
@@ -97,8 +127,36 @@ export function MeetingNotesPanel({ meetingId }: { meetingId: string }) {
         setEmail(null);
         setActionError(null);
         setNeedsAi(false);
+        setRunning(null);
         load();
-    }, [load]);
+        // Notes may be being made right now (the recording just stopped)
+        let live = true;
+        invoke<string | null>("get_notes_status", { meetingId })
+            .then((label) => live && setRunning(label ?? null))
+            .catch(() => {});
+        return () => {
+            live = false;
+        };
+    }, [load, meetingId]);
+
+    // The run reports what it is doing, and when it ends the notes are read again
+    useEffect(() => {
+        const offs: (() => void)[] = [];
+        let disposed = false;
+        const add = (off: () => void) => (disposed ? off() : offs.push(off));
+        listen<NotesProgress>(NOTES_PROGRESS_EVENT, (e) => {
+            if (e.payload.meetingId === meetingId) setRunning(e.payload.label);
+        }).then(add);
+        listen<{ meetingId: string; ok: boolean }>(NOTES_DONE_EVENT, (e) => {
+            if (e.payload.meetingId !== meetingId) return;
+            setRunning(null);
+            void load();
+        }).then(add);
+        return () => {
+            disposed = true;
+            offs.forEach((o) => o());
+        };
+    }, [meetingId, load]);
 
     const generate = async () => {
         setGenerating(true);
@@ -148,11 +206,19 @@ export function MeetingNotesPanel({ meetingId }: { meetingId: string }) {
 
     const proNote = proSuffix(caps?.pro_gating, isPro);
     const showSetup = configured === false || needsAi;
+    const busy = generating || running !== null;
+    const busyDetail = progressDetail(running);
+    // Notes made on the iPhone already carry "What you wrote" in their text
+    const synced = notes?.model_used === SYNCED_NOTES_MODEL;
+    const lines =
+        synced && hasWhatYouWrote(syncedNotesSections(notes?.summary ?? ""))
+            ? []
+            : writtenLines(typed, parseNoteDetails(notes?.note_details));
 
     const actions = (
         <div className="mn-actions">
-            <button className="mn-btn primary" onClick={generate} disabled={generating || showSetup}>
-                {generating ? "Making notes…" : notes ? "Make again" : "Make notes"}
+            <button className="mn-btn primary" onClick={generate} disabled={busy || showSetup}>
+                {busy ? "Making notes…" : notes ? "Make again" : "Make notes"}
             </button>
             {kind === "meeting" && (
                 <button className="mn-btn" onClick={draftEmail} disabled={drafting || showSetup}>
@@ -171,23 +237,53 @@ export function MeetingNotesPanel({ meetingId }: { meetingId: string }) {
                 </p>
             )}
 
-            {!notes ? (
-                <div className="mn-empty">
-                    <h3>No notes yet</h3>
-                    <p>
-                        Notes are made from the transcript by the AI you set up, on their own when a recording
-                        longer than 6 minutes stops (Settings → AI). {notesStyleHint(kind)}
-                        {showProMark(caps?.pro_gating, isPro) ? " Part of noFriction Pro." : ""}
-                    </p>
-                    {actions}
+            {lines.length > 0 && (
+                <WhatYouWrote
+                    lines={lines}
+                    onJump={onJump}
+                    onChanged={() => {
+                        notifyMarkersChanged(meetingId);
+                        reloadTyped();
+                    }}
+                />
+            )}
+
+            {busy && (
+                <div className="mn-busy" role="status" aria-live="polite">
+                    <div className="loading-spinner" aria-hidden />
+                    <div>
+                        <p className="mn-busy__title">Making notes…</p>
+                        <p className="mn-busy__detail">
+                            {busyDetail ??
+                                (lines.length > 0
+                                    ? "Reading the whole recording, starting from what you wrote."
+                                    : "Reading the whole recording.")}
+                        </p>
+                    </div>
                 </div>
+            )}
+
+            {!notes ? (
+                !busy && (
+                    <div className="mn-empty">
+                        <h3>{lines.length > 0 ? "Finish these notes" : "No notes yet"}</h3>
+                        <p>
+                            {lines.length > 0
+                                ? "Make notes reads the whole recording and builds on what you wrote: under each line, what was being said then."
+                                : "Notes are made from the whole recording by the AI you set up, on their own when a recording of six minutes or more stops (Settings → AI)."}{" "}
+                            {notesStyleHint(kind)}
+                            {showProMark(caps?.pro_gating, isPro) ? " Part of noFriction Pro." : ""}
+                        </p>
+                        {actions}
+                    </div>
+                )
             ) : (
                 <div className="mn-notes">
                     {notes.stale_after_edit && (
                         <div className="rd-stale" role="status">
                             <span>These notes were made before an edit.</span>
-                            <button className="rd-btn" onClick={generate} disabled={generating || showSetup}>
-                                {generating ? "Making notes…" : "Make again"}
+                            <button className="rd-btn" onClick={generate} disabled={busy || showSetup}>
+                                {busy ? "Making notes…" : "Make again"}
                             </button>
                         </div>
                     )}
@@ -202,6 +298,123 @@ export function MeetingNotesPanel({ meetingId }: { meetingId: string }) {
 
             {email && <FollowUpSheet email={email} onClose={() => setEmail(null)} />}
         </div>
+    );
+}
+
+/**
+ * The user's own lines, in the order typed: the time (click to hear that
+ * moment), the line (click to change it), and under it what was being
+ * said, once notes are made. Theirs to edit and delete; the AI never
+ * rewrites a line.
+ */
+function WhatYouWrote({
+    lines,
+    onJump,
+    onChanged,
+}: {
+    lines: WrittenLine[];
+    onJump?: (ms: number) => void;
+    onChanged: () => void;
+}) {
+    const [error, setError] = useState<string | null>(null);
+    const run = async (fn: () => Promise<unknown>) => {
+        setError(null);
+        try {
+            await fn();
+            onChanged();
+        } catch (e) {
+            setError(String(e));
+        }
+    };
+    return (
+        <section className="mn-wrote" aria-label={WHAT_YOU_WROTE}>
+            <h4 className="mn-wrote__title">
+                <NoteIcon size={13} strokeWidth={2.2} /> {WHAT_YOU_WROTE}
+            </h4>
+            {error && (
+                <p className="mn-error" role="alert">
+                    {error}
+                </p>
+            )}
+            <ol className="mn-wrote__list">
+                {lines.map((l) => (
+                    <WrittenRow key={l.note.id} line={l} onJump={onJump} run={run} />
+                ))}
+            </ol>
+        </section>
+    );
+}
+
+function WrittenRow({
+    line,
+    onJump,
+    run,
+}: {
+    line: WrittenLine;
+    onJump?: (ms: number) => void;
+    run: (fn: () => Promise<unknown>) => void;
+}) {
+    const { note, detail } = line;
+    const [editing, setEditing] = useState(false);
+    const [text, setText] = useState(note.text);
+    useEffect(() => setText(note.text), [note.text]);
+    const save = () => {
+        setEditing(false);
+        const cleaned = cleanTypedNote(text);
+        // An emptied line is left as it was: deleting is the bin's job
+        if (!cleaned) {
+            setText(note.text);
+            return;
+        }
+        if (cleaned !== note.text) run(() => markersApi.setNoteText(note.id, cleaned));
+    };
+    return (
+        <li className="mn-wrote__row">
+            <button
+                type="button"
+                className="mn-wrote__time"
+                onClick={() => onJump?.(note.offset_ms)}
+                disabled={!onJump}
+                title="Hear this moment in Rewind"
+                aria-label={`Open Rewind at ${clock(note.offset_ms)}`}
+            >
+                {clock(note.offset_ms)}
+            </button>
+            <div className="mn-wrote__body">
+                {editing ? (
+                    <input
+                        className="mn-input mn-wrote__input"
+                        autoFocus
+                        value={text}
+                        maxLength={MAX_TYPED_NOTE_CHARS}
+                        aria-label="Your note"
+                        onChange={(e) => setText(e.target.value)}
+                        onBlur={save}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") save();
+                            if (e.key === "Escape") {
+                                setText(note.text);
+                                setEditing(false);
+                            }
+                        }}
+                    />
+                ) : (
+                    <button type="button" className="mn-wrote__text" onClick={() => setEditing(true)} title="Change what you wrote">
+                        {note.text}
+                    </button>
+                )}
+                {detail && <p className="mn-wrote__detail">{detail}</p>}
+            </div>
+            <button
+                type="button"
+                className="mn-wrote__delete"
+                onClick={() => run(() => markersApi.remove(note.id))}
+                title="Delete this note"
+                aria-label={`Delete your note at ${clock(note.offset_ms)}`}
+            >
+                <TrashIcon size={13} />
+            </button>
+        </li>
     );
 }
 

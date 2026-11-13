@@ -176,3 +176,169 @@
   line-height: 1.5;
   font-family: inherit;
 }
+
+/* ── What you wrote: the user's own lines, then what was said ───────── */
+
+.mn-wrote {
+  padding: 14px 16px 6px;
+  border: 1px solid rgba(250, 204, 21, 0.2);
+  border-radius: 12px;
+  background: rgba(250, 204, 21, 0.04);
+}
+
+.mn-wrote__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--hazard-yellow, #facc15);
+}
+
+.mn-wrote__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mn-wrote__row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 28px;
+  gap: 10px;
+  align-items: start;
+  padding: 8px 0;
+}
+
+.mn-wrote__row + .mn-wrote__row {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.mn-wrote__time {
+  min-height: 24px;
+  padding: 2px 0 0;
+  border: none;
+  background: none;
+  font-family: var(--ds-font-mono, 'SF Mono', Menlo, monospace);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  color: var(--text-secondary, #a3a3a3);
+  cursor: pointer;
+}
+
+.mn-wrote__time:hover:not(:disabled) {
+  color: var(--hazard-yellow, #facc15);
+  text-decoration: underline;
+}
+
+.mn-wrote__time:disabled {
+  cursor: default;
+}
+
+.mn-wrote__body {
+  min-width: 0;
+}
+
+.mn-wrote__text {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.5;
+  text-align: left;
+  color: var(--text-primary, #f5f5f5);
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+
+.mn-wrote__text:hover {
+  color: #fff;
+}
+
+.mn-wrote__input {
+  font-size: 15px;
+}
+
+.mn-wrote__detail {
+  margin: 3px 0 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-secondary, #a3a3a3);
+  max-width: 72ch;
+}
+
+.mn-wrote__delete {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-secondary, #a3a3a3);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+
+.mn-wrote__row:hover .mn-wrote__delete,
+.mn-wrote__row:focus-within .mn-wrote__delete {
+  opacity: 1;
+}
+
+.mn-wrote__delete:hover {
+  color: var(--accent-danger, #ef4444);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.mn-wrote__time:focus-visible,
+.mn-wrote__text:focus-visible,
+.mn-wrote__delete:focus-visible {
+  outline: 2px solid var(--hazard-yellow, #facc15);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── Notes being made ────────────────────────────────────────────── */
+
+.mn-busy {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--border-color, #262626);
+  border-radius: 12px;
+}
+
+.mn-busy .loading-spinner {
+  flex: none;
+  width: 22px;
+  height: 22px;
+}
+
+.mn-busy__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mn-busy__detail {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary, #a3a3a3);
+}
+
+.mn-busy .loading-spinner {
+  border-width: 2px;
+  border-color: var(--border-color, #262626);
+  border-top-color: var(--hazard-yellow, #facc15);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mn-busy .loading-spinner { animation-duration: 2.4s; }
+}

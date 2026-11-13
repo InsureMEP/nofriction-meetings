@@ -1,0 +1,123 @@
+/* Up next, on the idle Record screen (UpNextCard.tsx) */
+
+.upnext {
+  width: min(440px, 100%);
+  margin-top: 6px;
+  padding: 18px 20px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--hazard-yellow-dim, rgba(250, 204, 21, 0.5));
+  background: rgba(250, 204, 21, 0.05);
+  text-align: left;
+}
+
+.upnext__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--hazard-yellow, #facc15);
+}
+
+.upnext__title {
+  margin: 8px 0 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--text-primary, #f5f5f5);
+  overflow-wrap: anywhere;
+}
+
+.upnext__detail {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-secondary, #a3a3a3);
+}
+
+.upnext__plan {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary, #a3a3a3);
+}
+
+.upnext__error {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--accent-danger, #ef4444);
+}
+
+.upnext__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.upnext__go {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  max-width: 100%;
+  padding: 0 20px;
+  border: none;
+  border-radius: 999px;
+  background: var(--hazard-yellow, #facc15);
+  color: #0a0a0a;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 200ms ease;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upnext__go:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(250, 204, 21, 0.25);
+}
+
+.upnext__go:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.upnext__dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent-danger, #ef4444);
+}
+
+.upnext__later {
+  min-height: 40px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-secondary, #a3a3a3);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.upnext__later:hover:not(:disabled) {
+  color: var(--text-primary, #f5f5f5);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.upnext__go:focus-visible,
+.upnext__later:focus-visible {
+  outline: 2px solid var(--hazard-yellow, #facc15);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .upnext__go { transition: none; }
+  .upnext__go:hover:not(:disabled) { transform: none; }
+}

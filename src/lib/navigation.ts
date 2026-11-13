@@ -119,6 +119,67 @@ export function onRecordingSeek(fn: (req: RecordingSeekRequest) => void): () => 
     return () => window.removeEventListener(SEEK_EVENT, handler);
 }
 
+// ── Open a recording on one of its views ────────────────────────────────
+//
+// After Stop the recording opens on Notes (the thing the user came for),
+// and the notebook page opens a recording's Notes from one of its items.
+
+export type RecordingViewName = "rewind" | "notes" | "links" | "review";
+
+const VIEW_EVENT = "nf:open-recording-view";
+let pendingView: { meetingId: string; view: RecordingViewName } | null = null;
+
+export function requestRecordingView(meetingId: string, view: RecordingViewName): void {
+    pendingView = { meetingId, view };
+    window.dispatchEvent(new CustomEvent(VIEW_EVENT, { detail: pendingView }));
+}
+
+/** The pending view for `meetingId` (consumed), or null. */
+export function takeRecordingView(meetingId: string | null): RecordingViewName | null {
+    if (!pendingView || !meetingId || pendingView.meetingId !== meetingId) return null;
+    const v = pendingView.view;
+    pendingView = null;
+    return v;
+}
+
+export function onRecordingView(fn: (meetingId: string, view: RecordingViewName) => void): () => void {
+    const handler = (e: Event) => {
+        const d = (e as CustomEvent<{ meetingId: string; view: RecordingViewName }>).detail;
+        if (d) fn(d.meetingId, d.view);
+    };
+    window.addEventListener(VIEW_EVENT, handler);
+    return () => window.removeEventListener(VIEW_EVENT, handler);
+}
+
+// ── Ask about a notebook ────────────────────────────────────────────────
+//
+// The notebook page's Ask opens Chat on a new chat scoped to that notebook.
+// Chat isn't mounted when the request is made, so it is kept until taken.
+
+const CHAT_NOTEBOOK_EVENT = "nf:chat-notebook";
+let pendingChatNotebook: string | null = null;
+
+export function requestChatAboutNotebook(notebook: string): void {
+    pendingChatNotebook = notebook;
+    window.dispatchEvent(new CustomEvent<string>(CHAT_NOTEBOOK_EVENT, { detail: notebook }));
+}
+
+/** The pending notebook (consumed), or null. */
+export function takeChatNotebook(): string | null {
+    const n = pendingChatNotebook;
+    pendingChatNotebook = null;
+    return n;
+}
+
+export function onChatAboutNotebook(fn: (notebook: string) => void): () => void {
+    const handler = (e: Event) => {
+        const d = (e as CustomEvent<string>).detail;
+        if (d) fn(d);
+    };
+    window.addEventListener(CHAT_NOTEBOOK_EVENT, handler);
+    return () => window.removeEventListener(CHAT_NOTEBOOK_EVENT, handler);
+}
+
 /** Key in localStorage that marks the first-run setup as done. */
 export const SETUP_COMPLETE_KEY = "nofriction_setup_complete";
 

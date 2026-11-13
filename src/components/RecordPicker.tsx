@@ -26,8 +26,12 @@ import {
 import { getRecordPrefs } from "../lib/timedRecording";
 import "./TimedRecording.css";
 
-/** Opens the Record sheet (provided by App). */
-export const RecordPickerContext = createContext<{ open: () => void }>({ open: () => {} });
+/** Opens the Record sheet, or starts a plan that already has its answers
+ *  (the Up next card, a notebook's Record button). Provided by App. */
+export const RecordPickerContext = createContext<{ open: () => void; start: (plan: StartPlan) => Promise<void> }>({
+    open: () => {},
+    start: async () => {},
+});
 
 export function useRecordPicker() {
     return useContext(RecordPickerContext);

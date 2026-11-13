@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { chatApi, type ChatMessage, type ChatThread, type Citation } from "../../lib/chat";
 import { defaultScope, sameScope, scopeLabel, suggestedQuestions, type Scope, type ScopeSummary } from "../../lib/chatLogic";
 import { aiErrorClass, friendlyAiError, isNoProviderError } from "../../lib/ai";
-import { requestRecordingSeek } from "../../lib/navigation";
+import { onChatAboutNotebook, requestRecordingSeek, takeChatNotebook } from "../../lib/navigation";
 import { AiSetupNotice, useAiStatus } from "../AiSetupNotice";
 import { useUndoDelete } from "../UndoToast";
 import { BrainIcon, TrashIcon } from "../icons";
@@ -55,6 +55,23 @@ export function RecordingsChat({ selectedMeetingId, onOpenRecording }: Props) {
     useEffect(() => {
         if (configured) setNeedsAi(false);
     }, [configured]);
+
+    // Asked from a notebook's page: a new chat about that notebook
+    useEffect(() => {
+        const open = (notebook: string) => {
+            setThread(null);
+            setMessages([]);
+            setError(null);
+            setScope({ kind: "notebook", value: notebook });
+            textareaRef.current?.focus();
+        };
+        const pending = takeChatNotebook();
+        if (pending) open(pending);
+        return onChatAboutNotebook((n) => {
+            takeChatNotebook();
+            open(n);
+        });
+    }, []);
 
     // A different recording was opened: a fresh chat follows it
     useEffect(() => {

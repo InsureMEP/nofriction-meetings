@@ -111,14 +111,15 @@ export function LiveTranscriptView({ transcripts, isRecording, onStartRecording,
                 <div className={`lt-empty__mark ${isRecording ? "is-listening" : ""}`}>
                     <MicIcon size={28} strokeWidth={1.5} />
                 </div>
-                <p className="lt-empty__title">{isRecording ? "Listening" : "Ready when you are"}</p>
+                {/* Something is starting: that is the headline, and the promise follows it */}
+                {!(idleExtra && !isRecording) && <p className="lt-empty__title">{isRecording ? "Listening" : "Ready when you are"}</p>}
+                {!isRecording && idleExtra}
                 {isRecording ? (
-                    <p className="lt-empty__hint">Words appear here as they're spoken.</p>
+                    <p className="lt-empty__hint">Words appear here as they're spoken. Type a note below at any moment.</p>
                 ) : (
                     // "Recording and transcription work offline. Nothing leaves this Mac…"
                     <PrivacyPromise />
                 )}
-                {!isRecording && idleExtra}
                 {!isRecording && onStartRecording && (
                     <button
                         className={`lt-empty__action${idleExtra ? " is-second" : ""}`}

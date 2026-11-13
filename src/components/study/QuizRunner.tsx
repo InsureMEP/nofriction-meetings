@@ -15,7 +15,14 @@ import {
     type QuizState,
 } from "../../lib/studyLogic";
 
-export function QuizRunner({ questions, onJump }: { questions: QuizQuestion[]; onJump?: (ms: number) => void }) {
+export function QuizRunner<Q extends QuizQuestion = QuizQuestion>({
+    questions,
+    onJump,
+}: {
+    questions: Q[];
+    /** Open the moment the answer comes from; the question says which recording (a notebook's quiz spans several) */
+    onJump?: (ms: number, question: Q) => void;
+}) {
     const key = useMemo(() => questions.map((q) => q.question).join("\u0000"), [questions]);
     // Which questions this run asks (all, or the ones missed last time)
     const [set, setSet] = useState<number[]>(() => questions.map((_, i) => i));
@@ -93,7 +100,7 @@ export function QuizRunner({ questions, onJump }: { questions: QuizQuestion[]; o
                     <strong>{right ? "Right." : `Not quite: the answer is ${String.fromCharCode(65 + q.answer)}.`}</strong>
                     {q.explanation && <span> {q.explanation}</span>}
                     {q.at_ms !== null && onJump && (
-                        <button type="button" className="study-link" onClick={() => onJump(q.at_ms as number)}>
+                        <button type="button" className="study-link" onClick={() => onJump(q.at_ms as number, q)}>
                             Jump to this moment ({clock(q.at_ms)})
                         </button>
                     )}

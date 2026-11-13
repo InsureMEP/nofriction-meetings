@@ -1,11 +1,24 @@
-// Recordings: one search field, the list (filtered by Notebook), and the
-// selected recording with its title block, four views (Rewind · Notes ·
-// Links · Review), Make lesson on a Class recording (docs/LESSONS.md §13)
-// and Export… (docs/EXPORT.md).
+// Recordings: one search field, the list (narrowed by Notebook), and beside
+// it either the notebook's page (pick a notebook: what's due, what was
+// marked, review everything) or the selected recording with its title
+// block, four views (Rewind · Notes · Links · Review), Make lesson on a
+// Class recording (docs/LESSONS.md §13) and Export… (docs/EXPORT.md).
 
 import { useEffect, useState } from "react";
-import { onExportRequest, onRecordingSeek, requestMakeLesson, takeExport, takeRecordingSeek } from "../../lib/navigation";
+import {
+    onExportRequest,
+    onRecordingSeek,
+    onRecordingView,
+    requestMakeLesson,
+    requestRecordingSeek,
+    requestRecordingView,
+    takeExport,
+    takeRecordingSeek,
+    takeRecordingView,
+    type RecordingViewName,
+} from "../../lib/navigation";
 import { MeetingHistory } from "../MeetingHistory";
+import { NotebookPage } from "../NotebookPage";
 import { RewindGallery, type RewindSeek } from "../RewindGallery";
 import { MeetingNotesPanel } from "../MeetingNotesPanel";
 import { MeetingLinksPanel } from "../MeetingLinksPanel";
@@ -16,7 +29,7 @@ import { ExportSheet } from "../export/ExportSheet";
 import { useRecordingKind } from "../../hooks/useRecordingKind";
 import { guideTitle } from "../../lib/recordingKind";
 
-type MeetingView = "rewind" | "notes" | "links" | "review";
+type MeetingView = RecordingViewName;
 
 interface RecordingsViewProps {
     onSelectMeeting: (id: string) => void;
@@ -34,11 +47,28 @@ export function RecordingsView({ onSelectMeeting, selectedMeetingId, refreshKey,
     // and search results show the moment in Rewind
     const [seek, setSeek] = useState<RewindSeek | null>(null);
     const [exporting, setExporting] = useState<string | null>(null);
+    // The notebook the list is narrowed to, and whether its page is showing
+    // (picking a notebook opens the page; opening a recording puts it away)
+    const [notebook, setNotebook] = useState<string | null>(null);
+    const [pageOpen, setPageOpen] = useState(false);
+    const showPage = notebook !== null && pageOpen;
     const kind = useRecordingKind(selectedMeetingId);
     const jumpTo = (meetingId: string, ms: number) => {
         setSeek({ meetingId, ms, n: Date.now() });
         setMeetingView("rewind");
     };
+
+    // A recording asked for on one of its views (after Stop: Notes)
+    useEffect(() => {
+        const pending = takeRecordingView(selectedMeetingId);
+        if (pending) setMeetingView(pending);
+        return onRecordingView((id, view) => {
+            if (id === selectedMeetingId) {
+                takeRecordingView(selectedMeetingId);
+                setMeetingView(view);
+            }
+        });
+    }, [selectedMeetingId]);
 
     useEffect(() => {
         const pending = takeRecordingSeek(selectedMeetingId);
@@ -73,20 +103,50 @@ export function RecordingsView({ onSelectMeeting, selectedMeetingId, refreshKey,
         { id: "review", label: guideTitle(kind) },
     ];
 
+    const openRecording = (id: string) => {
+        setPageOpen(false);
+        onSelectMeeting(id);
+    };
+
     return (
-        <div className={`recordings-view ${selectedMeetingId ? "has-selection" : ""}`}>
+        <div className={`recordings-view ${selectedMeetingId || showPage ? "has-selection" : ""}`}>
             <MeetingHistory
-                onSelectMeeting={onSelectMeeting}
-                selectedMeetingId={selectedMeetingId}
+                onSelectMeeting={openRecording}
+                selectedMeetingId={showPage ? null : selectedMeetingId}
                 refreshKey={refreshKey + metaEdits}
-                compact={!!selectedMeetingId}
+                compact={!!selectedMeetingId || showPage}
+                notebook={notebook}
+                onNotebook={(n) => {
+                    setNotebook(n);
+                    setPageOpen(n !== null);
+                }}
                 onOpenAt={(id, ms) => {
-                    onSelectMeeting(id);
+                    openRecording(id);
                     jumpTo(id, ms);
                 }}
             />
-            {selectedMeetingId && (
+            {showPage && notebook && (
+                <NotebookPage
+                    notebook={notebook}
+                    refreshKey={refreshKey + metaEdits}
+                    isRecording={isRecording}
+                    onOpenNotes={(id) => {
+                        requestRecordingView(id, "notes");
+                        openRecording(id);
+                    }}
+                    onOpenAt={(id, ms) => {
+                        requestRecordingSeek(id, ms);
+                        openRecording(id);
+                    }}
+                />
+            )}
+            {!showPage && selectedMeetingId && (
                 <div className="recording-detail">
+                    {notebook && (
+                        <button type="button" className="nb-back" onClick={() => setPageOpen(true)} title={`Back to ${notebook}`}>
+                            ‹ {notebook}
+                        </button>
+                    )}
                     <RecordingTitleBlock meetingId={selectedMeetingId} refreshKey={refreshKey} onSaved={() => setMetaEdits((n) => n + 1)} />
                     <MeetingPeople meetingId={selectedMeetingId} />
                     <div className="deck-tabs" role="tablist" aria-label="Recording view">
@@ -131,7 +191,7 @@ export function RecordingsView({ onSelectMeeting, selectedMeetingId, refreshKey,
                         {meetingView === "rewind" ? (
                             <RewindGallery meetingId={selectedMeetingId} isRecording={live} seek={seek} />
                         ) : meetingView === "notes" ? (
-                            <MeetingNotesPanel meetingId={selectedMeetingId} />
+                            <MeetingNotesPanel meetingId={selectedMeetingId} onJump={(ms) => jumpTo(selectedMeetingId, ms)} />
                         ) : meetingView === "links" ? (
                             <MeetingLinksPanel meetingId={selectedMeetingId} onJump={(ms) => jumpTo(selectedMeetingId, ms)} />
                         ) : (

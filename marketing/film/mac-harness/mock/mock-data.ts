@@ -19,8 +19,11 @@ export interface DemoFrame {
 
 export interface DemoMarker {
     at: string;
-    kind: "important" | "question" | "test";
+    /** `note` is a line the user typed while listening (its text is `note`) */
+    kind: "important" | "question" | "test" | "note";
     note: string | null;
+    /** For a typed note: what the notes wrote under it */
+    detail?: string;
 }
 
 // Links are only "said" or "added": the Mac App Store build reads no
@@ -186,9 +189,27 @@ const bio: DemoMeeting = {
     ],
     markers: [
         { at: "15:44", kind: "test", note: "Four parts of the membrane" },
+        {
+            at: "16:05",
+            kind: "note",
+            note: "4 parts: lipids, proteins, cholesterol, carbs",
+            detail: "Dr. Reyes listed what the membrane is made of: a phospholipid bilayer, proteins set in it, cholesterol that keeps it fluid, and carbohydrate chains on the outside. Together that is the fluid mosaic model.",
+        },
         { at: "24:14", kind: "question", note: "Does facilitated diffusion use ATP?" },
+        {
+            at: "38:50",
+            kind: "note",
+            note: "pump = active, needs ATP",
+            detail: "The sodium-potassium pump moves ions against their gradient, so it costs energy: one ATP moves three sodium ions out and two potassium ions in.",
+        },
         { at: "39:33", kind: "important", note: "3 Na⁺ out, 2 K⁺ in per ATP" },
         { at: "47:33", kind: "test", note: "Quiz next Wednesday" },
+        {
+            at: "47:45",
+            kind: "note",
+            note: "quiz wed, ch 7 s1-3",
+            detail: "The quiz next Wednesday covers membranes and transport. The reading is chapter 7, sections 1 to 3, due Friday.",
+        },
     ],
     notes: {
         model_used: "lecture-notes",
@@ -360,6 +381,39 @@ const older: DemoMeeting[] = [
             { at: "22:10", speaker: "Dr. Reyes", text: "Plant cells add a cell wall outside the membrane. Animal cells don't have one." },
             { at: "41:30", speaker: "Dr. Reyes", text: "Next week we look at the membrane up close: what it's made of and how it works." },
         ],
+        markers: [
+            { at: "8:50", kind: "test", note: "Plasma membrane: know its job" },
+            { at: "22:15", kind: "question", note: "Do fungi have a cell wall too?" },
+        ],
+        notes: {
+            model_used: "lecture-notes",
+            summary: "An introduction to the cell as the smallest unit of life: the plasma membrane, the difference between plant and animal cells, and what comes next.",
+            key_topics: ["The cell as the unit of life", "Plasma membrane", "Plant cells have a cell wall"],
+            decisions: [{ text: "Plasma membrane: the boundary that separates the inside of a cell from the outside", context: "like the skin of a soap bubble" }],
+            action_items: [
+                { task: "Buy the lab manual", due_date: "Before Monday's lab" },
+                { task: "Read chapter 6", due_date: "Next class" },
+            ],
+        },
+        study: {
+            flashcards: {
+                cards: [
+                    { front: "What is the smallest unit of life?", back: "The cell." },
+                    { front: "What do plant cells have outside the membrane that animal cells don't?", back: "A cell wall." },
+                ],
+            },
+            quiz: {
+                questions: [
+                    {
+                        question: "What separates the inside of a cell from the outside?",
+                        choices: ["The cell wall", "The plasma membrane", "The nucleus", "The cytoplasm"],
+                        answer: 1,
+                        explanation: "Every cell is wrapped in a plasma membrane.",
+                        at_ms: 525000,
+                    },
+                ],
+            },
+        },
     },
     { id: "m-old-lab", title: "BIO 101: Lab safety", kind: "class", notebook: "BIO 101", daysAgo: 11, startTime: "09:00", durationMin: 45, plannedMinutes: 60 },
     {
@@ -376,6 +430,14 @@ const older: DemoMeeting[] = [
             { at: "18:40", speaker: "Dr. Reyes", text: "Lipids don't mix with water, and that's exactly why they make a good membrane." },
             { at: "33:05", speaker: "Dr. Reyes", text: "Proteins do most of the work in a cell, including moving things across the membrane." },
         ],
+        markers: [{ at: "18:45", kind: "test", note: "Why lipids make a membrane" }],
+        notes: {
+            model_used: "lecture-notes",
+            summary: "The four big molecules of life and what each does in a cell.",
+            key_topics: ["Carbohydrates", "Lipids", "Proteins", "Nucleic acids"],
+            decisions: [],
+            action_items: [{ task: "Midterm 1 covers chapters 1 to 7", due_date: "Nov 20" }],
+        },
     },
 ];
 
@@ -383,6 +445,36 @@ export const DEMO_MEETINGS: DemoMeeting[] = [acme, bio, health, ...older];
 
 /** Most recent first, as list_recent_notebooks returns them */
 export const RECENT_NOTEBOOKS = ["Acme project", "BIO 101", "Health"];
+
+/** The notes a recording made in the harness gets when it stops (by type). */
+export const LIVE_NOTES: Record<Kind, NonNullable<DemoMeeting["notes"]>> = {
+    class: {
+        model_used: "lecture-notes",
+        summary:
+            "Dr. Reyes picked up at how substances cross the membrane: simple diffusion for small molecules, facilitated diffusion through channel proteins for ions, and active transport by the sodium-potassium pump, which will be on the exam.",
+        key_topics: ["Simple diffusion", "Facilitated diffusion through channel proteins", "Active transport: the sodium-potassium pump"],
+        decisions: [{ text: "Active transport: moving a substance against its gradient, which costs ATP", context: "three sodium out, two potassium in" }],
+        action_items: [{ task: "Quiz on membranes and transport", due_date: "Wednesday" }],
+    },
+    meeting: {
+        model_used: null,
+        summary: "The team went through the roadmap, beta feedback and the launch checklist.",
+        key_topics: ["Roadmap", "Beta feedback", "Launch checklist"],
+        decisions: [{ text: "Lock the plan names by Friday", made_by: "Priya" }],
+        action_items: [{ task: "Draft the launch email", assignee: "Dana", due_date: "Oct 20" }],
+    },
+    personal: {
+        model_used: "personal-notes",
+        summary: "A short appointment: results, what to take and when to come back.",
+        key_topics: ["Results are normal", "Vitamin D with breakfast"],
+        decisions: [],
+        action_items: [{ task: "Book a follow-up", due_date: "In three months" }],
+    },
+};
+
+/** What the harness writes under a note typed in a recording made there. */
+export const LIVE_NOTE_DETAIL =
+    "Dr. Reyes was explaining the sodium-potassium pump: it moves three sodium ions out and two potassium ions in for every ATP, and she said it will be on the exam.";
 
 // ── Live recording scripts (what streams in while "recording") ──────────
 
