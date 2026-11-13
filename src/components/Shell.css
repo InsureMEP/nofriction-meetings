@@ -9,7 +9,7 @@
   overflow: hidden;
   background: var(--agency-bg-dark, #0a0a0c);
   color: var(--agency-text-primary, #fff);
-  font-family: var(--agency-font-sans, 'Inter', -apple-system, sans-serif);
+  font-family: var(--agency-font-sans, -apple-system, BlinkMacSystemFont, sans-serif);
 }
 
 /* ─── Top bar ─── */
@@ -259,7 +259,7 @@
 
 /* Sentence-case tabs (Rewind · Notes · Links · Review guide) */
 .deck-tab {
-  font-family: var(--agency-font-sans, 'Inter', -apple-system, sans-serif) !important;
+  font-family: var(--agency-font-sans, -apple-system, BlinkMacSystemFont, sans-serif) !important;
   font-size: 13px !important;
   font-weight: 500 !important;
   letter-spacing: 0 !important;

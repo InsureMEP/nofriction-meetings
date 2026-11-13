@@ -14,7 +14,7 @@
         radial-gradient(1200px 600px at 50% -10%, rgba(250, 204, 21, 0.06), transparent 60%),
         var(--bg-main, #050505);
     color: var(--text-primary, #f5f5f5);
-    font-family: var(--ds-font-primary, 'Inter', -apple-system, sans-serif);
+    font-family: var(--ds-font-primary, -apple-system, BlinkMacSystemFont, sans-serif);
 }
 
 .setup-header {

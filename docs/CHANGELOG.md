@@ -72,6 +72,10 @@ only.
   Reduce Motion.
 - Deleting a typed note has Undo on the Mac, like every other delete; on
   iPhone it asks first.
+- Mac: the typeface is the system face on every Mac. The app named Inter
+  but never shipped it, so it showed only where someone had installed it.
+  (The design rules now also say the 44px target is for iPhone and iPad;
+  the Mac keeps desktop control sizes. No control changed size.)
 
 ### Fixed
 
