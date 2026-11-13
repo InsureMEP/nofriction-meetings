@@ -115,6 +115,38 @@ export function NotebookPage({ notebook, refreshKey, isRecording, onOpenNotes, o
         });
     };
 
+    // Review everything leads the side column once there is something to
+    // review; until then it follows what was marked
+    const reviewCard = (
+                <section className="nb-card" aria-labelledby="nb-review-title">
+                    <h3 id="nb-review-title" className="nb-card__title">Review everything</h3>
+                    {reviewText ? (
+                        <>
+                            <p className="nb-review__text">
+                                {reviewText} from this notebook's {kind === "class" ? "study" : "review"} guides, as one.
+                            </p>
+                            <div className="nb-review__actions">
+                                {page.cards > 0 && (
+                                    <button type="button" className="nb-btn nb-btn--primary" onClick={() => setReview("cards")}>
+                                        Flashcards
+                                    </button>
+                                )}
+                                {page.questions > 0 && (
+                                    <button type="button" className={`nb-btn${page.cards > 0 ? "" : " nb-btn--primary"}`} onClick={() => setReview("quiz")}>
+                                        Practice quiz
+                                    </button>
+                                )}
+                            </div>
+                        </>
+                    ) : (
+                        <p className="nb-empty">
+                            No {kind === "class" ? "study" : "review"} guides yet. Make one on a recording, and its flashcards and practice
+                            questions join the others here.
+                        </p>
+                    )}
+                </section>
+    );
+
     return (
         <div className="nb-page">
             <header className="nb-head">
@@ -185,34 +217,7 @@ export function NotebookPage({ notebook, refreshKey, isRecording, onOpenNotes, o
                 </section>
 
                 <div className="nb-side">
-                    <section className="nb-card" aria-labelledby="nb-review-title">
-                        <h3 id="nb-review-title" className="nb-card__title">Review everything</h3>
-                        {reviewText ? (
-                            <>
-                                <p className="nb-review__text">
-                                    {reviewText} from this notebook's {kind === "class" ? "study" : "review"} guides, as one.
-                                </p>
-                                <div className="nb-review__actions">
-                                    {page.cards > 0 && (
-                                        <button type="button" className="nb-btn nb-btn--primary" onClick={() => setReview("cards")}>
-                                            Flashcards
-                                        </button>
-                                    )}
-                                    {page.questions > 0 && (
-                                        <button type="button" className={`nb-btn${page.cards > 0 ? "" : " nb-btn--primary"}`} onClick={() => setReview("quiz")}>
-                                            Practice quiz
-                                        </button>
-                                    )}
-                                </div>
-                            </>
-                        ) : (
-                            <p className="nb-empty">
-                                Make a {kind === "class" ? "study" : "review"} guide on a recording (its {kind === "class" ? "Study guide" : "Review guide"} tab). The
-                                flashcards and practice questions of every guide in this notebook come together here.
-                            </p>
-                        )}
-                    </section>
-
+                    {reviewText ? reviewCard : null}
                     <section className="nb-card" aria-labelledby="nb-marked-title">
                         <h3 id="nb-marked-title" className="nb-card__title">
                             Marked
@@ -228,6 +233,7 @@ export function NotebookPage({ notebook, refreshKey, isRecording, onOpenNotes, o
                             </ul>
                         )}
                     </section>
+                    {reviewText ? null : reviewCard}
                 </div>
             </div>
 
