@@ -346,13 +346,3 @@
   font-size: 13px;
   color: var(--text-secondary, #a3a3a3);
 }
-
-.mn-busy .loading-spinner {
-  border-width: 2px;
-  border-color: var(--border-color, #262626);
-  border-top-color: var(--hazard-yellow, #facc15);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mn-busy .loading-spinner { animation-duration: 2.4s; }
-}

@@ -656,12 +656,20 @@ img.logo-icon {
 }
 
 .loading-spinner {
-  width: 48px;
-  height: 48px;
-  border: 4px solid #e5e7eb;
-  border-top-color: var(--accent-purple);
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border-color, #262626);
+  border-top-color: var(--hazard-yellow, #facc15);
   border-radius: 50%;
   animation: spin 1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Still says "working" without spinning */
+  .loading-spinner {
+    animation: none;
+    border-right-color: var(--hazard-yellow, #facc15);
+  }
 }
 
 @keyframes spin {

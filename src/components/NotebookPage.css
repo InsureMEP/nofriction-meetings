@@ -26,8 +26,6 @@
   width: 24px;
   height: 24px;
   border-width: 2px;
-  border-color: var(--border-color, #262626);
-  border-top-color: var(--hazard-yellow, #facc15);
 }
 
 /* ── Header ──────────────────────────────────────────────────────── */
