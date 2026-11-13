@@ -1,7 +1,10 @@
 # noFriction — Design System
 
-**Version:** 1.2.0  
-**Last Updated:** 2026-10-09
+**Version:** 1.3.0  
+**Last Updated:** 2026-11-12
+
+> v1.3.0 (v2, after `docs/design/FADELL_V2.md`): typed notes, Up next and
+> the notebook's page. No new top-level view and no new noun.
 
 > v1.2.0 (the Ive pass, after `docs/design/FADELL_AUDIT.md`): one window
 > with Record · Recordings · Chat, sentence case everywhere, one vocabulary.
@@ -95,6 +98,10 @@
 ```
 
 ### Rules
+- **One typeface.** `body` uses `--ds-font-primary`, and `button`, `input`,
+  `select` and `textarea` inherit it (`src/App.css`); a control never keeps
+  the browser's control font. Inter isn't bundled: it shows where it is
+  installed, and the system face otherwise.
 - **Sentence case everywhere.** No `text-transform: uppercase`, no tracked
   all-caps labels. Caps read as a dashboard; this is a notebook.
 - Body text is 14px (`--text-base`), not 16px. This is a desktop app, not a website.
@@ -205,8 +212,8 @@ Every async operation MUST have an error state that includes:
 ### Four views (top bar)
 | View | Purpose |
 |------|---------|
-| **Record** (⌘1) | Idle: a title, the privacy promise, one Record button. Recording: the capture bar (time left, Mark, Capture screen), the live transcript, the screens. No AI runs here. |
-| **Recordings** (⌘2) | One search field (⌘K), Notebook chips, the list by day; the open recording's title block and **Rewind · Notes · Links · Review guide**. |
+| **Record** (⌘1) | Idle: a title, the privacy promise, one Record button; when something is starting, one **Up next** card whose button has the answer on it (**Record BIO 101**) and the plain button becomes **Record something else**. Recording: the capture bar (time left, Mark, Capture screen), the live transcript with the notes you type into it (one field under it: **Type a note**), the screens. No AI runs here. |
+| **Recordings** (⌘2) | One search field (⌘K), Notebook chips, the list by day; the open recording's title block and **Rewind · Notes · Links · Review guide**. Picking a Notebook chip opens the notebook's page beside the list: **Due / Action items / To-dos**, **Marked**, **Review everything**, **Record** and **Ask**. After Stop the recording opens on **Notes**, which starts with **What you wrote**. |
 | **Lessons** (⌘3) | The local library of lesson sets (non-empty on first run: the built-in Stoichiometry course), **Import a lesson…**, and **Make lesson** (a Class recording → a lesson, with your AI; also on a Class recording in Recordings). A course opens to its lessons, mastery dashboard, final exam and certificate. Taking a lesson is fully offline and free. |
 | **Chat** (⌘4) | Ask your recordings, scoped to all, a notebook, a topic or one recording, with citations. |
 
@@ -224,6 +231,11 @@ Settings has six sections: Recording, Transcription, AI, Sync, Subscription
   views or Settings, it is cut.
 - One control per act: one Record, one Stop, one search, one Delete with
   Undo, one Strike from the record.
+- One suggestion at a time: Up next shows a single card (calendar, then
+  the user's routine, then a call), never a list, and nothing is offered
+  that needs setting up first.
+- A note is a mark the user typed: stored beside the marks, shown where it
+  was written, never in the Marks list and never a fourth mark kind.
 - Banners live in the one slot under the top bar, never over it.
 - The menu bar, tray and window use the same words.
 
@@ -242,6 +254,12 @@ Settings has six sections: Recording, Transcription, AI, Sync, Subscription
 | Review material | Review guide (Study guide for a Class) | Study (for every type) |
 | Screens (Mac) / Photos (iOS) | Capture screen | Snap |
 | AI | AI (section), endpoint (the URL), connection (saved) | AI Engine, provider (in UI) |
+| What the user types while recording | a note; the field says **Type a note** | jot, comment, annotation |
+| Their lines in the Notes view | **What you wrote** | My notes, user notes |
+| The suggestion to record | **Up next**; button **Record \<name\>**; the other button **Record something else** | Smart start, Auto-detect, Suggested |
+| Declining it | **Not now** | Dismiss, Snooze |
+| A notebook's page | the notebook's name; sections **Due** (class) / **Action items** (meeting) / **To-dos** (personal), **Marked**, **Review everything** | Dashboard, Course home, Hub |
+| The settings | **Remind me when something starts**, **Start by itself**, **Make notes automatically** | Auto-detect, Ambient, Smart |
 | A unit of study | lesson | module, chapter |
 | A course | lesson set / course | class (that is a recording type) |
 | Make one from a recording | **Make lesson** (verb and button, Lessons and a Class recording in Recordings; owner decision 2026-10-10); **Make again** to replace it | Generate |
