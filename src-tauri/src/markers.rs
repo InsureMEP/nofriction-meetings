@@ -419,7 +419,7 @@ pub mod commands {
     pub const NOTE_ADDED_EVENT: &str = "note_added";
 
     /// The meeting being recorded right now, if any.
-    fn recording_meeting(state: &AppState) -> Option<String> {
+    pub(crate) fn recording_meeting(state: &AppState) -> Option<String> {
         if !state.capture_engine.read().is_recording() {
             return None;
         }
@@ -465,10 +465,7 @@ pub mod commands {
     }
 
     /// Keep a line the user typed in the recording in progress (the note
-    /// field under the live transcript), stamped with the moment Return was
-    /// pressed (`at`). `meeting_id` is the recording it was typed in: if
-    /// that recording stopped between the keypress and this call, the line
-    /// is still kept on it, never lost and never put on another recording.
+    /// field under the live transcript). See [`keep_note`].
     #[tauri::command(rename_all = "camelCase")]
     pub async fn add_note(
         app: AppHandle,
@@ -477,12 +474,28 @@ pub mod commands {
         meeting_id: Option<String>,
         at: Option<String>,
     ) -> Result<Marker, String> {
+        keep_note(&app, &state, &text, meeting_id.as_deref(), at.as_deref()).await
+    }
+
+    /// Keep a typed line, stamped with the moment Return was pressed (`at`).
+    /// The note field under the live transcript and the quick-note panel
+    /// (quick_note.rs) both end here. `meeting_id` is the recording it was
+    /// typed in: if that recording stopped between the keypress and this
+    /// call, the line is still kept on it, never lost and never put on
+    /// another recording.
+    pub async fn keep_note(
+        app: &AppHandle,
+        state: &AppState,
+        text: &str,
+        meeting_id: Option<&str>,
+        at: Option<&str>,
+    ) -> Result<Marker, String> {
         let now = Utc::now();
         let pool = state.database.pool();
-        let live = recording_meeting(&state);
-        let (target, ts) = match (&live, &meeting_id) {
-            (Some(l), Some(m)) if l == m => (l.clone(), note_time(at.as_deref(), now)),
-            (Some(l), None) => (l.clone(), note_time(at.as_deref(), now)),
+        let live = recording_meeting(state);
+        let (target, ts) = match (live.as_deref(), meeting_id) {
+            (Some(l), Some(m)) if l == m => (l.to_string(), note_time(at, now)),
+            (Some(l), None) => (l.to_string(), note_time(at, now)),
             // Typed in a recording that has just stopped
             (_, Some(m)) => {
                 let ended: Option<Option<String>> = sqlx::query_scalar("SELECT ended_at FROM meetings WHERE id = ?")
@@ -492,13 +505,13 @@ pub mod commands {
                     .map_err(err("Database busy"))?;
                 let ended = ended.flatten().as_deref().and_then(parse_ts);
                 match ended {
-                    Some(end) if (now - end).num_seconds() <= LATE_NOTE_SECS => (m.clone(), note_time(at.as_deref(), now).min(end)),
+                    Some(end) if (now - end).num_seconds() <= LATE_NOTE_SECS => (m.to_string(), note_time(at, now).min(end)),
                     _ => return Err("That recording has ended. Add the note in its Notes.".into()),
                 }
             }
             (None, None) => return Err("Start a recording to type a note.".into()),
         };
-        let m = add(pool, &target, ts, Some(NOTE_KIND), Some(&text), false).await?;
+        let m = add(pool, &target, ts, Some(NOTE_KIND), Some(text), false).await?;
         let _ = app.emit(NOTE_ADDED_EVENT, &m);
         Ok(m)
     }

@@ -213,6 +213,21 @@ these rules apply.
     iPhone use `MarkerKind.markKinds` and `Meeting.marks` for anything that
     lists marks (`allCases` and `markers` include notes); the watch decodes
     marks only.
+  - **The quick-note panel is the note field with another way in**
+    (`quick_note.rs`, ⌃⌥⌘N on the Mac; FADELL_V2.md §10). A line goes
+    through `markers::commands::keep_note`, like the in-app field's: don't
+    give the panel its own storage, AI or setting, and never let it start
+    a recording. The panel must be created non-activating
+    (`NSWindowStyleMaskNonactivatingPanel` at init; set later, the window
+    server is out of step) and must keep ⌘ keys to itself while it has the
+    keyboard (⌘Q would reach the app's menu and quit mid-recording). Its
+    callbacks must not panic: the shipped build aborts on one. A save can
+    land after the panel was closed or reopened, so it goes through
+    `quick_note::settle`. Check a change with
+    `cargo run --example quick_note_panel` in `src-tauri/`: it runs the
+    panel without the app or its data. Don't take a screenshot to look at
+    it (`screencapture` puts a Screen Recording dialog on the owner's
+    screen); the example's `RENDER=` saves the panel's own drawing.
   - **Notes read the whole recording.** Never truncate a transcript for a
     prompt; condense it in parts (`study::condense_to_budget`,
     `MeetingAI`'s condense step). Prompts carry marks and typed notes by

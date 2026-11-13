@@ -21,6 +21,11 @@ only.
   beside the marks (kind `note`), so Export, the review guide, Chat and
   sync handle it (on the Mac, time-range Delete too); it is never a fourth
   mark kind.
+- **Type a note from any app (Mac).** **⌃⌥⌘N** opens one field over
+  whatever is in front; Return keeps the line at that moment and the field
+  is gone. The app in front stays in front. **File → Type a Note** and the
+  menu-bar icon's **Type a Note** open the same field. With nothing
+  recording it says so and takes no keys; it never starts a recording.
 - **A notebook's page.** **Due** / **Action items** / **To-dos** from every
   recording's notes with a tick each, **Marked** (every ✎ and ?), **Review
   everything** (one deck and one quiz from every guide in the notebook),

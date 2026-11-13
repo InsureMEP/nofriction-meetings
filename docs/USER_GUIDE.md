@@ -198,6 +198,14 @@ is kept with the moment you pressed it, and it appears in the transcript
 right there. Keep typing; the cursor stays in the field. On iPhone, **Done** beside the field
 puts the keyboard away.
 
+**From another app (Mac).** With your slides, a video call or a browser in
+front, press **⌃⌥⌘N**. One field opens over it. Type the line and press
+Return: it is kept at that moment and the field is gone. The app you were
+in stays in front the whole time, and noFriction stays hidden if you hid it. Esc closes the field and keeps what you
+typed for the next time you open it during that recording. **File → Type a
+Note** and **Type a Note** in the menu-bar icon's menu open the same field.
+If nothing is recording it says so; it never starts a recording.
+
 - A note is one line of up to 1,000 characters. It is yours: the app never
   rewrites it. Change or delete it later in the recording's **Notes**
   (iPhone/iPad: **⋯** beside the line; deleting asks first and can't be
@@ -813,6 +821,7 @@ Full policy: [nofriction.io/privacy](https://nofriction.io/privacy).
 | Can't reach a local server | Check the address and that the server is running. Plain `http://` only works for this device, your local network or Tailscale. On iPhone/iPad, allow Local Network access, and use the computer's network address, not `localhost`. |
 | It keeps offering to record something | **Not now** hides it until tomorrow. To stop the notifications: **Remind me when something starts** (Mac: **Settings → Recording**; iPhone/iPad: **Settings**). A notebook stops being offered when you haven't recorded it at that time for six weeks. |
 | A recording started by itself (Mac) | **Record by itself** is on: **Settings → Recording → Starting**. |
+| ⌃⌥⌘N or ⌃⌥⌘M does nothing (Mac) | Another app is using that key. Use **Type a Note** or **Mark** in the menu-bar icon's menu, or quit the other app and reopen noFriction. |
 | Notes cover only part of a long recording | Notes made by an earlier version read only the start. Open the recording → **Notes** → **Make again**. |
 | Recording stopped by itself | That's the time limit you chose or automatic stop; see [What is it, how long, and notebook](#what-is-it-how-long-and-notebook) and [Automatic stop](#automatic-stop). |
 | Notes are in the wrong style | Change the recording's type (Mac: the type row under the recording's title), then **Make again** on the notes. |

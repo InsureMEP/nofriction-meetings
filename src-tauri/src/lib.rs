@@ -91,6 +91,7 @@ pub mod redaction;
 pub mod meeting_links;
 // Students: moment markers and study guides (docs/STUDY_TOOLS.md)
 pub mod markers;
+pub mod quick_note;
 pub mod study;
 // Interactive education: portable offline lesson sets (docs/LESSONS.md)
 pub mod lessons;
@@ -488,6 +489,8 @@ pub fn run() {
             ai::set_app_handle(handle.clone());
             // ⌃⌥⌘M: mark the moment while another app is in front
             markers::register_hotkey(&handle);
+            // ⌃⌥⌘N: type a note while another app is in front (quick_note.rs)
+            quick_note::init(&handle);
             // Notification clicks (app activation) bring the window back
             notifications::init(&handle);
             // Up next: the calendar, the user's routine and call apps (up_next.rs)

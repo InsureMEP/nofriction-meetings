@@ -1,7 +1,7 @@
 // noFriction - menu bar (tray) icon. Right-click: Start Recording · Stop ·
-// Pause · Resume · Mark · Open noFriction · Settings… · Quit. Nothing else
-// (docs/design/FADELL_AUDIT.md F-22): the time limit, +15 min and the
-// "seems to have ended" countdown live in the window's banner.
+// Pause · Resume · Mark · Type a Note · Open noFriction · Settings… · Quit.
+// Nothing else (docs/design/FADELL_AUDIT.md F-22): the time limit, +15 min
+// and the "seems to have ended" countdown live in the window's banner.
 
 use once_cell::sync::OnceCell;
 use tauri::{
@@ -35,6 +35,7 @@ pub mod tray_ids {
     pub const PAUSE_RECORDING: &str = "tray_pause_recording";
     pub const RESUME_RECORDING: &str = "tray_resume_recording";
     pub const MARK_MOMENT: &str = "tray_mark_moment";
+    pub const TYPE_NOTE: &str = "tray_type_note";
     pub const SHOW_WINDOW: &str = "tray_show_window";
     pub const OPEN_SETTINGS: &str = "tray_open_settings";
 }
@@ -56,6 +57,12 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
         .item(&MenuItemBuilder::with_id(tray_ids::PAUSE_RECORDING, "Pause").build(app)?)
         .item(&MenuItemBuilder::with_id(tray_ids::RESUME_RECORDING, "Resume").build(app)?)
         .item(&MenuItemBuilder::with_id(tray_ids::MARK_MOMENT, "Mark").build(app)?)
+        .item(
+            // The key is shown beside it; the global key is what acts
+            &MenuItemBuilder::with_id(tray_ids::TYPE_NOTE, "Type a Note")
+                .accelerator(crate::quick_note::MENU_ACCELERATOR)
+                .build(app)?,
+        )
         .separator()
         .item(
             &MenuItemBuilder::with_id(tray_ids::SHOW_WINDOW, "Open noFriction")
@@ -114,6 +121,7 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
         tray_ids::PAUSE_RECORDING => emit_to_frontend(app, "tray:pause_recording"),
         tray_ids::RESUME_RECORDING => emit_to_frontend(app, "tray:resume_recording"),
         tray_ids::MARK_MOMENT => crate::markers::commands::mark_from_shortcut(app),
+        tray_ids::TYPE_NOTE => crate::quick_note::toggle(app),
         tray_ids::SHOW_WINDOW => show_window(app),
         tray_ids::OPEN_SETTINGS => {
             emit_to_frontend(app, "menu:settings");
