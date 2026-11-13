@@ -160,7 +160,7 @@ Each item has `"k"`. Times are integer milliseconds since 1970.
 | `edit` | `id`, `rec`, `keep` (see below) |
 | `strike` | `id`, `rec`, `target` (`words`/`line`/`screen`), `from?`, `to?`, `created`, `reason?`, `line?` (id of the line holding the marker), `count?` (screens it removed) |
 | `notes` | `rec`, `md` (Markdown), `made`, `stale`, `mod` |
-| `mark` | `id`, `rec`, `at`, `kind` (`important`/`question`/`test`), `note?`, `created`, `mod` |
+| `mark` | `id`, `rec`, `at`, `kind` (`important`/`question`/`test`, or `note` for a line the user typed, whose `note` is its text), `note?`, `created`, `mod` |
 | `ref` | `id`, `rec`, `url`, `title?`, `note?`, `created`, `mod` |
 | `topic` | `id`, `rec`, `label`, `key`, `conf` (0–1000), `source` (`ai`/`user`), `created` |
 | `screen` | `id`, `rec`, `at` (when it was taken), `end?` (until when it was on screen, Mac), `src` (`photo`/`screen`), `ext` (`jpg`/`png`), `size`, `sha` (SHA-256, hex) |
@@ -177,6 +177,14 @@ the iPhone are saved on the Mac as Markdown (`model_used =
 
 ## Merge
 
+- **Typed notes travel as marks.** A typed note is a `mark` item with the
+  kind `note`; there is no protocol change. A device that doesn't know the
+  kind (Mac 3.9.0 and earlier, iPhone 1.1.0 and earlier) skips the item
+  without an error and gets it the next time that note changes after it
+  updates. What the notes wrote under each typed note travels in the notes'
+  Markdown, as a first section `## What you wrote` with one
+  `- **line**: detail` bullet per note. Ticks on a notebook's page and "Not
+  now" stay on the device.
 - **Last writer wins per record** for recordings, notes, marks and
   references: the item with the later `mod` replaces the other. The Mac
   stamps `mod` when a row changes (triggers on each table write

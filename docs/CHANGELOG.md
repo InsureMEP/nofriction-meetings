@@ -9,6 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+The v2 work (plan and reasons: docs/design/FADELL_V2.md). Mac first; the
+iPhone side is listed where it differs.
+
+### Added
+- **Type a note while it listens (Mac).** One field under the live
+  transcript; Return keeps the line with its moment and it appears in the
+  transcript there. Rewind shows typed notes inline and as pins under the
+  scrubber; Notes opens with **What you wrote**. A typed note is stored
+  beside the marks (kind `note`), so Export, the review guide, Chat,
+  time-range Delete and sync handle it; it is never a fourth mark kind.
+- **A notebook's page (Mac).** Picking a Notebook chip in Recordings opens
+  its page: **Due** / **Action items** / **To-dos** from every recording's
+  notes with a tick each, **Marked** (every ✎ and ?), **Review everything**
+  (one deck and one quiz from every guide in the notebook), **Record** and
+  **Ask**. No AI is called; ticks are kept as hashes only.
+- **Up next (Mac).** When a calendar event is starting, a notebook you
+  usually record is due, or a call app takes the microphone, the Record
+  screen shows one card whose button starts it with the answers filled in.
+  **Remind me when something starts** (on) sends it as a notification;
+  **Start by itself** (off) starts the recording. The tray's first item
+  starts what is up next.
+- **Notes are ready.** A notification when automatic notes finish and the
+  app isn't in front, and a live **Making notes…** state in Notes.
+
+### Changed
+- **Notes read the whole recording.** They were written from the first
+  8,000 characters of the transcript (about ten minutes of speech). A long
+  recording is now read in parts, the way the review guide is, and the
+  prompt lists what you marked and typed; each typed note gets a line under
+  it saying what was being said then.
+- **Stop opens the recording on Notes** (Mac), not Rewind.
+- **Automatic notes** also run for a recording of a minute or more that has
+  a typed note or a mark (six minutes otherwise).
+- Buttons, fields and chips use the app's typeface instead of the browser's
+  control font; a recording's row shows the time under its day heading.
+
+### Fixed
+- Notes made from a transcript that was edited while they were being
+  written are no longer saved.
+- The notes' "Made" time was the time the view was opened, not when they
+  were made.
+- A failed notes run no longer puts the model's answer in its error text.
+
 ## [Mac 3.9.0 (47) · iOS 1.1.0 (12)] - 2026-10-23
 
 Export… and one-step AI connect are on both platforms (iOS 1.1.0 and Mac

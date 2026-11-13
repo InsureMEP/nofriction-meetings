@@ -25,6 +25,41 @@ A marker has a time (wall clock, the same clock as transcript lines), a
 kind and an optional note (at most 280 characters, whitespace closed up).
 The kind and note can be changed afterwards, and a marker can be deleted.
 
+### Typed notes (stored kind `note`)
+
+A line the user types while listening is stored in the same place as a mark,
+with the kind `note` (docs/design/FADELL_V2.md §6). It is not a fourth mark:
+
+- It is never offered where a mark's kind is chosen, never listed or counted
+  in **Marks**, and a mark can't be changed into one or back
+  (`markers::normalize_kind` refuses `note`; `stored_kind` accepts it;
+  `splitMarkers` in `src/lib/studyLogic.ts` separates them for every view).
+- Its text is required, one line with whitespace closed up, at most 1,000
+  characters (`MAX_TYPED_NOTE_CHARS`). It can be edited and deleted.
+- It is never folded into another row: the 800 ms debounce looks at marks
+  only.
+- Mac: the note field under the live transcript (`NoteComposer.tsx`,
+  `add_note`), shown in the live transcript, in Rewind (inline and as pins
+  under the scrubber) and at the top of Notes (**What you wrote**).
+- Symbol `✍`, label "Note" in prompts and exports (`markers::symbol`,
+  `markers::label`). The study guide's marks block and Chat's marker
+  passages list notes with the marks; the notes prompt lists them on their
+  own (see below).
+- The table's CHECK was widened by a one-time rebuild
+  (`markers::ensure_schema`; a table made by 3.9.0 or earlier is copied into
+  a new one, dropped, and the new one renamed into place).
+
+### Notes are built on marks and typed notes
+
+`meeting_notes.rs` writes the notes from the same input as the guide: every
+stored line with its time, condensed in parts when it doesn't fit the model
+(`study::condense_to_budget`), so nothing is cut off the end. The prompt
+lists the marks under `MARKS` and the typed notes under `TYPED NOTES`,
+numbered, and asks for one more field, `your_notes: [{n, detail}]`: what was
+being said when each note was typed. The details are stored on the notes row
+(`meeting_notes.note_details`, JSON `[{marker_id, detail}]`) and shown under
+each line in **What you wrote**. Marker ids never appear in a prompt.
+
 - **Mac** (`src-tauri/src/markers.rs`, table `meeting_markers`: id,
   meeting_id, ts, kind, note, created_at; `ON DELETE CASCADE`). Mark with
   the capture bar's **Mark** button, **File → Mark Moment**, or the global
@@ -140,6 +175,9 @@ See [REDACTION.md](REDACTION.md) (purge step 5 and Time ranges).
   undo window), so a guide made from text that was removed while it was
   being generated is never written. The Mac also refuses to start while a
   Delete of that meeting is pending or the meeting is recording.
+- **Typed notes** are markers: everything below applies to them. What the
+  AI wrote under them (`note_details`) is AI output, rewritten and flagged
+  with the rest of the notes row (REDACTION.md step 5).
 - **Markers**: deleted with their meeting. A Mac time-range Delete or
   Strike removes the markers inside its range, notes included; they are
   found at commit (like loose screen text), so the 5-second undo keeps
