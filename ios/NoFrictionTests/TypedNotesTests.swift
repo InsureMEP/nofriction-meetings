@@ -716,9 +716,11 @@ final class NotesStoreTests: XCTestCase {
         XCTAssertEqual(after.count, 2)
         XCTAssertThrowsError(try NotesStore.save("## Summary\nmade during", madeFrom: after, to: m, context: context))
         let ai = NotesMockAI()
+        // Make notes doesn't even ask while it waits: what the Delete removes must not be sent
         do { try await NotesStore.make(m, contextTokens: 32_768, complete: ai.complete, context: context); XCTFail("a Delete is waiting") } catch {
-            XCTAssertEqual(error as? MeetingAI.NotesFailure, .transcriptChanged)
+            XCTAssertEqual(error as? FillInTheBlanks.Failure, .pendingEdit)
         }
+        XCTAssertTrue(ai.calls.isEmpty, "nothing was sent")
         XCTAssertEqual(m.aiNotes, "## Summary\nS", "nothing was written")
         // The Delete is done: notes made from what is left are kept; ones made before it never are
         try await RedactionEngine.commit(pending, context: context)
