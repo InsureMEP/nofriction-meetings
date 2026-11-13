@@ -362,6 +362,9 @@ async fn permanent_mismatch_drops_the_pending_delete_and_reports_it() {
 // ─── Strike ──────────────────────────────────────────────────────────────
 
 /// Every table/column, as text, plus the raw database + WAL bytes.
+/// A needle must hold a letter that can't be in a random id or a time
+/// ("44Q71", not "4471"): a UUID that happened to contain the same digits
+/// once failed a screen test as a false hit.
 async fn content_anywhere(f: &Fixture, needle: &str) -> Vec<String> {
     let mut hits = Vec::new();
     let tables: Vec<String> = sqlx::query_scalar(
@@ -721,7 +724,7 @@ async fn add_screen_at(f: &Fixture, name: &str, ts: DateTime<Utc>) -> String {
         Some(&state_id),
         Some("m1"),
         ts,
-        "OCR: wire 2M to account 4471",
+        "OCR: wire 2M to account 44Q71",
         "h",
         0.9,
         "ocr",
@@ -739,15 +742,15 @@ async fn add_screen_at(f: &Fixture, name: &str, ts: DateTime<Utc>) -> String {
         app_name: Some("Mail".into()),
         window_title: Some("Secret deal memo".into()),
         category: "other".into(),
-        summary: "User reads the 4471 wire memo".into(),
+        summary: "User reads the 44Q71 wire memo".into(),
         focus_area: None,
         visible_files: None,
         confidence: Some(0.5),
         frame_ids: Some(qid.to_string()),
     };
     let aid = f.db.add_activity(&activity).await.unwrap();
-    f.db.add_entity(aid, "account", "4471", None, 0.5, None).await.unwrap();
-    sqlx::query("INSERT INTO meeting_timeline_events (event_id, meeting_id, ts, event_type, title, state_id) VALUES (?, 'm1', ?, 'screen', 'Memo 4471', ?)")
+    f.db.add_entity(aid, "account", "44Q71", None, 0.5, None).await.unwrap();
+    sqlx::query("INSERT INTO meeting_timeline_events (event_id, meeting_id, ts, event_type, title, state_id) VALUES (?, 'm1', ?, 'screen', 'Memo 44Q71', ?)")
         .bind(format!("ev-{}", state_id))
         .bind(ts.to_rfc3339())
         .bind(&state_id)
@@ -768,7 +771,7 @@ async fn screen_delete_removes_files_derived_files_and_rows() {
     let b = add_screen(&f, "b", 20).await;
     let legacy_file = f.env.app_data_dir.join("frames").join("m1").join("frame_1.jpg");
     std::fs::write(&legacy_file, b"jpeg").unwrap();
-    let legacy = f.db.add_frame("m1", Utc::now(), Some(&legacy_file.to_string_lossy()), Some("ocr 4471")).await.unwrap();
+    let legacy = f.db.add_frame("m1", Utc::now(), Some(&legacy_file.to_string_lossy()), Some("ocr 44Q71")).await.unwrap();
     let cache = f.env.cache_dir.join("m1").join("thumbnails");
     std::fs::create_dir_all(&cache).unwrap();
     std::fs::write(cache.join("thumb_1.000.jpg"), b"x").unwrap();
@@ -794,6 +797,46 @@ async fn screen_delete_removes_files_derived_files_and_rows() {
     assert_eq!(count(&f, "SELECT COUNT(*) FROM redactions").await, 0, "Delete leaves no trace");
 }
 
+/// What Read the screens kept (screen_reading.rs) is a text snapshot on the
+/// screen, so the screen's purge is its purge: no purge filters by source.
+#[tokio::test]
+async fn what_the_ai_read_from_a_screen_goes_with_the_screen() {
+    let f = setup().await;
+    let a = add_screen(&f, "a", 10).await;
+    let b = add_screen(&f, "b", 40).await;
+    let c = add_screen(&f, "c", 70).await;
+    for s in [&a, &b, &c] {
+        f.db.add_text_snapshot_full(
+            &format!("read-{}", s),
+            None,
+            Some(s),
+            Some("m1"),
+            Utc::now(),
+            "Slide: Q3 plan\n- Wire 2M to account 44Q71",
+            "h",
+            1.0,
+            crate::screen_reading::SOURCE,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    }
+    let readings = |id: &str| format!("SELECT COUNT(*) FROM text_snapshots WHERE source = 'screen_reading' AND state_id = '{}'", id);
+    // Deleted: gone once the undo window closes
+    let p = request_delete_screens(f.db.pool(), &f.env, "m1", &[a.clone()]).await.unwrap();
+    commit_pending(f.db.pool(), &f.env, &p.id).await.unwrap().unwrap();
+    assert_eq!(count(&f, &readings(&a)).await, 0);
+    assert_eq!(count(&f, &readings(&b)).await, 1, "another screen's reading is kept");
+    // Struck: gone at once
+    strike_screens(f.db.pool(), &f.env, "m1", &[b.clone()], None).await.unwrap();
+    assert_eq!(count(&f, &readings(&b)).await, 0);
+    assert_eq!(count(&f, &readings(&c)).await, 1);
+    // What is left to read is only the screen that is left
+    let left = crate::screen_reading::readings(f.db.pool(), "m1").await.unwrap();
+    assert_eq!(left.iter().map(|r| r.state_id.clone()).collect::<Vec<_>>(), vec![c]);
+}
+
 #[tokio::test]
 async fn screen_strike_leaves_only_a_marker() {
     let f = setup().await;
@@ -810,7 +853,7 @@ async fn screen_strike_leaves_only_a_marker() {
         assert_eq!(count(&f, &format!("SELECT COUNT(*) FROM {}", t)).await, 0, "{}", t);
     }
     assert!(std::fs::read_dir(f.env.app_data_dir.join("frames/m1")).unwrap().next().is_none());
-    assert_eq!(content_anywhere(&f, "4471").await, Vec::<String>::new());
+    assert_eq!(content_anywhere(&f, "44Q71").await, Vec::<String>::new());
     let tl = f.db.get_synced_timeline("m1").await.unwrap().unwrap();
     assert!(tl.frames.is_empty());
     assert_eq!(tl.redactions, vec![rec]);
@@ -850,7 +893,7 @@ async fn screen_purge_removes_edit_history_of_its_text() {
         ("episode", format!("ep-{}", a)),
         ("text_snapshot", format!("snap-{}", b)),
     ] {
-        sqlx::query("INSERT INTO data_versions (entity_type, entity_id, field_name, previous_value, new_value) VALUES (?, ?, 'content', 'wire 4471', 'x')")
+        sqlx::query("INSERT INTO data_versions (entity_type, entity_id, field_name, previous_value, new_value) VALUES (?, ?, 'content', 'wire 44Q71', 'x')")
             .bind(t)
             .bind(id)
             .execute(f.db.pool())

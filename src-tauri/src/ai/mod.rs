@@ -62,6 +62,17 @@ pub async fn complete_vision(msgs: Vec<Msg>, opts: Opts) -> Result<String, AiErr
     client::complete(Kind::Vision, msgs, opts).await
 }
 
+/// Completion with image(s), only if the vision provider resolved for this
+/// very request is the one `allowed` accepts (its base URL and model).
+/// `Ok(None)`: it wasn't, and nothing was sent.
+pub async fn complete_vision_if(
+    msgs: Vec<Msg>,
+    opts: Opts,
+    allowed: impl FnOnce(&str, &str) -> bool,
+) -> Result<Option<String>, AiError> {
+    client::complete_if(Kind::Vision, msgs, opts, allowed).await
+}
+
 /// A provider is selected, configured and allowed for this kind (no network).
 pub fn is_ready(kind: Kind) -> bool {
     client::resolve(kind).is_ok()

@@ -46,6 +46,7 @@ import { itemFor, type RecordingItem } from "../lib/notebookPageLogic";
 import { useRecordingKind } from "../hooks/useRecordingKind";
 import ErrorState from "./ErrorState";
 import { TopicsEditor } from "./TopicChips";
+import { ScreenReadings } from "./ScreenReadings";
 import "./MeetingNotesPanel.css";
 
 interface SavedNotes {
@@ -371,6 +372,7 @@ export function MeetingNotesPanel({ meetingId, onJump }: MeetingNotesPanelProps)
                     {actions}
                 </div>
             )}
+            <ScreenReadings meetingId={meetingId} onJump={onJump} />
             <TopicsEditor meetingId={meetingId} />
 
             {email && <FollowUpSheet email={email} onClose={() => setEmail(null)} />}

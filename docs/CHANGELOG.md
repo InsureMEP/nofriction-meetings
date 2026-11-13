@@ -9,6 +9,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+On `main`, not in a build yet.
+
+### Added
+- **Read the screens (Mac).** In a recording's Notes, **Read the screens…**
+  sends up to 12 of the recording's screens and photos to your AI and
+  keeps what it reads from each (a slide's title and points, a document's
+  statements, a formula) as text under **On the screens**, with the time
+  it was shown. A confirmation first shows every picture that would go,
+  each with a tick box, and names where they go; only the ticked ones are
+  sent, only there, and only when you press its button. Each picture goes
+  with a fixed instruction and nothing else from the recording. Click a
+  picture to see it large before you send it. Screens noFriction
+  recognises as private (a known mail, chat or password app, a terminal,
+  a browser window whose title says it is private) are never offered;
+  when you record your whole display
+  it goes by the app that was in front, so look at those pictures first.
+  The screens at your marks and typed notes go first. **Stop** ends it
+  before the next picture, and **Remove** deletes what was read from a
+  screen. It needs a model that can read images (Settings → AI → Screens)
+  and is part of noFriction Pro. Deleting or striking a screen removes
+  what was read from it.
+- The prompt library for pictures: one instruction per kind (slide,
+  whiteboard, document, code, table, chart, web page, call, photo),
+  chosen on your Mac from the app the screen came from.
+
+### Changed
+- Settings → AI says where pictures go apart from where text goes (they
+  can differ: Apple on-device for text, another model for Read the
+  screens). It no longer says screenshots go with every screen feature;
+  none did.
+- The AI consent dialog says a picture (a screen, or a photo) is sent only
+  when you press **Read the screens**, which shows each one first. Its
+  keyboard focus starts on **Not now**, so a stray Return never allows a
+  send.
+- A recording of your whole display now also notes which app and window
+  were in front of each screen. It stays on your Mac and goes with the
+  screen when you delete or strike it; Read the screens uses it to leave
+  out a display that had a private app in front.
+
 ## [Mac 4.0.0 (49) · iPhone and iPad 2.0.0 (14)] - 2026-11-13
 
 Built and uploaded to TestFlight on 2026-11-13; not yet submitted for

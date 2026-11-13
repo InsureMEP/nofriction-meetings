@@ -634,3 +634,199 @@ looked at. The two devices filling in and syncing with each other is
 covered by unit tests on each side, not by a run between a real iPhone and
 Mac.
 
+---
+
+## 12. Read the screens, and the prompt library (Mac, 2026-11-13)
+
+The owner, during the release: "you need to make a prompt library for
+reviewing the images. how many images are you sending? Are they all the
+time?" The answer then was none: no feature sent a picture, and a retired
+background analyzer that could have was removed the same day. This is the
+feature that does, built so those questions always have an exact answer.
+
+In a recording's Notes, **On the screens** has **Read the screens…**. A
+confirmation names the host and the model and shows every picture that
+would go, each with its time, its kind, its app and a tick box. Its button
+says the number ticked. Each ticked picture is then sent and what the AI
+read from it is kept as text, with its time. **Stop** ends a run before its
+next picture.
+
+**Rules**
+
+- **How many: the pictures ticked, at most 12.** The confirmation passes
+  back the ids left ticked and the destination it named. The Mac sends
+  those ids and nothing else: it never works the list out again, so a new
+  mark, a synced photo, a late screen or an earlier run can't change what
+  goes.
+- **Which: the ones that matter.** The screen showing at each mark and
+  typed note, then the rest spread evenly over the recording. A screen is
+  read once. A photo from the iPhone is offered too, labelled Photo.
+- **Never the ones it recognises as private.** `screen_prompts::never_sent`
+  leaves a screen out on the Mac, before the list is shown: mail and
+  message apps, password apps and keychains, terminals, private or
+  incognito browsing, a tab on mail, a sign-in page or a bank, a file that
+  holds keys, and noFriction's own window. It is a list of names and
+  words, so an app that isn't on it isn't recognised, and a private
+  browser window is recognised only when its title says so (Safari's
+  don't). The model is never relied on for this.
+  - A capture of one window is judged by that window. An app that shows
+    one kind of thing is trusted over its title ("Password hashing —
+    Lecture 4" in Keynote is a slide); a title decides only for a browser
+    tab or an unknown app.
+  - A capture of a whole display, which is the default, has no app. The
+    capture records which app and window were in front on that display
+    (`privacy_filter::front_window_on`; `screen_states.front_app`,
+    `front_title`; never sent), and the display is left out when that one
+    is private. One of noFriction's own windows is passed over unless it
+    fills the display; then the picture is of noFriction and is left out. Something private that was only
+    visible behind another window is not recognised; nor is anything in a
+    whole-display screen recorded before this was added, a screenshot from
+    the iPhone, or a photo.
+  - Words in a file's name (credentials, payslip, id_rsa) leave a window
+    out in any app but a slide app; words about a page (inbox, sign in,
+    bank) only in a browser tab or an unknown app.
+  - So the confirmation shows every picture whole (never cropped), each
+    can be opened large, whole displays and photos are named as such, and
+    a line asks the user to look at them first.
+- **When: only on that click.** Never by itself, never on a timer, never
+  on a key phrase, never while that recording is running, never while a
+  Delete is in its undo window (checked before every picture, and again
+  in the statement that saves a reading).
+- **What goes: one picture per request**, a copy made smaller (1568 px on
+  its long edge), with the prompt for its kind. The prompt is fixed text:
+  nothing from the recording is in it, no transcript, title, app or
+  window name. A reading can therefore only repeat what its own picture
+  shows, and the screen's purge is the whole of its purge.
+- **Where: the destination the confirmation named.** Each request is made
+  with `ai::complete_vision_if`: the endpoint is resolved once, its host
+  (with port) and model are compared to the confirmed ones, and the
+  request goes out on that same resolved target. A change of settings,
+  even between the check and the send, sends nothing (more). The gates of every AI call apply (Pro in the Mac App
+  Store build, consent for a public endpoint). Apple's on-device model
+  can't read images, so nothing is sent with it.
+- **Errors.** A screen counts as read only when the AI answered about it
+  (a reading, or a plain "nothing to keep"). An answer that is cut off,
+  not in the form asked for, or only repeats the example in the
+  instructions leaves its screen unread and the run goes on; so does a
+  picture that can't be prepared on the Mac (nothing is sent for it). If
+  the endpoint refuses or fails before it has read anything, the run stops
+  after that one request. Once it has read a picture, one rejection is
+  taken as that picture's problem and skipped; a second in a row stops the
+  run, and the message says at which screen. If Pro or consent is asked
+  for, nothing has been sent yet and the same confirmation is passed
+  again; only the app's own answer starts that, never words in an
+  endpoint's error, and a run that has sent a picture is never repeated by
+  itself. **Remove** deletes what was read from a screen, which is then
+  unread.
+- **The prompt library** (`screen_prompts.rs`). One entry per kind:
+  slide, whiteboard, document, code, table, chart, web page, call, photo,
+  and anything else. The kind is decided on the device; no request is
+  made to classify it. The app decides when it shows one kind of thing
+  (Keynote is slides, Xcode is code); the window title decides only for a
+  browser or an app the library doesn't know. Every prompt shares the
+  same rules and the same JSON answer, so one parser reads them all. The
+  rules that protect someone are shared rules: only what is visible,
+  never a person's appearance or name, a call read for what is shared and
+  never its people or its chat, `[secret]` in place of anything like a
+  password, `skip` for a private or empty picture. They are shared
+  because a screen captured as a whole display has no app name: it gets
+  the "anything else" prompt whatever it shows, and can't be recognised
+  as private on the Mac. For those, the pictures in the confirmation are
+  the user's check.
+- **What is kept is the screen's.** A reading is a text snapshot on the
+  screen's own id, so deleting or striking the screen removes it through
+  the purge that already exists. It is saved only if the screen still
+  exists, with the same picture, when the answer arrives. The row holds
+  the AI's text only.
+- **Not given to anything else.** Make notes and Fill in the blanks don't
+  read it: notes would then quote a screen, and a screen's purge doesn't
+  clean notes. Links, chat search, the timeline and the Obsidian export
+  read the same table and leave these rows out: they are an AI's words,
+  not text from the screen.
+- **One way in.** The run and the sender are private to
+  `screen_reading.rs`; only the confirmation's command reaches them, and
+  the policy guard checks that.
+
+**Not on iPhone or iPad.** Its AI client only sends text.
+
+**Review (2026-11-13).** An independent review of the first version found
+twelve defects; none was in the purge of a removed screen. Fixed:
+
+| Found | Now |
+|---|---|
+| The confirmation bound a count, so a different set of 12 could pass, and a consent retry could send more than was confirmed, to a host that had changed | The ticked ids and the destination are passed back and enforced; nothing is recomputed; a partly completed run is never retried |
+| Any endpoint error marked the screen read for good, and the run kept uploading | Only an answer marks a screen read; an endpoint error stops the run |
+| A Delete in its undo window was ignored | The plan is blocked, the run checks before every picture, and the save statement checks again |
+| iPhone photos were sent as "screens" | Offered as Photo, with their own prompt, and shown in the confirmation |
+| With whole-display capture every screen got the generic prompt, without the call and secret rules, and the list showed only "time, Screen" | Those rules are shared rules; the confirmation shows each picture with a tick box |
+| A title could override a private app, and nothing private was excluded on the device | The app decides first; `never_sent` leaves private screens out on the Mac |
+| Transcript text sent as context could survive in a reading after its Delete or Strike | No transcript goes with a picture |
+| `skip` was honoured only as a JSON boolean | A word or a number means skip too |
+| Links, chat search, the timeline and the Obsidian export could read a reading as screen text | They leave these rows out; the row carries no window title |
+| The run and sender were public | Private to the file, checked by the guard |
+| No way to stop | Stop |
+| Tab left the dialog; the button stayed after everything readable was read; a failed load hid the section; the consent dialog focused Allow | Tab is kept in the dialog; the counts come from the Mac; a failed load says so; consent focuses Not now |
+
+**Second review (2026-11-13).** A second independent review of those fixes
+found no way to send an unconfirmed picture, and one high, four medium and
+eight low defects. Fixed:
+
+| Found | Now |
+|---|---|
+| The destination was checked on one snapshot of the settings and the picture sent on another: a change in between sent one picture elsewhere | Resolved, compared and sent on one target (`ai::complete_vision_if`) |
+| The confirmation's tiles cropped the picture, with no way to enlarge it | Shown whole; click to see it large |
+| With whole-display capture (the default) nothing could be recognised as private | The capture records what was in front; the display is left out when that is private; the rest is said plainly and shown |
+| Portrait iPhone photos were sent on their side | Turned upright from EXIF before the new encoding |
+| A failed run left a re-entered view saying "Reading…" for good | The command always announces its end; Stop on nothing clears it |
+| Settings said nothing leaves the Mac with Apple for text and a remote model for pictures | The line names text and pictures apart |
+| One picture the endpoint rejects ended every run at the same place | One rejection is skipped once the endpoint has read a picture; the message names the screen |
+| A model that never saw the picture could leave its echo of the instructions for good | An echo isn't a reading; Remove deletes a reading |
+| Title words excluded slides in Keynote ("Private equity", "Password hashing") | Titles decide only for a browser or an unknown app |
+| Apps and tabs missing from the private list | More names, including Apple's apps in other languages; chat and mail words for tabs |
+| The guard missed a second caller in the UI, aliases, and new readers of screen text | Checked |
+| Docs promised more than the code | Reworded to what the lists do |
+| A consent retry could be started by words in an endpoint's error | Only the app's own answer starts it |
+
+**Third review (2026-11-13).** A check of those fixes confirmed the
+destination fix and again found no way to send an unconfirmed picture. It
+found three medium defects, two of them made by the fixes themselves:
+noFriction's own window counted as "in front" (so the screens captured
+while the user typed notes were left out, with the wrong reason shown);
+file-name words (credentials, payslip) had stopped leaving out files open
+in known apps; and "in front" was the front window of any display, not the
+one captured. All three are fixed, with the smaller ones: an endpoint's
+failure on the first picture now names the screen, pictures the AI kept
+nothing from can be offered again, iPhone screenshots are named, a call
+app's window is left out when its title says Chat or Activity, and the
+guard's checks are pinned to counts. A last check of that round found one
+more: with noFriction's own windows passed over, a display that noFriction
+itself filled was offered, or judged by a window hidden behind it. A
+display it fills is now left out, and a window counts as on a display by
+the part of it that shows there, not by its centre.
+
+**Verified.** Unit tests: the library (one prompt per kind, the kind from
+app and window, the shared rules in every prompt, the prompt carrying
+nothing from the recording), what is left out as private and what is not,
+a whole display judged by what was in front, the choice of screens, the
+parser (skips, echoes, caps), only the confirmed ids going whatever
+changed since, only to the confirmed destination (before, during and at
+the send), an endpoint error stopping the run with nothing marked read,
+one bad picture not ending a run, an unusable answer leaving its screen
+unread, a waiting Delete blocking the plan, the run and the save, Stop,
+photos (and a rotated one sent upright with no metadata), removing a
+reading, a reading dropped when its screen is deleted or its picture
+replaced meanwhile, a screen's Delete and Strike removing its reading,
+Links, chat search and the timeline not reading it, and the Settings
+line. The screen in the film harness: the confirmation with whole
+pictures, the large view, tick boxes, progress, Stop, the list, Remove.
+
+**Not verified.** No picture was sent to a real model: what a model reads
+from a real slide, whether it honours `skip` on a private screen, and what
+twelve requests cost are untested. Not run in the real app, so these were
+never seen working there: the pictures in the confirmation (they use the
+app's asset scope, as the capture bar's do), and what macOS reports as
+the window in front of a display during a real recording (a slideshow in
+play mode, Stage Manager, helper windows of other apps). A private Safari
+window doesn't say so in its title, so it is not recognised. The website's privacy page doesn't
+mention pictures yet; it must before a build with this feature ships.
+

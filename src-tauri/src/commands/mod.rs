@@ -801,6 +801,9 @@ pub async fn start_recording(
                                     frame.app_name.as_deref(),
                                 )
                                 .await;
+                            if let Some((app, title)) = &frame.front {
+                                let _ = db.set_screen_state_front(&new_state_id, app, title).await;
+                            }
                             let _ = app_handle.emit(
                                 "frame_captured",
                                 serde_json::json!({

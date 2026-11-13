@@ -71,10 +71,17 @@ pub async fn snap_capture_target(
     state: State<'_, AppState>,
 ) -> Result<Snapshot, String> {
     let t = target.clone();
-    let (image, label, app_name, _) =
-        tokio::task::spawn_blocking(move || CaptureEngine::capture_target(&t))
-            .await
-            .map_err(|e| e.to_string())??;
+    // A whole display has no app of its own: what was in front is kept with
+    // it, as the recording's own captures do (capture_engine.rs)
+    let ((image, label, app_name, _), front) = tokio::task::spawn_blocking(move || {
+        let front = match t {
+            CaptureTarget::Display { id } => crate::privacy_filter::front_window_on(id),
+            CaptureTarget::Window { .. } => None,
+        };
+        CaptureEngine::capture_target(&t).map(|shot| (shot, front))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
 
     let now = chrono::Utc::now();
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
@@ -109,6 +116,9 @@ pub async fn snap_capture_target(
             .database
             .set_screen_state_source(&state_id, &target.key(), &label, app_name.as_deref())
             .await;
+        if let Some((app, title)) = &front {
+            let _ = state.database.set_screen_state_front(&state_id, app, title).await;
+        }
         recorded_state = Some(state_id.clone());
     }
 

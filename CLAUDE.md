@@ -188,13 +188,62 @@ these rules apply.
     wait until no recording is running (`meeting_notes::run::after_stop`;
     iPhone `AutoNotes`, which checks before every request); only the
     user's own **Make notes** may run during another recording.
-  - **A picture reaches an AI only on a click that says so.** No feature
-    sends an image today (audited 2026-11-13): captions and picture picks
-    send text about each picture. The policy guard lists every file
-    allowed to build an image message; add to that list on purpose, with
-    the click that leads there. `vlm_scheduler.rs` (a timer that sent
-    queued screenshots) is retired; don't start it, queue screens for it
-    or bring back a timer that calls the AI.
+  - **A picture reaches an AI only on a click that says so.** One feature
+    sends images: **Read the screens** (`screen_reading.rs`; FADELL_V2.md
+    §12). Its confirmation shows every picture that would go, with a tick
+    box each, and names the destination; the ticked ids and that host and
+    model are passed back, and `read_screens` sends those ids there and
+    nothing else. It never works the list out again, re-validates each
+    screen, and makes each request with `ai::complete_vision_if`, which
+    resolves the target once, compares it to the confirmed host and model
+    and sends on that same target (never check with one config snapshot
+    and send with another). At
+    most 12 a click, one picture per request, never by itself, never on a
+    timer, never for the recording that is running, never while a Delete
+    is in its undo window. The prompt is fixed text: no transcript, title,
+    app or window name goes with a picture. Private screens are never
+    offered (`screen_prompts::never_sent`: mail, messages, password apps,
+    terminals, private browsing when the title says so (Safari's doesn't),
+    key files, noFriction's own window);
+    that is decided on the Mac, not left to the model. It works from the
+    window a screen was captured from; a whole-display capture is judged
+    by the window that was in front on that display; one of noFriction's
+    own is passed over unless it fills the display, which is then left
+    out (`privacy_filter::front_window_on`, stored in
+    `screen_states.front_app` / `front_title` at capture, never sent).
+    Screens recorded before that have no such note. A private window that was
+    only visible behind another can't be recognised, so the confirmation
+    shows every picture whole and enlargeable: don't crop those tiles and
+    don't claim more than this in user-facing text. The run and its
+    sender are private to `screen_reading.rs`; only the confirmation's
+    command reaches them. Only an answer marks a screen read. An endpoint
+    that refuses or fails stops the run and leaves the screen unread (once
+    it has read a picture in that run, one rejection is skipped as the
+    picture's own problem; a second in a row stops it).
+    Captions and picture picks still send text about a picture, never the
+    picture. The policy guard lists every file allowed to build an image
+    message; add to that list on purpose, with the click that leads there.
+    `vlm_scheduler.rs` (a timer that sent queued screenshots) is retired;
+    don't start it or queue screens for it.
+  - **What was read from a screen is a text snapshot on that screen**
+    (`source = 'screen_reading'`), so the screen's purge is its purge
+    (docs/REDACTION.md: no purge filters `text_snapshots` by source).
+    Every other reader of `text_snapshots` that shows or uses the text
+    leaves these rows out (Links, chat search, the timeline, the Obsidian
+    export, the data editor's list): they are an AI's words, not text
+    captured from the screen. A new reader of that table must leave them
+    out too; the policy guard lists the files that may read it.
+    Don't give readings to Make notes, Fill in the blanks or any other AI
+    prompt until a screen's purge also cleans what was made from them.
+    The prompts are a library (`screen_prompts.rs`): one entry per kind
+    of screen (a photo from the iPhone has its own), the kind decided on
+    the device from the app first and the window title only for a browser
+    or an unknown app, and rules every prompt shares (only what is
+    visible, never a person's appearance, a call read for what is shared
+    and never its people or chat, `[secret]` for anything like a
+    password, `skip` for private or empty screens). A rule that protects
+    someone goes in the shared rules: a whole-display capture has no app
+    name and gets the `Other` prompt.
   - **Nothing automatic asks the AI while a recording runs.** Work nobody
     clicked for (automatic notes, the topics that follow notes) goes
     through `study::BackgroundCompleter`, which waits for the recording

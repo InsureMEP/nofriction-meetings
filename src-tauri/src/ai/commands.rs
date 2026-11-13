@@ -332,21 +332,7 @@ pub async fn ai_status() -> Result<AiStatus, String> {
     // go through client::resolve (which emits the consent event).
     let text = active_info(&cfg, Kind::Text);
     let vision = active_info(&cfg, Kind::Vision);
-    let what_leaves = match &text {
-        None => "No AI provider set up. Nothing leaves this device.".to_string(),
-        Some(t) if t.provider == providers::APPLE_PROVIDER => {
-            "AI runs on Apple's on-device model. Meeting content never leaves this Mac.".to_string()
-        }
-        Some(t) if t.local => format!(
-            "AI runs on {} on your own machine or network. Meeting content doesn't leave your control.",
-            t.name
-        ),
-        Some(t) => format!(
-            "When you use AI features, the transcript, meeting title, attendee names{} are sent to {} with your API key. Nothing is sent to noFriction.",
-            if vision.is_some() { " and (for screen features) screenshots" } else { "" },
-            t.name
-        ),
-    };
+    let what_leaves = what_leaves(text.as_ref(), vision.as_ref());
     Ok(AiStatus {
         text_ready: text.as_ref().map_or(false, |t| t.state == "ready"),
         vision_ready: vision.as_ref().map_or(false, |t| t.state == "ready"),
@@ -354,6 +340,42 @@ pub async fn ai_status() -> Result<AiStatus, String> {
         vision,
         what_leaves,
     })
+}
+
+/// The "What leaves this device" line in Settings. It names text and
+/// pictures apart, because they can go to different places: Apple's
+/// on-device model for text and a remote endpoint for Read the screens.
+fn what_leaves(text: Option<&ActiveInfo>, vision: Option<&ActiveInfo>) -> String {
+    let words = match text {
+        None if vision.is_some_and(|v| v.provider != providers::APPLE_PROVIDER) => {
+            "No AI is set up for transcripts and notes, so they stay on this Mac.".to_string()
+        }
+        None => "No AI provider set up. Nothing leaves this device.".to_string(),
+        Some(t) if t.provider == providers::APPLE_PROVIDER => {
+            "AI runs on Apple's on-device model. Transcripts and notes never leave this Mac.".to_string()
+        }
+        Some(t) if t.local => format!(
+            "AI runs on {} on your own machine or network. Transcripts and notes don't leave your control.",
+            t.name
+        ),
+        Some(t) => format!(
+            "When you use AI features, the transcript, meeting title and attendee names are sent to {} with your API key. Nothing is sent to noFriction.",
+            t.name
+        ),
+    };
+    // Apple's on-device model can't read pictures, so none go with it
+    let pictures = match vision {
+        Some(v) if v.provider != providers::APPLE_PROVIDER && v.local => format!(
+            " Pictures of screens and photos go to {} on your own machine or network, only when you press Read the screens.",
+            v.name
+        ),
+        Some(v) if v.provider != providers::APPLE_PROVIDER => format!(
+            " Pictures of screens and photos are sent to {} only when you press Read the screens, which shows each one first.",
+            v.name
+        ),
+        _ => " No picture is sent to an AI.".to_string(),
+    };
+    format!("{}{}", words, pictures)
 }
 
 /// Active selection for `kind` with its readiness state (no network, no
@@ -380,4 +402,39 @@ fn active_info(cfg: &config::AiConfig, kind: Kind) -> Option<ActiveInfo> {
         consent,
         state: state.to_string(),
     })
+}
+
+#[cfg(test)]
+mod what_leaves_tests {
+    use super::*;
+
+    fn info(provider: &str, name: &str, local: bool) -> ActiveInfo {
+        ActiveInfo { provider: provider.into(), name: name.into(), model: "m".into(), local, consent: true, state: "ready".into() }
+    }
+
+    #[test]
+    fn the_line_names_text_and_pictures_apart() {
+        let apple = info(providers::APPLE_PROVIDER, "Apple on-device", true);
+        let remote = info("custom", "api.example.com", false);
+        let lan = info("custom", "ollama.local", true);
+        // Apple for text, a remote model for pictures: the text stays, the pictures don't
+        let s = what_leaves(Some(&apple), Some(&remote));
+        assert!(s.contains("Transcripts and notes never leave this Mac."), "{s}");
+        assert!(s.contains("are sent to api.example.com only when you press Read the screens"), "{s}");
+        assert!(!s.contains("Meeting content never leaves"), "{s}");
+        // Apple for both, or no image model: no picture goes anywhere
+        assert!(what_leaves(Some(&apple), Some(&apple)).ends_with("No picture is sent to an AI."));
+        assert!(what_leaves(Some(&apple), None).ends_with("No picture is sent to an AI."));
+        assert_eq!(what_leaves(None, None), "No AI provider set up. Nothing leaves this device. No picture is sent to an AI.");
+        // A remote text model, pictures on the local network
+        let s = what_leaves(Some(&remote), Some(&lan));
+        assert!(s.contains("are sent to api.example.com with your API key"), "{s}");
+        assert!(s.contains("go to ollama.local on your own machine or network, only when you press Read the screens"), "{s}");
+        // Only an image model is set up: the text stays, and the line doesn't say nothing leaves
+        let s = what_leaves(None, Some(&remote));
+        assert!(!s.contains("Nothing leaves"), "{s}");
+        assert!(s.starts_with("No AI is set up for transcripts and notes") && s.contains("are sent to api.example.com only when"), "{s}");
+        // It no longer says screenshots go with every screen feature
+        assert!(!what_leaves(Some(&remote), Some(&remote)).contains("screenshots"));
+    }
 }

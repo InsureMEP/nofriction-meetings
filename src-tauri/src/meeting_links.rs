@@ -245,13 +245,18 @@ async fn detect_meeting(
 
     // On screen: the meeting's screen text (same rows the screen purges
     // remove) and browser addresses. Counted once per capture.
+    // What the AI read from a picture (screen_reading.rs) is in the same
+    // table but is not text from the screen: a link in it was written by a
+    // model, so it is never a source of links.
     let rows = sqlx::query(
-        "SELECT ts, text, source, window_title FROM text_snapshots WHERE meeting_id = ?1 \
+        "SELECT ts, text, source, window_title FROM text_snapshots WHERE (meeting_id = ?1 \
          OR state_id IN (SELECT state_id FROM screen_states WHERE meeting_id = ?1) \
-         OR episode_id IN (SELECT episode_id FROM document_episodes WHERE meeting_id = ?1) \
+         OR episode_id IN (SELECT episode_id FROM document_episodes WHERE meeting_id = ?1)) \
+         AND COALESCE(source, '') != ?2 \
          ORDER BY ts ASC",
     )
     .bind(meeting_id)
+    .bind(crate::screen_reading::SOURCE)
     .fetch_all(&mut *conn)
     .await?;
     for r in rows {

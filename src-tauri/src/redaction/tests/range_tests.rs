@@ -258,8 +258,8 @@ async fn range_strike_leaves_one_marker_in_the_transcript_and_one_in_the_screens
     assert_eq!(line_text(&f, sc.l3).await, None);
     assert_eq!(line_text(&f, sc.l4).await, None);
     assert!(line_text(&f, sc.l5).await.is_some());
-    for needle in ["zeta", "quokka", "wombat", "4471"] {
-        if needle == "4471" {
+    for needle in ["zeta", "quokka", "wombat", "44Q71"] {
+        if needle == "44Q71" {
             // The screens outside the range still hold their (test) text
             continue;
         }

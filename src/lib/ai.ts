@@ -247,13 +247,19 @@ export function requestConsent(provider: string, userInitiated = true): Promise<
  * build), show the paywall titled for `feature`; if it needs consent for a
  * cloud provider, show the consent dialog. Retries after the user
  * subscribes / allows.
+ *
+ * `retryIf`: when given, an error is only looked at if it says yes. For a
+ * call whose retry would send something again (Read the screens sends a
+ * picture; it passes `isOwnGateError`), so that an endpoint's error text
+ * containing "CONSENT_REQUIRED" can't cause a second send.
  */
-export async function withAiConsent<T>(fn: () => Promise<T>, feature?: ProFeature): Promise<T> {
+export async function withAiConsent<T>(fn: () => Promise<T>, feature?: ProFeature, retryIf?: (e: unknown) => boolean): Promise<T> {
     for (let attempt = 0; ; attempt++) {
         try {
             return await fn();
         } catch (e) {
             if (attempt >= 2) throw e;
+            if (retryIf && !retryIf(e)) throw e;
             if (isProRequiredError(e)) {
                 // The AI gate says "ai"; the caller knows which feature it was
                 const asked = proFeatureFromError(e);

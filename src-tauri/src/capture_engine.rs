@@ -35,6 +35,12 @@ pub struct CapturedFrame {
     pub label: String,
     /// Owning app for window captures
     pub app_name: Option<String>,
+    /// Whole-display captures: the app and title of the window that was in
+    /// front on that display when the picture was taken (never one of
+    /// noFriction's own). Never shown and never sent; it lets Read the
+    /// screens leave out a display that had Mail, a password app or a
+    /// terminal in front.
+    pub front: Option<(String, String)>,
 }
 
 /// Something the user chose to capture: a whole display or a single window.
@@ -791,14 +797,22 @@ impl CaptureEngine {
             let captured = tokio::task::spawn_blocking(move || {
                 current
                     .iter()
-                    .map(|t| (t.clone(), Self::capture_target(t)))
+                    .map(|t| {
+                        // A whole display: which window was in front of it,
+                        // read just before the picture is taken
+                        let front = match t {
+                            CaptureTarget::Display { id } => crate::privacy_filter::front_window_on(*id),
+                            CaptureTarget::Window { .. } => None,
+                        };
+                        (t.clone(), Self::capture_target(t), front)
+                    })
                     .collect::<Vec<_>>()
             })
             .await
             .unwrap_or_default();
 
             let timestamp = chrono::Utc::now();
-            for (target, result) in captured {
+            for (target, result, front) in captured {
                 match result {
                     Ok((image, label, app_name, mon_id)) => {
                         missing_logged.remove(&target.key());
@@ -812,6 +826,7 @@ impl CaptureEngine {
                             source: target.key(),
                             label,
                             app_name,
+                            front,
                         };
                         if let Some(callback) = frame_callback.read().as_ref() {
                             callback(frame);

@@ -207,6 +207,9 @@ impl DataEditor {
     // Private helpers
     // =========================================================================
 
+    /// Text captured from the screen. What the AI read from a picture
+    /// (`source = 'screen_reading'`, screen_reading.rs) is not listed: it is
+    /// shown, and removed, in the recording's Notes.
     async fn list_text_snapshots(
         &self,
         limit: i32,
@@ -217,7 +220,7 @@ impl DataEditor {
             sqlx::query(
                 "SELECT snapshot_id, text, created_at, source as metadata
                  FROM text_snapshots
-                 WHERE text LIKE ?
+                 WHERE text LIKE ? AND COALESCE(source, '') != 'screen_reading'
                  ORDER BY created_at DESC
                  LIMIT ? OFFSET ?",
             )
@@ -228,6 +231,7 @@ impl DataEditor {
             sqlx::query(
                 "SELECT snapshot_id, text, created_at, source as metadata
                  FROM text_snapshots
+                 WHERE COALESCE(source, '') != 'screen_reading'
                  ORDER BY created_at DESC
                  LIMIT ? OFFSET ?",
             )

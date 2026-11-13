@@ -295,13 +295,110 @@ def audit(root):
     # An image leaves the device only from a function a click reaches. Every
     # file that builds an image message is listed here; a new one is added on
     # purpose, with the click that leads to it (docs/AI_PROVIDERS.md).
-    image_senders = {'src-tauri/src/vlm_client.rs', 'src-tauri/src/ai/client.rs'}
+    # screen_reading.rs: Read the screens, after a confirmation that shows the
+    # pictures and the destination; it sends the confirmed ids and nothing else
+    image_senders = {'src-tauri/src/vlm_client.rs', 'src-tauri/src/ai/client.rs', 'src-tauri/src/screen_reading.rs'}
     for path in sorted((root / 'src-tauri/src').rglob('*.rs')):
         rel = path.relative_to(root).as_posix()
         if rel in image_senders:
             continue
         if re.search(r'\bMsg::user_with_image\(|\bvlm_analyze_frame\(|\bvlm_analyze_frames_batch\(|Part::Image\s*\{', path.read_text()):
             errors.append(f'Image sent to an AI outside the listed senders: {rel}')
+    # Read the screens has one way in: the confirmation's command. Its sender
+    # and its run are private to screen_reading.rs, and no other file may
+    # reach for them; lib.rs only registers the commands.
+    reading_rs = (root / 'src-tauri/src/screen_reading.rs').read_text()
+    need(re.search(r'^trait Reader\b', reading_rs, re.M) and not re.search(r'\bpub(?:\([a-z:]+\))?\s+trait Reader\b', reading_rs),
+         'screen_reading.rs: the Reader trait must stay private')
+    need(re.search(r'^async fn read_screens\(', reading_rs, re.M) is not None,
+         'screen_reading.rs: the run (read_screens) must stay private to the file')
+    need(re.search(r'^    struct Live;', reading_rs, re.M) is not None and not re.search(r'\bpub(?:\([a-z:]+\))?\s+struct Live\b', reading_rs),
+         'screen_reading.rs: the live sender must stay private to its commands module')
+    need(reading_rs.count('Msg::user_with_image(') == 1, 'screen_reading.rs: exactly one place builds an image message')
+    need('vec![Msg::user_with_image(prompt.to_string(), &mime, b64)],' in reading_rs,
+         'screen_reading.rs: the request is one message, the fixed prompt and the picture, and nothing else')
+    need(reading_rs.count('&Live') == 1, 'screen_reading.rs: the live sender is used once, by the confirmation\'s command')
+    need(reading_rs.count('delete_waiting(pool, meeting_id)') == 2,
+         'screen_reading.rs: a waiting Delete is checked when the plan is made and before every picture')
+    need('confirmed: Confirmed' in reading_rs and 'expect: usize' not in reading_rs,
+         'Read the screens must send the confirmed ids, never a count worked out again')
+    for needle, why in (
+        ('reader.destination().as_ref() != Some(&named)', 'check the destination before every picture'),
+        ('complete_vision_if(', 'send on the same resolved target it compared (ai::complete_vision_if)'),
+        ('host_of(base_url).as_deref() == Some(host.as_str()) && to_model == model', 'compare host and model at the send'),
+        ('delete_waiting(pool, meeting_id)', 'refuse while a Delete is in its undo window'),
+        ('still_sendable(pool, meeting_id, id)', 're-validate each confirmed screen before sending it'),
+        ('cancel.load(', 'check for Stop before every picture'),
+    ):
+        need(needle in reading_rs, f'Read the screens must {why}')
+    need(not re.search(r'\bcomplete_vision\(', reading_rs),
+         'Read the screens must not send with the unchecked complete_vision')
+    prompts_rs = (root / 'src-tauri/src/screen_prompts.rs').read_text()
+    need('pub fn prompt_for(kind: ScreenKind, recording: RecordingKind) -> String {' in prompts_rs,
+         'The screen prompt takes the kind of screen and the type of recording and nothing else: '
+         'nothing from the recording (transcript, title, app, window) may be put in it')
+    need(re.search(r'screen_prompts::prompt_for\(kind, recording\)', reading_rs) is not None,
+         'Read the screens must build its prompt with screen_prompts::prompt_for(kind, recording)')
+    client_rs = (root / 'src-tauri/src/ai/client.rs').read_text()
+    need(re.search(r'pub async fn complete_if\([^{]*\{\s*crate::entitlement::require_pro\(\)\.await\?;\s*'
+                   r'let target = resolve\(kind\)\?;\s*if !allowed\(&target\.base_url, &target\.model\) \{\s*return Ok\(None\);\s*\}\s*'
+                   r'run\(&target, msgs, opts\)', client_rs, re.S) is not None,
+         'ai::client::complete_if must resolve once, ask `allowed` about that target, and send on the same target')
+    # One caller in the UI: the confirmation's button
+    ui_calls = []
+    for path in sorted((root / 'src').rglob('*.ts*')):
+        if path.name.endswith('.test.ts'):
+            continue
+        ui_calls += [path.relative_to(root).as_posix()] * len(re.findall(r'["\'`]read_screens["\'`]', path.read_text()))
+    need(ui_calls == ['src/components/ScreenReadings.tsx'],
+         f'Read the screens is invoked from one place in the UI (the confirmation), found: {ui_calls}')
+    # Readers of on-screen text. What the AI read from a picture lives in the
+    # same table (so every screen purge removes it) but is not captured text:
+    # each reader below either leaves `screen_reading` rows out or is a purge.
+    # A new file that reads the table is added here on purpose, after deciding.
+    snapshot_readers = {
+        'src-tauri/src/screen_reading.rs', 'src-tauri/src/meeting_links.rs', 'src-tauri/src/database.rs',
+        'src-tauri/src/data_editor.rs', 'src-tauri/src/admin_commands.rs', 'src-tauri/src/redaction.rs',
+        'src-tauri/src/redaction/time_range.rs',
+    }
+    for path in sorted((root / 'src-tauri/src').rglob('*.rs')):
+        rel = path.relative_to(root).as_posix()
+        if '/tests' in rel or rel.endswith('_tests.rs') or rel in snapshot_readers:
+            continue
+        if re.search(r'(?:FROM|JOIN)\s+text_snapshots\b', path.read_text()):
+            errors.append(f'{rel} reads text_snapshots: leave out source = \'screen_reading\' (an AI\'s words), then list the file in the guard')
+    for rel, needle, times in (
+        ('src-tauri/src/meeting_links.rs', "COALESCE(source, '') != ?2", 1),
+        ('src-tauri/src/data_editor.rs', "COALESCE(source, '') != 'screen_reading'", 2),
+    ):
+        text = (root / rel).read_text()
+        need(text.count(needle) == times and len(re.findall(r'(?:FROM|JOIN)\s+text_snapshots\b', text)) == times,
+             f'{rel}: every read of text_snapshots must leave out what the AI read from a screen')
+    database_rs = (root / 'src-tauri/src/database.rs').read_text()
+    need("AND COALESCE(source, '') != '{}'" in database_rs and "WHERE meeting_id = ? AND COALESCE(source, '') != 'screen_reading'" in database_rs,
+         'database.rs: chat search and get_text_snapshots_by_meeting must leave what the AI read from a screen out')
+    # The third read is get_latest_snapshot, by episode: a reading has none
+    need(len(re.findall(r'(?:FROM|JOIN)\s+text_snapshots\b', database_rs)) == 3,
+         'database.rs: a new read of text_snapshots must leave out source = \'screen_reading\'; then update this count')
+    for path in sorted((root / 'src-tauri/src').rglob('*.rs')):
+        rel = path.relative_to(root).as_posix()
+        if rel == 'src-tauri/src/screen_reading.rs':
+            continue
+        # The command is named only where it is registered; the run and the
+        # sender are named nowhere else (the compiler refuses them too)
+        text = path.read_text()
+        for m in re.finditer(r'screen_reading::(?:commands::)?(?:read_screens|Reader|Live)\b', text):
+            if rel == 'src-tauri/src/lib.rs' and m.group(0) == 'screen_reading::commands::read_screens':
+                continue
+            errors.append(f'{rel}: {m.group(0)} (Read the screens is run only by its own command)')
+        # However it is imported or aliased: the name appears once outside
+        # the file, where the command is registered
+        named = len(re.findall(r'\bread_screens\b', text))
+        if named != (1 if rel == 'src-tauri/src/lib.rs' else 0):
+            errors.append(f'{rel}: read_screens is named {named} time(s) (allowed: once, in lib.rs, to register the command)')
+    lib_rs_text = (root / 'src-tauri/src/lib.rs').read_text()
+    need(lib_rs_text.count('screen_reading::commands::read_screens') == 1,
+         'Read the screens is registered once, as the confirmation\'s command')
     scheduler_rs = (root / 'src-tauri/src/vlm_scheduler.rs').read_text()
     need('tokio::spawn' not in scheduler_rs and 'vlm_analyze' not in scheduler_rs and 'run_loop' not in scheduler_rs,
          'The background screenshot analyzer must stay retired (no loop, no AI call in vlm_scheduler.rs)')
