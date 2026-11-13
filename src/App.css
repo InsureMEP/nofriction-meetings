@@ -99,8 +99,19 @@
   box-sizing: border-box;
 }
 
+/* One typeface (DESIGN.md): Inter where it is installed, the system face
+   otherwise. Controls don't inherit a font by default (they get the
+   browser's control font), so they are told to: a button reads like the
+   text beside it. */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--ds-font-primary, 'Inter', -apple-system, BlinkMacSystemFont, sans-serif);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: var(--bg-main);
