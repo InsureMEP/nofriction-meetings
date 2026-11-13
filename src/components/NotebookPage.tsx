@@ -35,6 +35,7 @@ import { QuizRunner } from "./study/QuizRunner";
 import { MarkerGlyph } from "./study/MarkerBits";
 import ErrorState from "./ErrorState";
 import { CheckIcon, NotebookIcon } from "./icons";
+import "./MeetingNotesPanel.css";
 import "./NotebookPage.css";
 
 interface NotebookPageProps {
@@ -127,12 +128,12 @@ export function NotebookPage({ notebook, refreshKey, isRecording, onOpenNotes, o
                             </p>
                             <div className="nb-review__actions">
                                 {page.cards > 0 && (
-                                    <button type="button" className="nb-btn nb-btn--primary" onClick={() => setReview("cards")}>
+                                    <button type="button" className="mn-btn primary" onClick={() => setReview("cards")}>
                                         Flashcards
                                     </button>
                                 )}
                                 {page.questions > 0 && (
-                                    <button type="button" className={`nb-btn${page.cards > 0 ? "" : " nb-btn--primary"}`} onClick={() => setReview("quiz")}>
+                                    <button type="button" className={`mn-btn${page.cards > 0 ? "" : " primary"}`} onClick={() => setReview("quiz")}>
                                         Practice quiz
                                     </button>
                                 )}
@@ -158,19 +159,19 @@ export function NotebookPage({ notebook, refreshKey, isRecording, onOpenNotes, o
                     <p className="nb-head__meta">{headline(page)}</p>
                 </div>
                 <div className="nb-head__actions">
-                    <button type="button" className="nb-btn" onClick={() => requestChatAboutNotebook(page.name)} title={`Ask about everything recorded in ${page.name}`}>
+                    <button type="button" className="mn-btn" onClick={() => requestChatAboutNotebook(page.name)} title={`Ask about everything recorded in ${page.name}`}>
                         Ask
                     </button>
                     <button
                         type="button"
-                        className="nb-btn nb-btn--record"
+                        className="mn-btn primary nb-record"
                         disabled={isRecording}
                         title={isRecording ? "A recording is already running" : `Record in ${page.name} with your usual length`}
                         onClick={() =>
                             void recordPicker.start({ notebook: page.name, recordingKind: kind, remember: false }).catch((e) => setTickError(`Couldn't start: ${String(e)}`))
                         }
                     >
-                        <span className="nb-btn__dot" aria-hidden />
+                        <span className="nb-record__dot" aria-hidden />
                         Record
                     </button>
                 </div>
@@ -361,8 +362,8 @@ function ReviewSheet({
                             {notebook} · every {kind === "class" ? "study" : "review"} guide, oldest recording first
                         </p>
                     </div>
-                    <button type="button" className="nb-btn" onClick={onClose}>
-                        Done
+                    <button type="button" className="mn-btn" onClick={onClose}>
+                        Close
                     </button>
                 </header>
                 {both && (

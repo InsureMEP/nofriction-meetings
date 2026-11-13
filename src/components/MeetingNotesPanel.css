@@ -117,6 +117,16 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
+.mn-btn.primary:hover:not(:disabled) {
+  background: var(--accent-primary, #facc15);
+  filter: brightness(1.08);
+}
+
+.mn-btn:focus-visible {
+  outline: 2px solid var(--hazard-yellow, #facc15);
+  outline-offset: 2px;
+}
+
 .mn-btn.primary {
   background: var(--accent-primary, #facc15);
   border-color: var(--accent-primary, #facc15);

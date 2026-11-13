@@ -69,48 +69,20 @@
   flex: none;
 }
 
-.nb-btn {
+/* Buttons are the Notes panel's (.mn-btn); Record adds the red dot */
+.nb-record {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 34px;
-  padding: 0 14px;
-  border-radius: 8px;
-  border: 1px solid var(--border-color, #262626);
-  background: var(--tactical-gray, #171717);
-  color: var(--text-primary, #f5f5f5);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: border-color 120ms ease, background-color 120ms ease;
 }
 
-.nb-btn:hover:not(:disabled) { border-color: #404040; }
-.nb-btn:disabled { opacity: 0.5; cursor: default; }
-
-.nb-btn--primary,
-.nb-btn--record {
-  border-color: var(--hazard-yellow, #facc15);
-  background: var(--hazard-yellow, #facc15);
-  color: #0a0a0a;
-  font-weight: 600;
-}
-
-.nb-btn--primary:hover:not(:disabled),
-.nb-btn--record:hover:not(:disabled) {
-  border-color: var(--hazard-yellow, #facc15);
-  background: #fde047;
-}
-
-.nb-btn__dot {
-  width: 9px;
-  height: 9px;
+.nb-record__dot {
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: var(--accent-danger, #ef4444);
 }
 
-.nb-btn:focus-visible,
 .nb-link:focus-visible,
 .nb-mark:focus-visible,
 .nb-item__check:focus-visible,
@@ -438,5 +410,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .nb-btn, .nb-mark, .nb-item__check { transition: none; }
+  .nb-mark, .nb-item__check { transition: none; }
 }
