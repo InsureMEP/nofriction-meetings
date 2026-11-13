@@ -99,8 +99,19 @@
   box-sizing: border-box;
 }
 
+/* One typeface (DESIGN.md): Inter where it is installed, the system face
+   otherwise. Controls don't inherit a font by default (they get the
+   browser's control font), so they are told to: a button reads like the
+   text beside it. */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--ds-font-primary, 'Inter', -apple-system, BlinkMacSystemFont, sans-serif);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: var(--bg-main);
@@ -645,12 +656,20 @@ img.logo-icon {
 }
 
 .loading-spinner {
-  width: 48px;
-  height: 48px;
-  border: 4px solid #e5e7eb;
-  border-top-color: var(--accent-purple);
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border-color, #262626);
+  border-top-color: var(--hazard-yellow, #facc15);
   border-radius: 50%;
   animation: spin 1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Still says "working" without spinning */
+  .loading-spinner {
+    animation: none;
+    border-right-color: var(--hazard-yellow, #facc15);
+  }
 }
 
 @keyframes spin {

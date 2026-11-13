@@ -66,7 +66,8 @@ Only a click or tap on a Record button shows it. Every other start uses the reme
 | ⌘N (File → Record). The Mac app has no global record hotkey; this is the shortcut | No: remembered |
 | Tray **Start Recording (Meeting, 60 min)** | No: remembered |
 | "Start New Segment" (75-minute prompt) | No: keeps the type, the notebook and the time that was left |
-| Meeting auto-detect | Doesn't exist (`auto_start_recording` is never read). Anything added later goes through `start_recording` and gets the remembered type and length |
+| **Up next** card, the tray's **Record \<name\>**, **Record by itself** (`up_next.rs`) | No: the suggestion carries its own type, length and notebook (`planFor` in `src/lib/upNextLogic.ts`, `remember: false`, so the sheet's remembered answers stay the user's). It still goes through `start_recording` |
+| A notebook page's **Record** | No: that notebook, its usual type, the remembered length |
 
 On iOS the Record button shows the sheet (after the one-time recording notice the first time). The `-NFAutoRecord` test start uses the remembered length.
 
@@ -97,6 +98,53 @@ The backend applies the rule, so no path can bypass it. On the Mac, `start_recor
 - **Set it** in the Record sheet. Edit or clear it later on the recording: Mac Recordings → the notebook row under the recording's title (next to the type).
 - **Filter.** Mac Recordings: **Notebooks** chips **All · BIO 101 · …**. `get_meetings(limit, notebook)` filters in SQL, ignoring case.
 - **A notebook doesn't change how notes are written.** Only the type does.
+
+## Up next (Mac)
+
+One suggestion to record what is starting, worked out in `up_next.rs`
+(rules in docs/design/FADELL_V2.md §6, tests beside the code):
+
+- **Sources, in order:** the calendar event on now or within 15 minutes
+  (only with Calendars already allowed; only when it has other people or a
+  call link, or was recorded before under that title; not when it already
+  has a recording), then the user's routine, then a call app that has held
+  the microphone for 10 seconds (`meeting_end::active_call_apps`, macOS
+  14.2+).
+- **The routine** is a pure function over the last 42 days of recordings
+  that have a notebook: same weekday, started from 25 minutes before now to
+  10 minutes after, at least twice, and not already recorded today. It
+  carries the notebook's latest type and the median length rounded up to a
+  picker choice.
+- **A call is offered once.** A call that was on while a recording ran, or
+  that the user said Not now to, isn't offered again until the microphone
+  is released (`CallTracker`), so pressing Stop during a call never starts
+  a new recording.
+- **Not now** stores `key|YYYY-MM-DD` lines in the setting
+  `up_next_dismissed`; lines from other days are dropped on the next write.
+- **Settings:** `remind_when_something_starts` (default on: a notification
+  when the window isn't in front) and `auto_start_recording` (default off:
+  emits `up_next_start`, which the window handles like the tray's start).
+- The monitor samples every 5 seconds while the app runs, emits `up_next`
+  when the suggestion changes and retitles the tray's first item.
+
+## A notebook's page (Mac)
+
+Picking a Notebook chip opens `NotebookPage.tsx`, read by
+`notebook_page.rs` in one command:
+
+- **Items** come from each recording's newest notes: `action_items` for
+  notes made on the Mac, or the bullets under "Action items",
+  "Announcements and deadlines" or "To-dos and reminders" for notes synced
+  from the iPhone as Markdown. The section is named by the type of the
+  notebook's newest recording: **Due**, **Action items** or **To-dos**.
+- **Ticks** are rows of `notebook_item_done (meeting_id, item_key)`, where
+  the key is the first 8 bytes of SHA-256 of the item's text with case,
+  spacing and trailing punctuation ignored. No item text is stored. A tick
+  survives Make again when the item is worded the same, and is dropped when
+  the new notes no longer list it.
+- **Marked** is every `test` and `question` marker in the notebook.
+- **Review everything** merges the stored flashcards and quiz questions of
+  the notebook's guides, oldest recording first, the same card asked once.
 
 ## Notes by type
 

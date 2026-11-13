@@ -117,6 +117,16 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
+.mn-btn.primary:hover:not(:disabled) {
+  background: var(--accent-primary, #facc15);
+  filter: brightness(1.08);
+}
+
+.mn-btn:focus-visible {
+  outline: 2px solid var(--hazard-yellow, #facc15);
+  outline-offset: 2px;
+}
+
 .mn-btn.primary {
   background: var(--accent-primary, #facc15);
   border-color: var(--accent-primary, #facc15);
@@ -175,4 +185,199 @@
   resize: vertical;
   line-height: 1.5;
   font-family: inherit;
+}
+
+/* ── What you wrote: the user's own lines, then what was said ───────── */
+
+.mn-wrote {
+  padding: 16px 16px 8px;
+  border: 1px solid var(--border-color, #262626);
+  border-radius: 12px;
+  background: var(--bg-card, #0d0d0d);
+}
+
+.mn-wrote__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #f5f5f5);
+}
+
+.mn-wrote__title svg {
+  color: var(--text-secondary, #a3a3a3);
+}
+
+.mn-wrote__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mn-wrote__row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 28px;
+  gap: 12px;
+  align-items: start;
+  padding: 8px 0;
+}
+
+.mn-wrote__row + .mn-wrote__row {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.mn-wrote__time {
+  min-height: 24px;
+  padding: 2px 0 0;
+  border: none;
+  background: none;
+  font-family: var(--ds-font-mono, 'SF Mono', Menlo, monospace);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  color: var(--text-secondary, #a3a3a3);
+  cursor: pointer;
+}
+
+.mn-wrote__time:hover:not(:disabled) {
+  color: var(--text-primary, #f5f5f5);
+  text-decoration: underline;
+}
+
+.mn-wrote__time:disabled {
+  cursor: default;
+}
+
+.mn-wrote__body {
+  min-width: 0;
+}
+
+.mn-wrote__text {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.6;
+  text-align: left;
+  color: var(--text-primary, #f5f5f5);
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+
+.mn-wrote__text:hover {
+  color: #fff;
+}
+
+.mn-wrote__input {
+  font-size: 14px;
+}
+
+.mn-wrote__detail {
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-secondary, #a3a3a3);
+  max-width: 72ch;
+}
+
+.mn-wrote__delete {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-secondary, #a3a3a3);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+
+.mn-wrote__row:hover .mn-wrote__delete,
+.mn-wrote__row:focus-within .mn-wrote__delete {
+  opacity: 1;
+}
+
+.mn-wrote__delete:hover {
+  color: var(--accent-danger, #ef4444);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.mn-wrote__time:focus-visible,
+.mn-wrote__text:focus-visible,
+.mn-wrote__delete:focus-visible {
+  outline: 2px solid var(--hazard-yellow, #facc15);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── Notes being made ────────────────────────────────────────────── */
+
+.mn-busy {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--border-color, #262626);
+  border-radius: 12px;
+}
+
+.mn-busy .loading-spinner {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-width: 2px;
+}
+
+.mn-busy__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mn-busy__detail {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary, #a3a3a3);
+}
+
+/* ── Things to do, each with its tick (ActionItems) ──────────────── */
+
+.mn-section ul.mn-items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mn-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* An item the ticks don't know keeps the list's bullet */
+.mn-item.is-plain {
+  display: list-item;
+  margin-left: 20px;
+  list-style: disc;
+}
+
+.mn-item__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mn-item.is-done .mn-item__text {
+  color: var(--text-secondary, #a3a3a3);
+  text-decoration: line-through;
 }

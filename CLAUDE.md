@@ -176,12 +176,56 @@ these rules apply.
   - The policy guard rejects network or speech APIs in the watch target.
   - Simulators can't deliver WatchConnectivity files, so delivery must be
     verified on real devices. See `docs/WATCH_APP.md`.
+- **v2: hands-free, typed notes, the notebook's page** (plan and shared
+  rules: `docs/design/FADELL_V2.md`; owner request 2026-11-12):
+  - **A recording never starts by itself unless the user turned that on.**
+    Up next only offers (a card, the tray's first item, a notification);
+    **Record by itself** (`auto_start_recording`) is off by default and its
+    setting says "Tell people you're recording." A call that was on when a
+    recording stopped must not start another (`up_next::CallTracker`).
+  - **No AI runs while recording.** The note field keeps what is typed; the
+    AI works after Stop. Don't bring back live AI cards. Automatic notes
+    wait until no recording is running (`meeting_notes::run::after_stop`);
+    only the user's own **Make notes** may run during another recording.
+  - **Notes are saved in one transaction with their check**
+    (`meeting_notes::save_checked`: `BEGIN IMMEDIATE`, then "no pending
+    delete and every line read is still there", then the insert). A check
+    followed by a separate write lets a Delete or Strike land in between.
+  - **A typed note's detail never outlives the note.** Any new way to
+    delete or change a `note`-kind marker must call
+    `meeting_notes::typed_notes_changed` (it prunes `note_details` and
+    touches the notes row so sync resends them).
+  - **Up next and the notebook's page call no AI and send nothing.** They
+    are computed on the device from the calendar (only if access was
+    already granted: never prompt for it there), the recordings, and which
+    call apps hold the microphone. The policy guard's rules still apply.
+  - **A typed note is a mark of kind `note`**, never a fourth mark kind:
+    not in the Marks list, its filter or its count, and not a kind a mark
+    can be changed to. It syncs as a mark; a version that doesn't know the
+    kind skips it without an error (keep that true for any new kind).
+  - **Notes read the whole recording.** Never truncate a transcript for a
+    prompt; condense it in parts (`study::condense_to_budget`,
+    `MeetingAI`'s condense step). Prompts carry marks and typed notes by
+    time, never by id.
+  - **The notebook's page stores no content.** Ticks are a hash of the
+    item's text per recording (`notebook_item_done`); anything else it shows
+    is read from notes, marks and guides, so their purge is its purge.
+  - **Yellow is for actions, focus and the ★ mark.** Typed notes, counts
+    and chips are neutral (design review 2026-11-12).
 - Two Mac flavors must always build: the default (Developer ID DMG) and
   `--features mas` (sandboxed Mac App Store build). In `mas`: no ffmpeg,
   Accessibility, osascript, shell plugin or `.env`; Pro gating goes through
   `entitlement::require_pro()` in `ai::client::complete`.
 
 **Lessons that cost real time:**
+- **A hook's cleanup must not depend on a caller's inline callback.**
+  `useUndoDelete(onError)` built `commit` with `[onError]`, callers passed
+  an arrow function, so the "leaving the view applies the delete" cleanup
+  ran on the next render and every such delete skipped its Undo window.
+  Read caller callbacks through a ref when an effect's cleanup has a side
+  effect.
+- **Never log an AI error's text.** A provider's error body can repeat the
+  transcript it was sent. Log a kind (`meeting_notes::run::failure_kind`).
 - **Migrations run on ONE connection** (`run_migrations` acquires a single
   connection). Running them back-to-back on `&pool` opened extra connections
   mid-migration, and one could keep a stale schema ("no such table" on fresh
@@ -219,6 +263,15 @@ these rules apply.
   (never select transcript text).
 - The bundle ID is `com.nofriction.meetings` everywhere (it can't change; the user-facing name is just "noFriction", product name set in `tauri.conf.json`). The Mac data folder
   migrated from `ai.nofriction.meetings`. `paths.rs` never deletes old data.
+- **Controls don't inherit a font.** `button`, `input`, `select` and
+  `textarea` keep the browser's control font unless told to inherit (the
+  whole Record sheet rendered in it until 2026-11-12). The rule is in
+  `src/App.css`; Inter isn't bundled, so it shows only where installed.
+- **Check the UI in the film harness before claiming a Mac UI change works:**
+  `HARNESS_PORT=5194 npx vite --config marketing/film/mac-harness/vite.config.mjs`,
+  then `http://127.0.0.1:5194/?cursor=1` (`&upnext=routine|calendar|call`).
+  A new Tauri command needs a case in `mock/backend.ts`. A blank page with
+  no console error is a missing module export.
 - **Shell gotchas:** `wc -l` pads with spaces, so compare with `-gt`/`-eq` or
   `tr -d ' '`. macOS `sed` doesn't support `0,/re/`. Don't run `npm run build`
   for checks, because its prebuild bumps `build_number.txt`; use

@@ -639,7 +639,7 @@ const AI_TABLES: &[AiTable] = &[
     AiTable {
         table: "meeting_notes",
         key: "id",
-        cols: &["summary", "key_topics", "decisions", "action_items", "participants"],
+        cols: &["summary", "key_topics", "decisions", "action_items", "participants", "note_details"],
         flag: true,
     },
     // study_materials are deleted outright (study::purge_for_meeting, in

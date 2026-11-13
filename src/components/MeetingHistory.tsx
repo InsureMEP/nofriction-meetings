@@ -32,6 +32,9 @@ interface MeetingHistoryProps {
     selectedMeetingId: string | null;
     compact?: boolean;
     refreshKey?: number; // Increment to trigger reload
+    /** The notebook the list is narrowed to (null = All); picking one opens its page */
+    notebook: string | null;
+    onNotebook: (notebook: string | null) => void;
 }
 
 const formatDate = (dateStr: string) =>
@@ -50,15 +53,22 @@ const clock = (ms: number) => {
     return `${m}:${String(s % 60).padStart(2, "0")}`;
 };
 
-export function MeetingHistory({ onSelectMeeting, onOpenAt, selectedMeetingId, compact = false, refreshKey = 0 }: MeetingHistoryProps) {
+export function MeetingHistory({
+    onSelectMeeting,
+    onOpenAt,
+    selectedMeetingId,
+    compact = false,
+    refreshKey = 0,
+    notebook: notebookFilter,
+    onNotebook: setNotebookFilter,
+}: MeetingHistoryProps) {
     const [meetings, setMeetings] = useState<Meeting[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [calendarMatches, setCalendarMatches] = useState<Record<string, CalendarMatchEvent>>({});
     const [dismissedMatches, setDismissedMatches] = useState<Set<string>>(new Set());
     const [renamingId, setRenamingId] = useState<string | null>(null);
-    // Notebook filter (null = All); chips come from the notebooks recordings have
-    const [notebookFilter, setNotebookFilter] = useState<string | null>(null);
+    // Notebook chips come from the notebooks recordings have
     const notebooks = useRecentNotebooks(refreshKey);
     const recordPicker = useRecordPicker();
     // The one search
@@ -384,8 +394,9 @@ export function MeetingHistory({ onSelectMeeting, onOpenAt, selectedMeetingId, c
                                                     <span className="class-tag" title={meeting.class_name}>{meeting.class_name}</span>
                                                 )}
                                             </div>
-                                            <div className="meeting-date">
-                                                {formatDate(meeting.started_at)} at {formatTime(meeting.started_at)}
+                                            {/* The day is the group's heading: the row says when in it */}
+                                            <div className="meeting-date" title={formatDate(meeting.started_at)}>
+                                                {formatTime(meeting.started_at)}
                                                 {meeting.duration_seconds ? <span> · {formatDuration(meeting.duration_seconds)}</span> : null}
                                             </div>
                                         </div>

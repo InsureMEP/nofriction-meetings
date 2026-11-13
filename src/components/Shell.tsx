@@ -16,7 +16,7 @@ import { MeetingEndBanner } from "./MeetingEndBanner";
 import { TimeLimitBanner } from "./TimedRecording";
 import { useRecording } from "../hooks/useRecording";
 import { useTranscripts } from "../hooks/useTranscripts";
-import { onMakeLessonRequest, onOpenHelp, onOpenSettings, type SettingsCategory } from "../lib/navigation";
+import { onChatAboutNotebook, onMakeLessonRequest, onOpenHelp, onOpenSettings, type SettingsCategory } from "../lib/navigation";
 import { getMeeting } from "../lib/tauri";
 import { segmentCarryOver } from "../lib/recordPlan";
 import { getTimedRecordingStatus } from "../lib/timedRecording";
@@ -61,6 +61,8 @@ export function Shell({
     useEffect(() => onOpenHelp(() => setHelpOpen(true)), []);
     // Recordings → Make lesson opens Lessons, which takes the request
     useEffect(() => onMakeLessonRequest(() => onModeChange("lessons")), [onModeChange]);
+    // A notebook's Ask opens Chat, which takes the notebook as its scope
+    useEffect(() => onChatAboutNotebook(() => onModeChange("chat")), [onModeChange]);
 
     // Long recordings: at 75 minutes, offer a new segment (native dialog)
     useEffect(() => {

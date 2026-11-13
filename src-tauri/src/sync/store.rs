@@ -620,8 +620,8 @@ pub async fn screen_file(pool: &Pool<Sqlite>, wire: &str) -> Option<Vec<u8>> {
 async fn notes_item(conn: &mut SqliteConnection, meeting_id: &str, modified: i64) -> Result<Option<p::NotesItem>, String> {
     let Some(rec) = p::wire_id(meeting_id) else { return Ok(None) };
     let Some(r) = sqlx::query(
-        "SELECT summary, key_topics, decisions, action_items, generated_at, model_used, stale_after_edit \
-         FROM meeting_notes WHERE meeting_id = ? ORDER BY generated_at DESC LIMIT 1",
+        "SELECT summary, key_topics, decisions, action_items, generated_at, model_used, stale_after_edit, note_details \
+         FROM meeting_notes WHERE meeting_id = ? ORDER BY generated_at DESC, rowid DESC LIMIT 1",
     )
     .bind(meeting_id)
     .fetch_optional(&mut *conn)
@@ -630,13 +630,28 @@ async fn notes_item(conn: &mut SqliteConnection, meeting_id: &str, modified: i64
     else {
         return Ok(None);
     };
-    let md = notes_markdown(
+    let model: Option<String> = r.get("model_used");
+    let mut md = notes_markdown(
         r.get("summary"),
         r.get("key_topics"),
         r.get("decisions"),
         r.get("action_items"),
-        r.get::<Option<String>, _>("model_used").as_deref(),
+        model.as_deref(),
     );
+    // What the AI wrote under each note the user typed goes first, in the
+    // iPhone's form (docs/design/FADELL_V2.md §6)
+    if model.as_deref() != Some(SYNCED_NOTES_MODEL) {
+        let typed: Vec<(String, String)> = sqlx::query_as(
+            "SELECT id, COALESCE(note, '') FROM meeting_markers WHERE meeting_id = ? AND kind = 'note' ORDER BY ts, created_at",
+        )
+        .bind(meeting_id)
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(err("Couldn't read notes"))?;
+        if let Some(section) = what_you_wrote_markdown(&typed, r.get::<Option<String>, _>("note_details").as_deref()) {
+            md = if md.is_empty() { section } else { format!("{}\n\n{}", section, md) };
+        }
+    }
     Ok(Some(p::NotesItem {
         rec,
         md,
@@ -648,6 +663,32 @@ async fn notes_item(conn: &mut SqliteConnection, meeting_id: &str, modified: i64
 
 /// Model name stored with notes that came from the iPhone (Markdown in `summary`)
 pub const SYNCED_NOTES_MODEL: &str = "synced-markdown";
+
+/// `## What you wrote` with one bullet per typed note, in the order typed:
+/// `- **line**: detail` when the notes wrote something under it, `- **line**`
+/// when they didn't (a note typed after the notes were made, or beyond what
+/// the prompt listed). Every typed note is there, so a device that shows
+/// this section in place of its own list loses none. None without notes.
+pub fn what_you_wrote_markdown(typed: &[(String, String)], note_details: Option<&str>) -> Option<String> {
+    let details: Vec<crate::meeting_notes::NoteDetail> =
+        note_details.and_then(|j| serde_json::from_str(j).ok()).unwrap_or_default();
+    let one_line = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+    let bullets: Vec<String> = typed
+        .iter()
+        .filter_map(|(id, text)| {
+            let text = one_line(text).replace("**", "");
+            if text.is_empty() {
+                return None;
+            }
+            let detail = details.iter().find(|d| &d.marker_id == id).map(|d| one_line(&d.detail)).filter(|d| !d.is_empty());
+            Some(match detail {
+                Some(d) => format!("- **{}**: {}", text, d),
+                None => format!("- **{}**", text),
+            })
+        })
+        .collect();
+    (!bullets.is_empty()).then(|| format!("## What you wrote\n{}", bullets.join("\n")))
+}
 
 fn json_list(s: Option<String>) -> Vec<serde_json::Value> {
     s.and_then(|s| serde_json::from_str::<Vec<serde_json::Value>>(&s).ok()).unwrap_or_default()
@@ -1187,12 +1228,25 @@ async fn apply_gone(pool: &Pool<Sqlite>, env: &RedactionEnv, peer: &str, g: &p::
             let Some(local) = local else { return Ok(false) };
             let mut tx = pool.begin().await.map_err(err("Database busy"))?;
             set_apply(&mut tx, peer, now).await?;
+            // A typed note: what the notes wrote under it goes with it
+            let note_of: Option<String> = if g.entity == "mark" {
+                sqlx::query_scalar("SELECT meeting_id FROM meeting_markers WHERE id = ? AND kind = 'note'")
+                    .bind(&local)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(err("Couldn't remove it"))?
+            } else {
+                None
+            };
             let n = sqlx::query(&format!("DELETE FROM {} WHERE {} = ?", table, key))
                 .bind(&local)
                 .execute(&mut *tx)
                 .await
                 .map_err(err("Couldn't remove it"))?
                 .rows_affected();
+            if let Some(meeting_id) = note_of {
+                crate::meeting_notes::typed_notes_changed(&mut tx, &meeting_id).await.map_err(err("Couldn't remove it"))?;
+            }
             if g.entity != "notes" {
                 remember_gone(&mut tx, &g.entity, &local, g.rec.as_deref().and_then(p::wire_id).as_deref(), peer).await?;
             }
@@ -1466,7 +1520,12 @@ async fn apply_notes(tx: &mut SqliteConnection, peer: &str, n: &p::NotesItem) ->
 
 async fn apply_mark(tx: &mut SqliteConnection, peer: &str, m: &p::MarkItem) -> Result<bool, String> {
     let (Some(id), Some(rec)) = (p::simple_id(&m.id), p::wire_id(&m.rec)) else { return Ok(false) };
-    if !["important", "question", "test"].contains(&m.kind.as_str()) || !meeting_exists(tx, &rec).await? {
+    // The three marks, and a typed note (which always has text). A kind
+    // this version doesn't know is skipped, never an error.
+    let is_note = crate::markers::is_note(&m.kind);
+    let known = is_note || crate::markers::KINDS.contains(&m.kind.as_str());
+    let empty_note = is_note && m.note.as_deref().map_or(true, |n| n.trim().is_empty());
+    if !known || empty_note || !meeting_exists(tx, &rec).await? {
         return Ok(false);
     }
     if newer(tx, "mark", &id, m.modified).await? != Some(true) {

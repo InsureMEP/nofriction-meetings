@@ -14,11 +14,13 @@ import { isOffline } from "./lib/offline";
 import { useRecording } from "./hooks/useRecording";
 import { useTranscripts } from "./hooks/useTranscripts";
 import { Shell, type AppMode } from "./components/Shell";
-import { openHelp, openSettings, requestExport, requestSearchFocus } from "./lib/navigation";
+import { openHelp, openSettings, requestExport, requestRecordingView, requestSearchFocus } from "./lib/navigation";
 import { RecordPicker, RecordPickerContext } from "./components/RecordPicker";
 import { ClassRecordingNotice } from "./components/TimedRecording";
 import { CLASS_NOTICE_EVENT, TIMED_EVENTS, type TimedAutoStop } from "./lib/timedRecording";
 import type { StartPlan } from "./lib/recordPlan";
+import { UP_NEXT_START_EVENT } from "./lib/upNext";
+import { planFor, type UpNext } from "./lib/upNextLogic";
 
 function App() {
   const [activeMode, setActiveMode] = useState<AppMode>("record");
@@ -38,10 +40,12 @@ function App() {
   }, [recording.isRecording]);
 
   // After the user stops, show the recording they just made (Recordings,
-  // opened on it) instead of an empty Record screen. Automatic stops (time
-  // limit, meeting end) leave the view alone.
+  // opened on its Notes: what they typed is there at once, and the notes
+  // being made appear under it) instead of an empty Record screen.
+  // Automatic stops (time limit, meeting end) leave the view alone.
   const openFinished = (id: string | null) => {
     if (!id) return;
+    requestRecordingView(id, "notes");
     setSelectedMeetingId(id);
     transcriptsRef.current.loadTranscripts(id);
     setActiveMode("recordings");
@@ -105,6 +109,14 @@ function App() {
       add(await listen("menu:pause_recording", async () => {
         if (recording.isRecording && !recording.isPaused) {
           await recording.pauseRecording();
+        }
+      }));
+      // Up next (up_next.rs): the tray's "Record BIO 101" and Record by itself
+      // start what is suggested, with its type, length and notebook
+      add(await listen<UpNext>(UP_NEXT_START_EVENT, async (e) => {
+        if (!recording.isRecording && e.payload) {
+          transcripts.clearLiveTranscripts();
+          await recording.startRecording(planFor(e.payload)).catch((err) => console.error("Up next failed to start:", err));
         }
       }));
       // Tray: Start Recording uses the remembered type and length
@@ -277,6 +289,15 @@ function App() {
     setRecordPickerOpen(false);
   };
 
+  // A start that already has its answers (Up next, a notebook's Record):
+  // no sheet, and the Record screen shows it
+  const startPlan = async (plan: StartPlan) => {
+    if (recording.isRecording) return;
+    transcripts.clearLiveTranscripts();
+    await recording.startRecording(plan);
+    setActiveMode("record");
+  };
+
   if (setupRequired === null || !isBackendReady || initError) {
     return (
       <div className="app-loading" style={{ flexDirection: 'column', gap: '16px' }}>
@@ -319,7 +340,7 @@ function App() {
   };
 
   return (
-    <RecordPickerContext.Provider value={{ open: openRecordPicker }}>
+    <RecordPickerContext.Provider value={{ open: openRecordPicker, start: startPlan }}>
     <div className="app-container ready">
       <Shell
         activeMode={activeMode}

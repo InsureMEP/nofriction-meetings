@@ -42,7 +42,7 @@ import {
     useRedaction,
     useWordSelection,
 } from "./redaction/Redaction";
-import { MarkerInline, MarkerList, MarkerPins, useMarkers } from "./study/MarkerList";
+import { MarkerInline, MarkerList, MarkerPins, NoteInline, NotePins, useMarkers } from "./study/MarkerList";
 import { MarkKindContext } from "./study/MarkerBits";
 import { useRecordingKind } from "../hooks/useRecordingKind";
 import { markersInSpans, placeMarkers } from "../lib/studyLogic";
@@ -113,7 +113,8 @@ export function RewindGallery({ meetingId, isRecording, seek = null }: RewindGal
     const reload = useCallback(() => setReloadKey((k) => k + 1), []);
     const redaction = useRedaction(meetingId, reload);
     // Marks (docs/STUDY_TOOLS.md)
-    const { markers, setMarkers, reload: reloadMarkers } = useMarkers(meetingId, reloadKey);
+    // …and the notes typed while listening, shown where they were written
+    const { markers, setMarkers, notes, setNotes, reload: reloadMarkers } = useMarkers(meetingId, reloadKey);
     // The recording's type labels the third mark (On the test / Follow up / Remember)
     const recKind = useRecordingKind(meetingId);
 
@@ -454,6 +455,7 @@ export function RewindGallery({ meetingId, isRecording, seek = null }: RewindGal
         [nearestFrame],
     );
     const placed = useMemo(() => placeMarkers(transcripts, markers), [transcripts, markers]);
+    const placedNotes = useMemo(() => placeMarkers(transcripts, notes), [transcripts, notes]);
 
     const onThumbClick = (e: React.MouseEvent, frame: tauri.TimelineFrame) => {
         galleryRef.current?.focus({ preventScroll: true });
@@ -557,6 +559,10 @@ export function RewindGallery({ meetingId, isRecording, seek = null }: RewindGal
             setMarkers((ms) => {
                 const gone = markersInSpans(ms, spans);
                 return ms.filter((m) => !gone.has(m.id));
+            });
+            setNotes((ns) => {
+                const gone = markersInSpans(ns, spans);
+                return ns.filter((n) => !gone.has(n.id));
             });
         }
         words.clear();
@@ -798,6 +804,9 @@ export function RewindGallery({ meetingId, isRecording, seek = null }: RewindGal
                     {placed.before.map((m) => (
                         <MarkerInline key={m.id} m={m} onJump={seekTo} />
                     ))}
+                    {placedNotes.before.map((n) => (
+                        <NoteInline key={n.id} n={n} onJump={seekTo} />
+                    ))}
                     {transcripts.length === 0 ? (
                         <p className="no-transcripts">Nothing was said yet.</p>
                     ) : (
@@ -862,6 +871,9 @@ export function RewindGallery({ meetingId, isRecording, seek = null }: RewindGal
                                         {placed.after.get(t.id)?.map((m) => (
                                             <MarkerInline key={m.id} m={m} onJump={seekTo} />
                                         ))}
+                                        {placedNotes.after.get(t.id)?.map((n) => (
+                                            <NoteInline key={n.id} n={n} onJump={seekTo} />
+                                        ))}
                                     </div>
                                 );
                             })}
@@ -905,6 +917,7 @@ export function RewindGallery({ meetingId, isRecording, seek = null }: RewindGal
                         aria-label="Moment in the recording"
                     />
                     <MarkerPins markers={markers} pct={pct} onJump={seekTo} />
+                    <NotePins notes={notes} pct={pct} onJump={seekTo} />
                     <div className="timeline-markers">
                         {selSpans.map(([a, b], i) => (
                             <div

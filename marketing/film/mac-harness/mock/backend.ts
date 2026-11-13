@@ -7,7 +7,10 @@
 // Unknown commands are logged as "[mock] unhandled" and answered with null.
 
 import { mockConvertFileSrc, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
-import { DEMO_MEETINGS, LIVE_SCRIPTS, RECENT_NOTEBOOKS, type DemoMeeting, type Kind } from "./mock-data";
+import { DEMO_MEETINGS, LIVE_SCRIPTS, RECENT_NOTEBOOKS, type DemoMeeting, type Kind,
+    LIVE_NOTES,
+    LIVE_NOTE_DETAIL,
+} from "./mock-data";
 // The fictional pairing code for Settings → Sync (encodes PAIRING_LINK below)
 import pairingQrSvg from "./pairing-qr.svg?raw";
 // A lesson set made by Make lesson from "BIO 101: Cell Biology": produced by
@@ -32,6 +35,8 @@ const AI_NONE = flags.get("ai") === "none";
 // consent dialog names api.openai.com on the first AI action)
 const AI_OPENAI = flags.get("ai") === "openai";
 let openaiConsent = false;
+// ?upnext=routine | calendar | call: something is starting (the Up next card)
+const UP_NEXT = flags.get("upnext");
 
 const PRODUCTS = [
     { id: "com.nofriction.meetings.pro.monthly", displayName: "Pro Monthly", description: "AI notes, summaries and reviews, monthly", displayPrice: "$0.99", period: "1 month", periodUnit: "month", periodValue: 1, introOffer: "1 week free" },
@@ -75,11 +80,21 @@ interface Marker {
     id: string;
     meeting_id: string;
     ts: string;
-    kind: "important" | "question" | "test";
+    kind: "important" | "question" | "test" | "note";
     note: string | null;
     created_at: string;
     offset_ms: number;
 }
+
+/** What the notes wrote under each typed note (meeting_notes.note_details) */
+const noteDetails = new Map<string, string>();
+/** Notes made in the harness (a recording that stopped, Make notes) */
+const madeNotes = new Map<string, NonNullable<DemoMeeting["notes"]>>();
+/** Recordings whose notes are being made, with what the run is doing */
+const notesRuns = new Map<string, string>();
+/** Ticked items on the notebook page: "meetingId:key" */
+const doneItems = new Set<string>();
+const settingsStore = new Map<string, string>();
 
 const meetings: MeetingRow[] = [];
 const markers: Marker[] = [];
@@ -111,6 +126,7 @@ for (const m of DEMO_MEETINGS) {
             created_at: new Date(start.getTime() + off).toISOString(),
             offset_ms: off,
         });
+        if (k.kind === "note" && k.detail) noteDetails.set(`${m.id}-mk${i + 1}`, k.detail);
     });
 }
 
@@ -416,10 +432,15 @@ function timelineFor(id: string) {
     };
 }
 
+const notesOf = (id: string) => madeNotes.get(id) ?? demoById.get(id)?.notes ?? null;
+
 function notesFor(id: string) {
-    const n = demoById.get(id)?.notes;
+    const n = notesOf(id);
     if (!n) return null;
     const row = meetingById(id)!;
+    const details = markers
+        .filter((m) => m.meeting_id === id && m.kind === "note" && noteDetails.has(m.id))
+        .map((m) => ({ marker_id: m.id, detail: noteDetails.get(m.id) }));
     return {
         id: `notes-${id}`,
         meeting_id: id,
@@ -430,7 +451,127 @@ function notesFor(id: string) {
         generated_at: row.ended_at ?? row.started_at,
         model_used: n.model_used,
         stale_after_edit: false,
+        note_details: details.length ? JSON.stringify(details) : null,
     };
+}
+
+/** How long each step of a notes run takes in the harness */
+const NOTES_STEP_MS = 700;
+
+/** Make the notes the way meeting_notes.rs reports it: progress, then done. */
+function runNotes(id: string): Promise<null> {
+    const row = meetingById(id);
+    if (!row || notesRuns.has(id)) return Promise.resolve(null);
+    const steps = ["Making notes…", "Reading the recording (1 of 2)…", "Reading the recording (2 of 2)…", "Writing the notes…"];
+    return new Promise((resolve) => {
+        steps.forEach((label, i) =>
+            window.setTimeout(() => {
+                notesRuns.set(id, label);
+                emitEvent("notes_progress", { meetingId: id, label, done: i, total: steps.length });
+            }, i * NOTES_STEP_MS),
+        );
+        window.setTimeout(() => {
+            if (!demoById.get(id)?.notes) madeNotes.set(id, LIVE_NOTES[row.recording_kind]);
+            for (const m of markers) {
+                if (m.meeting_id === id && m.kind === "note" && !noteDetails.has(m.id)) noteDetails.set(m.id, LIVE_NOTE_DETAIL[row.recording_kind]);
+            }
+            notesRuns.delete(id);
+            emitEvent("notes_done", { meetingId: id, ok: true });
+            resolve(null);
+        }, steps.length * NOTES_STEP_MS);
+    });
+}
+
+// ── The notebook page (src-tauri/src/notebook_page.rs) ──────────────────
+
+const itemKey = (task: string) =>
+    [...task.trim().toLowerCase().replace(/[.!;,:]+$/, "")].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) >>> 0, 7).toString(16).padStart(8, "0");
+
+function notebookRecordings(notebook: string) {
+    const n = notebook.trim().toLowerCase();
+    return meetings
+        .filter((m) => (m.class_name ?? "").toLowerCase() === n)
+        .sort((a, b) => b.started_at.localeCompare(a.started_at));
+}
+
+function notebookOverview(notebook: string) {
+    const recs = notebookRecordings(notebook);
+    if (recs.length === 0) throw "No recordings in that notebook.";
+    const third = (k: Kind) => (k === "class" ? "On the test" : k === "personal" ? "Remember" : "Follow up");
+    const study = (id: string) => (demoById.get(id)?.study ?? {}) as { flashcards?: { cards: unknown[] }; quiz?: { questions: unknown[] } };
+    return {
+        name: recs[0].class_name,
+        recording_kind: recs[0].recording_kind,
+        total_seconds: recs.reduce((s, r) => s + (r.duration_seconds ?? 0), 0),
+        recordings: recs.map((r) => ({
+            id: r.id,
+            title: r.title,
+            started_at: r.started_at,
+            duration_seconds: r.duration_seconds,
+            recording_kind: r.recording_kind,
+            has_notes: !!notesOf(r.id),
+            has_guide: !!(study(r.id).flashcards || study(r.id).quiz),
+        })),
+        items: recs.flatMap((r) =>
+            (notesOf(r.id)?.action_items ?? []).map((a) => ({
+                meeting_id: r.id,
+                meeting_title: r.title,
+                started_at: r.started_at,
+                key: itemKey(a.task),
+                task: a.task,
+                assignee: a.assignee ?? null,
+                due: a.due_date ?? null,
+                done: doneItems.has(`${r.id}:${itemKey(a.task)}`),
+            })),
+        ),
+        marked: recs.flatMap((r) =>
+            markers
+                .filter((m) => m.meeting_id === r.id && (m.kind === "test" || m.kind === "question"))
+                .sort((a, b) => a.offset_ms - b.offset_ms)
+                .map((m) => ({
+                    id: m.id,
+                    meeting_id: r.id,
+                    meeting_title: r.title,
+                    started_at: r.started_at,
+                    kind: m.kind,
+                    label: m.kind === "question" ? "Question" : third(r.recording_kind),
+                    note: m.note,
+                    offset_ms: m.offset_ms,
+                })),
+        ),
+        cards: recs.reduce((n, r) => n + (study(r.id).flashcards?.cards.length ?? 0), 0),
+        questions: recs.reduce((n, r) => n + (study(r.id).quiz?.questions.length ?? 0), 0),
+    };
+}
+
+function notebookReview(notebook: string) {
+    const recs = notebookRecordings(notebook).reverse();
+    const from = (r: MeetingRow) => ({ meeting_id: r.id, meeting_title: r.title });
+    const study = (id: string) => (demoById.get(id)?.study ?? {}) as { flashcards?: { cards: object[] }; quiz?: { questions: object[] } };
+    return {
+        recordings: recs
+            .filter((r) => study(r.id).flashcards || study(r.id).quiz)
+            .map((r) => ({ id: r.id, title: r.title, started_at: r.started_at })),
+        cards: recs.flatMap((r) => (study(r.id).flashcards?.cards ?? []).map((c) => ({ ...c, ...from(r) }))),
+        questions: recs.flatMap((r) => (study(r.id).quiz?.questions ?? []).map((q) => ({ ...q, ...from(r) }))),
+    };
+}
+
+// ── Up next (src-tauri/src/up_next.rs) ──────────────────────────────────
+
+let upNextDismissed = false;
+function upNext() {
+    if (upNextDismissed || (live && !live.stopped)) return null;
+    switch (UP_NEXT) {
+        case "routine":
+            return { source: "routine", key: "routine:bio 101", title: "BIO 101", detail: "You usually record this on Thursdays around 10:15 AM", notebook: "BIO 101", recording_kind: "class", duration: "60" };
+        case "calendar":
+            return { source: "calendar", key: "calendar:evt-1:0", title: "Acme project sync", detail: "On your calendar, starts in 4 min", notebook: "Acme project", recording_kind: "meeting", duration: "none" };
+        case "call":
+            return { source: "call", key: "call:zoom", title: "this call", detail: "Zoom is using the microphone", notebook: null, recording_kind: "meeting", duration: "none" };
+        default:
+            return null;
+    }
 }
 
 function linksFor(id: string) {
@@ -557,7 +698,7 @@ function handle(cmd: string, args: Args): unknown {
         case "get_vault_status":
             return { configured: false, path: null, valid: false, topicCount: 0, totalFiles: 0 };
         case "get_setting":
-            return null;
+            return settingsStore.get(a.key) ?? null;
         // Export to Obsidian is Pro (entitlement::require_pro_feature)
         case "set_vault_path":
         case "export_meeting_to_vault":
@@ -567,7 +708,36 @@ function handle(cmd: string, args: Args): unknown {
             if (a.key === "obsidian_auto_export" && a.value === "true" && !isPro) {
                 throw "PRO_REQUIRED:obsidian: Export to Obsidian is part of noFriction Pro.";
             }
+            settingsStore.set(a.key, a.value);
             return null;
+
+        // The notebook page
+        case "get_notebook_overview":
+            return notebookOverview(a.notebook);
+        case "get_notebook_review":
+            return notebookReview(a.notebook);
+        case "get_recording_items":
+            return (notesOf(a.meetingId)?.action_items ?? []).map((x) => ({
+                key: itemKey(x.task),
+                task: x.task,
+                done: doneItems.has(`${a.meetingId}:${itemKey(x.task)}`),
+            }));
+        case "set_notebook_item_done":
+            if (a.done) doneItems.add(`${a.meetingId}:${a.key}`);
+            else doneItems.delete(`${a.meetingId}:${a.key}`);
+            return null;
+
+        // Up next
+        case "get_up_next":
+            return upNext();
+        case "dismiss_up_next":
+            upNextDismissed = true;
+            emitEvent("up_next", null);
+            return null;
+
+        // Notes being made
+        case "get_notes_status":
+            return notesRuns.get(a.meetingId) ?? null;
         case "get_ai_automation":
             return { autoReport: true };
         case "set_ai_automation":
@@ -709,6 +879,21 @@ function handle(cmd: string, args: Args): unknown {
             markers.push(m);
             return m;
         }
+        case "add_note": {
+            if (!live || live.stopped) throw "Start a recording to type a note.";
+            const m: Marker = {
+                id: `${live.id}-mk${markers.length + 1}`,
+                meeting_id: live.id,
+                ts: new Date().toISOString(),
+                kind: "note",
+                note: String(a.text ?? "").trim(),
+                created_at: new Date().toISOString(),
+                offset_ms: Date.now() - live.startedAt,
+            };
+            markers.push(m);
+            emitEvent("note_added", m);
+            return m;
+        }
         case "add_marker": {
             const row = meetingById(a.meetingId);
             const start = row ? Date.parse(row.started_at) : Date.now();
@@ -741,9 +926,14 @@ function handle(cmd: string, args: Args): unknown {
         // Recording
         case "start_recording":
             return startFromPlan(a.plan ?? null);
-        case "stop_recording":
+        case "stop_recording": {
+            const stopped = live && !live.stopped ? live.id : null;
             stopLive();
+            // Automatic notes (meeting_notes::run::after_stop), when AI is set up
+            if (stopped && isPro && !AI_NONE) void runNotes(stopped);
+            emitEvent("up_next", upNext());
             return null;
+        }
         case "pause_recording":
         case "resume_recording":
         case "set_accessibility_meeting_id":
@@ -806,6 +996,7 @@ function handle(cmd: string, args: Args): unknown {
         case "draft_followup_email":
         case "generate_study_guide":
             if (!isPro) throw "PRO_REQUIRED: noFriction Pro unlocks the AI features.";
+            if (cmd === "generate_meeting_report") return runNotes(a.meetingId);
             if (cmd === "draft_followup_email") {
                 return { subject: "Acme sync: decisions and next steps", body: "Hi all,\n\nThanks for today. We locked the plan names and agreed to test onboarding with five beta teams.\n\nPriya", to: ["dana@example.com", "marcus@example.com"] };
             }

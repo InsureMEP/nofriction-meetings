@@ -24,18 +24,22 @@ export function useUndoDelete(onError?: (e: unknown) => void) {
     const [now, setNow] = useState(() => Date.now());
     const pendingRef = useRef<Pending | null>(null);
     pendingRef.current = pending;
+    // Callers pass `onError` inline, so it is a new function on every
+    // render. It is read through a ref to keep `commit` the same function
+    // for the life of the hook: the leave-the-view effect below depends on
+    // it, and would otherwise run its cleanup on the next render and apply
+    // the delete at once, with no time to Undo.
+    const onErrorRef = useRef(onError);
+    onErrorRef.current = onError;
 
-    const commit = useCallback(
-        async (p: Pending) => {
-            try {
-                await p.apply();
-            } catch (e) {
-                p.restore();
-                onError?.(e);
-            }
-        },
-        [onError],
-    );
+    const commit = useCallback(async (p: Pending) => {
+        try {
+            await p.apply();
+        } catch (e) {
+            p.restore();
+            onErrorRef.current?.(e);
+        }
+    }, []);
 
     const start = useCallback(
         (label: string, apply: () => Promise<void>, restore: () => void) => {

@@ -3,8 +3,8 @@
 // default) that jumps to each one, filtered by type. Labels follow the
 // recording's type (MarkKindContext). docs/STUDY_TOOLS.md
 
-import { useCallback, useEffect, useState } from "react";
-import { TrashIcon } from "../icons";
+import { useCallback, useEffect, useState, useRef } from "react";
+import { NoteIcon, TrashIcon } from "../icons";
 import { KindPicker, MarkerGlyph, useMarkerMeta } from "./MarkerBits";
 import { MARKERS_CHANGED_EVENT, markersApi, notifyMarkersChanged } from "../../lib/study";
 import {
@@ -12,23 +12,40 @@ import {
     clock,
     countByKind,
     filterMarkers,
+    splitMarkers,
     type Marker,
     type MarkerFilter,
     type MarkerKind,
+    type TypedNote,
 } from "../../lib/studyLogic";
 
-/** A recording's markers, kept fresh when any view changes them. */
+/** A recording's marks and the notes typed in it, kept fresh when any view changes them. */
 export function useMarkers(meetingId: string | null, reloadKey = 0) {
     const [markers, setMarkers] = useState<Marker[]>([]);
+    const [notes, setNotes] = useState<TypedNote[]>([]);
+    // Only the latest request's answer is used: one for a recording that is
+    // no longer open (or an older read of this one) is dropped
+    const request = useRef(0);
     const load = useCallback(() => {
+        const mine = ++request.current;
         if (!meetingId) {
             setMarkers([]);
+            setNotes([]);
             return;
         }
         markersApi
             .list(meetingId)
-            .then(setMarkers)
-            .catch(() => setMarkers([]));
+            .then((rows) => {
+                if (mine !== request.current) return;
+                const split = splitMarkers(rows);
+                setMarkers(split.marks);
+                setNotes(split.notes);
+            })
+            .catch(() => {
+                if (mine !== request.current) return;
+                setMarkers([]);
+                setNotes([]);
+            });
     }, [meetingId]);
     useEffect(load, [load, reloadKey]);
     useEffect(() => {
@@ -39,7 +56,7 @@ export function useMarkers(meetingId: string | null, reloadKey = 0) {
         window.addEventListener(MARKERS_CHANGED_EVENT, on);
         return () => window.removeEventListener(MARKERS_CHANGED_EVENT, on);
     }, [meetingId, load]);
-    return { markers, setMarkers, reload: load };
+    return { markers, setMarkers, notes, setNotes, reload: load };
 }
 
 interface ListProps {
@@ -200,6 +217,49 @@ export function MarkerInline({ m, onJump }: { m: Marker; onJump: (ms: number) =>
             <span className="study-inline__time">{clock(m.offset_ms)}</span>
             {m.note && <span className="study-inline__note">{m.note}</span>}
         </button>
+    );
+}
+
+/** A note the user typed, inside the transcript at the moment it was typed. */
+export function NoteInline({ n, onJump }: { n: TypedNote; onJump: (ms: number) => void }) {
+    return (
+        <button
+            type="button"
+            className="study-inline is-note"
+            onClick={(e) => {
+                e.stopPropagation();
+                onJump(n.offset_ms);
+            }}
+            title={`You wrote this at ${clock(n.offset_ms)}`}
+        >
+            <span className="study-glyph is-note" aria-hidden>
+                <NoteIcon size={12} strokeWidth={2.2} />
+            </span>
+            <span className="study-inline__time">{clock(n.offset_ms)}</span>
+            <span className="study-inline__text">{n.text}</span>
+        </button>
+    );
+}
+
+/** Pins for typed notes, beside the marks' pins. */
+export function NotePins({ notes, pct, onJump }: { notes: TypedNote[]; pct: (ms: number) => number; onJump: (ms: number) => void }) {
+    if (notes.length === 0) return null;
+    return (
+        <div className="study-pins is-notes" aria-label="Your notes on the timeline">
+            {notes.map((n) => (
+                <button
+                    key={n.id}
+                    type="button"
+                    className="study-pin is-note"
+                    style={{ left: `${pct(n.offset_ms)}%` }}
+                    title={`You wrote · ${clock(n.offset_ms)} · ${n.text}`}
+                    aria-label={`Your note at ${clock(n.offset_ms)}`}
+                    onClick={() => onJump(n.offset_ms)}
+                >
+                    <NoteIcon size={9} strokeWidth={2.4} />
+                </button>
+            ))}
+        </div>
     );
 }
 

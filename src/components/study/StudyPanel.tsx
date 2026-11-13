@@ -23,9 +23,9 @@ import {
     STUDY_PARTS,
     cardsOf,
     clock,
-    filterMarkers,
     markerLabel,
     quizOf,
+    splitMarkers,
     type StudyPart,
 } from "../../lib/studyLogic";
 import { guideTitle, parseKind, thirdMarkLabel, type RecordingKind } from "../../lib/recordingKind";
@@ -173,8 +173,9 @@ export function StudyPanel({ meetingId, onJump }: { meetingId: string; onJump: (
     const stale = Object.values(guide.materials).some((m) => m?.stale);
     const proNote = proSuffix(caps?.pro_gating, isPro);
     const showSetup = configured === false || needsAi;
-    const marks = filterMarkers(guide.markers, "all");
-    const testMarks = guide.markers.filter((m) => m.kind === "test").length;
+    // The three marks only: a typed note isn't a marked moment
+    const marks = splitMarkers(guide.markers).marks;
+    const testMarks = marks.filter((m) => m.kind === "test").length;
     const third = thirdMarkLabel(kind);
 
     return (
@@ -377,7 +378,7 @@ function Part({ kind, rec, guide, onJump }: { kind: StudyPart; rec: RecordingKin
 }
 
 function MarkedMoments({ guide, kind, onJump }: { guide: StudyGuide; kind: RecordingKind; onJump: (ms: number) => void }) {
-    const marks = filterMarkers(guide.markers, "all");
+    const marks = splitMarkers(guide.markers).marks;
     if (marks.length === 0) {
         return (
             <div className="mn-empty">

@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { chatApi, type ChatMessage, type ChatThread, type Citation } from "../../lib/chat";
 import { defaultScope, sameScope, scopeLabel, suggestedQuestions, type Scope, type ScopeSummary } from "../../lib/chatLogic";
 import { aiErrorClass, friendlyAiError, isNoProviderError } from "../../lib/ai";
-import { requestRecordingSeek } from "../../lib/navigation";
+import { onChatAboutNotebook, requestRecordingSeek, takeChatNotebook } from "../../lib/navigation";
 import { AiSetupNotice, useAiStatus } from "../AiSetupNotice";
 import { useUndoDelete } from "../UndoToast";
 import { BrainIcon, TrashIcon } from "../icons";
@@ -56,8 +56,30 @@ export function RecordingsChat({ selectedMeetingId, onOpenRecording }: Props) {
         if (configured) setNeedsAi(false);
     }, [configured]);
 
-    // A different recording was opened: a fresh chat follows it
+    // Asked from a notebook's page: a new chat about that notebook
     useEffect(() => {
+        const open = (notebook: string) => {
+            setThread(null);
+            setMessages([]);
+            setError(null);
+            setScope({ kind: "notebook", value: notebook });
+            textareaRef.current?.focus();
+        };
+        const pending = takeChatNotebook();
+        if (pending) open(pending);
+        return onChatAboutNotebook((n) => {
+            takeChatNotebook();
+            open(n);
+        });
+    }, []);
+
+    // A different recording was opened: a fresh chat follows it. Not on
+    // mount: the scope already starts there, and running then would replace
+    // the notebook that "Ask" on a notebook's page just set above.
+    const followed = useRef(selectedMeetingId);
+    useEffect(() => {
+        if (followed.current === selectedMeetingId) return;
+        followed.current = selectedMeetingId;
         if (!thread && messages.length === 0) setScope((s) => {
             const d = defaultScope(selectedMeetingId);
             return sameScope(s, d) ? s : d;

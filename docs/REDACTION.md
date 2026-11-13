@@ -138,6 +138,16 @@ exist on the platform:
      and the user can edit them)
    - the AI "regenerate" uses the edited transcript, where stricken spans
      appear as `[stricken from the record]`
+   - what the notes wrote under each typed note (Mac
+     `meeting_notes.note_details`; on the iPhone the "What you wrote"
+     section of the notes) is part of the notes: rewritten and flagged with
+     them. The typed lines themselves are the user's words and are left
+     alone, like a mark's note
+   - notes are never saved from a transcript that changed while they were
+     being made (Mac: inside one `BEGIN IMMEDIATE` transaction, a Delete in
+     its undo window refuses the save, every line the notes read must still
+     be in the transcript, and only then is the row inserted, so no Delete
+     or Strike can land between the check and the save)
    - **review guides (study guides, for a class) are deleted, not rewritten**
      (Mac `study_materials`, iOS `StudyMaterial`): summary, key terms,
      flashcards, quiz and questions paraphrase the recording, so matching the
@@ -427,6 +437,21 @@ UI in `src/components/redaction/Redaction.tsx`.
   from backups; a backup holding a different version of that line that still
   has the words is deleted.
 - **Comments.** `meeting_comments` are never rewritten, for Delete or Strike.
+- **Typed notes and the notebook page.** A typed note is a `meeting_markers`
+  row (kind `note`): a time-range Delete or Strike removes the ones in its
+  span, word and line edits leave them alone, and deleting the recording
+  takes them. `meeting_notes.note_details` is in `AI_TABLES`' column list
+  for `meeting_notes`. What the notes wrote under a typed note never
+  outlives the note: deleting it (in Notes or Rewind, by a time-range
+  Delete or Strike, or because the other device deleted it) drops its entry
+  from `note_details` in the same step
+  (`meeting_notes::typed_notes_changed`), and notes are saved with details
+  only for typed notes that still exist. The notebook page (`notebook_page.rs`) stores no
+  content: it reads the notes, marks and guides, so it changes when they do,
+  and its ticks (`notebook_item_done`) are a hash of the item's text per
+  recording, deleted with the recording. Up next (`up_next.rs`) stores only
+  the keys the user said "Not now" to today (a notebook name or a calendar
+  event id).
 - **Review / study guides.** `redact_ai_outputs` calls `study::purge_for_meeting`
   for every line edit (any removal, distinctive or not), in the action's
   transaction and in each backup's purge. `study::save_materials` re-checks

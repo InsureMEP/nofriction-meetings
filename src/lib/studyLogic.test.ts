@@ -161,3 +161,37 @@ test("stored data is checked before the UI uses it", () => {
     assert.equal(q[1].explanation, "");
     assert.equal(q[1].at_ms, null);
 });
+
+// ── Typed notes (docs/design/FADELL_V2.md §6) ───────────────────────────
+
+test("typed notes are split from the marks and never counted as one", async () => {
+    const { splitMarkers, cleanTypedNote, placeMarkers: place, countByKind: count, MAX_TYPED_NOTE_CHARS, MARKER_KINDS: kinds } = await import("./studyLogic.ts");
+    const row = (id: string, kind: string, offset_ms: number, note: string | null = null) => ({
+        id,
+        meeting_id: "m1",
+        ts: "2026-11-11T09:00:00Z",
+        kind: kind as "important",
+        note,
+        created_at: `2026-11-11T09:00:0${id.length}Z`,
+        offset_ms,
+    });
+    const rows = [row("n2", "note", 30_000, "second line"), row("k1", "test", 20_000, "chapter 4"), row("n1", "note", 10_000, "  first line "), row("e", "note", 5_000, "   "), row("x", "doodle", 1_000)];
+    const { marks, notes } = splitMarkers(rows);
+    assert.deepEqual(marks.map((m) => m.id), ["k1"], "an unknown kind is neither");
+    assert.deepEqual(notes.map((n) => [n.id, n.text, n.offset_ms]), [["n1", "first line", 10_000], ["n2", "second line", 30_000]], "in time order, empty ones dropped");
+    assert.deepEqual(count(marks), { important: 0, question: 0, test: 1 });
+    assert.deepEqual(kinds, ["important", "question", "test"], "a note is never offered as a mark kind");
+
+    // Notes sit in the transcript by the same rule as marks
+    const lines = [{ id: "l1", timestamp_ms: 8_000 }, { id: "l2", timestamp_ms: 25_000 }];
+    const placed = place(lines, notes);
+    assert.deepEqual(placed.before, []);
+    assert.deepEqual(placed.after.get("l1")?.map((n) => n.id), ["n1"]);
+    assert.deepEqual(placed.after.get("l2")?.map((n) => n.id), ["n2"]);
+
+    assert.equal(cleanTypedNote("  the pump   moves\n3 Na out "), "the pump moves 3 Na out");
+    assert.equal(cleanTypedNote("   "), null);
+    assert.equal(cleanTypedNote("x".repeat(MAX_TYPED_NOTE_CHARS)), "x".repeat(MAX_TYPED_NOTE_CHARS));
+    assert.equal(cleanTypedNote("x".repeat(MAX_TYPED_NOTE_CHARS + 1)), null);
+    assert.equal(cleanTypedNote("é".repeat(MAX_TYPED_NOTE_CHARS)), "é".repeat(MAX_TYPED_NOTE_CHARS), "counts characters");
+});

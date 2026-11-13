@@ -171,6 +171,21 @@
 .study-inline.is-important { border-left-color: var(--hazard-yellow, #facc15); }
 .study-inline.is-question { border-left-color: #60a5fa; }
 .study-inline.is-test { border-left-color: var(--accent-success, #34d399); }
+/* A note the user typed: their own words, shown in full */
+/* Neutral, so it is never mistaken for a ★ Important mark (yellow) */
+.study-inline.is-note {
+    align-items: flex-start;
+    border-left-color: var(--text-primary, #f5f5f5);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-primary, #f5f5f5);
+    font-size: 13px;
+    line-height: 1.5;
+    text-align: left;
+}
+.study-inline.is-note:hover { background: rgba(255, 255, 255, 0.1); }
+.study-inline.is-note .study-inline__time { color: var(--text-secondary, #a3a3a3); font-size: 11px; padding-top: 2px; }
+.study-inline__text { flex: 1; min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+.study-glyph.is-note { color: var(--text-secondary, #a3a3a3); padding-top: 3px; }
 .study-inline:hover { background: rgba(255, 255, 255, 0.06); }
 .study-inline__label { color: var(--text-primary, #f5f5f5); font-weight: 600; }
 .study-inline__time { font-family: var(--ds-font-mono, monospace); }
@@ -203,6 +218,15 @@
     cursor: pointer;
 }
 .study-pin:hover { border-color: var(--text-primary, #f5f5f5); }
+/* Marks sit above the scrubber, typed notes below it: a smaller, squarer
+   pin, clear of the track and its ticks */
+.study-pins.is-notes { top: 24px; }
+.study-pin.is-note {
+    width: 16px;
+    height: 12px;
+    border-radius: 4px;
+    color: var(--text-primary, #f5f5f5);
+}
 
 /* ── Study panel ─────────────────────────────────────────────────── */
 .study-tabs { padding: 4px 0 8px; flex-wrap: wrap; }

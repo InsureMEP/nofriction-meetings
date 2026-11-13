@@ -3,7 +3,7 @@
 // the silence that ends a recording is 3 minutes, what is captured follows
 // the permissions, notes are made automatically once AI is set up.
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -19,6 +19,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useAppVersion } from "../../hooks/useAppVersion";
 import { CheckIcon } from "../../components/icons";
 import { showProMark } from "../../lib/pro";
+import { AUTO_START_SETTING, REMIND_SETTING } from "../../lib/upNext";
 
 interface SettingsProps {
     initialCategory?: SettingsCategory;
@@ -94,6 +95,9 @@ function RecordingSettings({ showToast }: { showToast: (text: string, error?: bo
     const [isLoadingDevices, setIsLoadingDevices] = useState(true);
     // Stop when it's over (meeting-end detection)
     const [autoStop, setAutoStop] = useState(true);
+    // Starting: a reminder when something starts (on), and starting by itself (off)
+    const [remind, setRemind] = useState(true);
+    const [autoStart, setAutoStart] = useState(false);
     // Export to Obsidian: a folder and an auto-export switch
     const [vaultPath, setVaultPath] = useState<string>("");
     const [autoExport, setAutoExport] = useState(false);
@@ -123,6 +127,14 @@ function RecordingSettings({ showToast }: { showToast: (text: string, error?: bo
                 const v = await invoke<string | null>("get_setting", { key: "obsidian_auto_export" });
                 setAutoExport(v === "true");
             } catch { /* default off */ }
+            try {
+                const [r, a] = await Promise.all([
+                    invoke<string | null>("get_setting", { key: REMIND_SETTING }),
+                    invoke<string | null>("get_setting", { key: AUTO_START_SETTING }),
+                ]);
+                setRemind(r !== "false");
+                setAutoStart(a === "true");
+            } catch { /* defaults: remind on, record by itself off */ }
         })();
     }, []);
 
@@ -162,6 +174,28 @@ function RecordingSettings({ showToast }: { showToast: (text: string, error?: bo
             setAutoStop(prev);
             showToast(`Couldn't save: ${err instanceof Error ? err.message : String(err)}`, true);
         }
+    };
+
+    // Each switch's writes go out one after another, in the order clicked,
+    // so what is stored is the last click (two quick clicks could otherwise
+    // land out of order and leave "Record by itself" on while it shows off).
+    const startingWrites = useRef<Record<string, Promise<void>>>({});
+    const startingWanted = useRef<Record<string, boolean>>({});
+    const saveStarting = (key: string, next: boolean, set: (v: boolean) => void) => {
+        set(next);
+        startingWanted.current[key] = next;
+        const before = startingWrites.current[key] ?? Promise.resolve();
+        startingWrites.current[key] = before.then(async () => {
+            try {
+                await invoke("set_setting", { key, value: String(next) });
+            } catch (err) {
+                // An older click's failure says nothing about the newest one
+                if (startingWanted.current[key] !== next) return;
+                set(!next);
+                showToast(`Couldn't save: ${err instanceof Error ? err.message : String(err)}`, true);
+            }
+        });
+        return startingWrites.current[key];
     };
 
     // Export to Obsidian is noFriction Pro (Mac App Store build): without it
@@ -237,6 +271,59 @@ function RecordingSettings({ showToast }: { showToast: (text: string, error?: bo
             </section>
 
             <section className="settings-section">
+                <h3>Starting</h3>
+                <div className="settings-row">
+                    <div className="settings-label">
+                        <span className="label-main">Remind me when something starts</span>
+                        <span className="label-sub">
+                            A notification when a calendar event begins, a notebook you usually record is due, or a call
+                            app takes the microphone.
+                        </span>
+                    </div>
+                    <div
+                        className={`toggle-switch ${remind ? "active" : ""}`}
+                        onClick={() => saveStarting(REMIND_SETTING, !remind, setRemind)}
+                        role="switch"
+                        aria-checked={remind}
+                        aria-label="Remind me when something starts"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                            if (e.key === " " || e.key === "Enter") {
+                                e.preventDefault();
+                                void saveStarting(REMIND_SETTING, !remind, setRemind);
+                            }
+                        }}
+                    >
+                        <div className="toggle-knob" />
+                    </div>
+                </div>
+                <div className="settings-row">
+                    <div className="settings-label">
+                        <span className="label-main">Record by itself</span>
+                        <span className="label-sub">
+                            Records instead of asking, and tells you it did. Tell people you're recording.
+                        </span>
+                    </div>
+                    <div
+                        className={`toggle-switch ${autoStart ? "active" : ""}`}
+                        onClick={() => saveStarting(AUTO_START_SETTING, !autoStart, setAutoStart)}
+                        role="switch"
+                        aria-checked={autoStart}
+                        aria-label="Record by itself"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                            if (e.key === " " || e.key === "Enter") {
+                                e.preventDefault();
+                                void saveStarting(AUTO_START_SETTING, !autoStart, setAutoStart);
+                            }
+                        }}
+                    >
+                        <div className="toggle-knob" />
+                    </div>
+                </div>
+            </section>
+
+            <section className="settings-section">
                 <h3>Stopping</h3>
                 <div className="settings-row">
                     <div className="settings-label">
@@ -251,8 +338,14 @@ function RecordingSettings({ showToast }: { showToast: (text: string, error?: bo
                         onClick={() => saveAutoStop(!autoStop)}
                         role="switch"
                         aria-checked={autoStop}
+                        aria-label="Stop when it's over"
                         tabIndex={0}
-                        onKeyDown={(e) => (e.key === " " || e.key === "Enter") && saveAutoStop(!autoStop)}
+                        onKeyDown={(e) => {
+                            if (e.key === " " || e.key === "Enter") {
+                                e.preventDefault();
+                                void saveAutoStop(!autoStop);
+                            }
+                        }}
                     >
                         <div className="toggle-knob" />
                     </div>

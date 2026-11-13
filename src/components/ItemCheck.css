@@ -1,0 +1,44 @@
+/* The tick beside an item (ItemCheck.tsx) */
+
+.item-check {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  padding: 0;
+  border-radius: 4px;
+  /* 3:1 against the card, so the box reads as a control */
+  border: 1.5px solid #737373;
+  background: none;
+  color: var(--matte-black, #0a0a0a);
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+/* A 20px box with a 44px target */
+.item-check::after {
+  content: "";
+  position: absolute;
+  inset: -12px;
+}
+
+.item-check:hover {
+  border-color: var(--hazard-yellow, #facc15);
+}
+
+.item-check.is-done {
+  border-color: var(--hazard-yellow, #facc15);
+  background: var(--hazard-yellow, #facc15);
+}
+
+.item-check:focus-visible {
+  outline: 2px solid var(--hazard-yellow, #facc15);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .item-check { transition: none; }
+}

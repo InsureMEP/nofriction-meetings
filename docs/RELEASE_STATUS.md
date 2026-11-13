@@ -27,6 +27,7 @@ is approved.
 | iOS 1.1.0 | Export… and one-step AI connect (#81, #82). **Released 2026-10-23** | release session |
 | Mac 3.9.0 | Make lesson (#87), Export…, one-step AI connect, File → Export Recording… (⌘E) | release session |
 | iOS 1.2.0 | Lessons on iPhone (not started) | unassigned |
+| Mac 4.0.0 / iOS 2.0.0 ("v2") | Hands-free start (Up next, reminders, opt-in Record by itself), typed notes the AI finishes, notes that read the whole recording, the notebook's page. Plan: `docs/design/FADELL_V2.md`. **Merged to main, not built or submitted**: versions, store text and screenshots are still 3.9.0 / 1.1.0. The Mac migration rebuilds `meeting_markers` once (tested against a 3.9.0 table) | v2 session (2026-11-12); distribution as usual |
 
 ## Rules for every agent
 

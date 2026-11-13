@@ -14,11 +14,16 @@ the user guide copy from it. Change this file first, then the copy (see
 | Record | iPhone, iPad, Mac and Apple Watch, with types, notebooks, timed recording and automatic stop | |
 | Transcribe | On-device microphone transcription (Mac: also the call's audio) | **Transcribe what's playing** (iPhone): while you capture the screen, also transcribe the video or call you're watching |
 | Screens | Mac screenshots, iPhone screen snapshots, photos | |
-| Review | Marks, Rewind, search, Links, calendar and people | **Notes** (Make notes / Make again), automatic notes, **Follow-up email**, **Topics**, **Review guides** (Study guide for a class) with flashcards, practice quiz and CSV/Markdown export |
+| Review | Marks, typed notes (**Type a note** while recording; **What you wrote**), Rewind, search, Links, calendar and people; **Up next** and a notebook's page (**Due / Action items / To-dos**, **Marked**, **Review everything**), which use no AI | **Notes** (Make notes / Make again), automatic notes, **Follow-up email**, **Topics**, **Review guides** (Study guide for a class) with flashcards, practice quiz and CSV/Markdown export |
 | Ask | | **Chat** with your recordings, with citations |
 | Lessons | **Take** any lesson — the built-in Stoichiometry course, lessons you import and lessons you made — with interactive explainers, mastery, spaced-repetition review, the final exam and the printable certificate, fully offline | **Make lesson** (Mac): turn a Class recording into a lesson with your AI (docs/LESSONS.md §13) |
 | Devices | One subscription covers iPhone, iPad and Mac | **Sync with your Mac**: recordings, transcripts, notes, marks and screens move between iPhone and Mac directly on your Wi-Fi. No server; pair once with a QR code |
 | Your records | Edit, Delete and Strike from the record; share a recording as text; **Export…** a recording as a package (Markdown, web page, picked photos and screens, transcript; docs/EXPORT.md); export everything as JSON | **Export to Obsidian** (Mac): each recording saved as Markdown in your vault, by hand or automatically when it stops. The Export sheet's AI tools (highlights, captions, Pick with AI, Fill with AI) are AI features |
+
+The AI that finishes typed notes (what was being said under each line) is
+part of **Notes**, so it is Pro like the rest of them; typing, keeping and
+reading your own lines is free. A notebook's page is free to read; what
+fills it (notes, guides) is made by Pro features.
 
 Never Pro: recording, microphone transcription, search, Delete and Strike,
 sharing, Export… and JSON export (data portability). **Export… is free and

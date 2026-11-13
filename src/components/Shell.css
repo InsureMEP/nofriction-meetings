@@ -193,8 +193,6 @@
 }
 
 .record-view__transcript {
-  /* The privacy badge is pinned inside it (PrivacyPromise.css) */
-  position: relative;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -203,6 +201,14 @@
   border: 1px solid var(--agency-glass-border, rgba(255, 255, 255, 0.08));
   border-radius: 16px;
   background: var(--agency-bg-panel, rgba(20, 20, 22, 0.6));
+}
+
+/* What is said and what the user types, above the note field. The
+   privacy badge is pinned inside it (PrivacyPromise.css). */
+.record-view__stream {
+  position: relative;
+  flex: 1;
+  min-height: 0;
 }
 
 .record-view__screens {

@@ -457,8 +457,25 @@ pub(crate) async fn purge_range_extras(conn: &mut SqliteConnection, x: &RangeExt
         sqlx::query("DELETE FROM meeting_timeline_events WHERE event_id = ?").bind(ev).execute(&mut *conn).await?;
     }
     if has("meeting_markers") {
+        // Typed notes among them: what the notes wrote under each goes too
+        let mut with_notes: Vec<String> = Vec::new();
         for id in &x.marker_ids {
+            let m: Option<String> = sqlx::query_scalar("SELECT meeting_id FROM meeting_markers WHERE id = ? AND kind = 'note'")
+                .bind(id)
+                .fetch_optional(&mut *conn)
+                .await
+                .unwrap_or(None);
+            if let Some(m) = m {
+                if !with_notes.contains(&m) {
+                    with_notes.push(m);
+                }
+            }
             sqlx::query("DELETE FROM meeting_markers WHERE id = ?").bind(id).execute(&mut *conn).await?;
+        }
+        if has("meeting_notes") {
+            for meeting_id in &with_notes {
+                crate::meeting_notes::typed_notes_changed(conn, meeting_id).await?;
+            }
         }
     }
     Ok(())
