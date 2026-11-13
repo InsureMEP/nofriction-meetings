@@ -292,9 +292,9 @@ All times are local, as minutes of the day (no wrap past midnight).
 
 ## 7. What the design review added (2026-11-12)
 
-`/design-review` ran on the built Mac UI (report:
-`~/.gstack/projects/Cpotenzone-nofriction-meetings/designs/design-audit-20261112/`).
-Sixteen findings were fixed; three betterments it proposed were built:
+`/design-review` ran on the built Mac UI in the film harness (the report
+and its screenshots are kept outside the repo). Sixteen findings were
+fixed; three betterments it proposed were built:
 
 - **Ticks in Notes.** The tick beside an item is the same in a recording's
   Notes and on its notebook's page.
