@@ -14,6 +14,8 @@ pub mod menu_ids {
     pub const PAUSE_RECORDING: &str = "mode_pause";
     /// ★ the current moment of the recording (markers.rs)
     pub const MARK_MOMENT: &str = "mark_moment";
+    /// The quick-note panel (quick_note.rs)
+    pub const TYPE_NOTE: &str = "type_note";
     /// Export… the open recording as a package (docs/EXPORT.md)
     pub const EXPORT_RECORDING: &str = "export_recording";
 
@@ -71,6 +73,11 @@ pub fn create_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .item(
             &MenuItemBuilder::with_id(menu_ids::MARK_MOMENT, "Mark")
                 .accelerator(crate::markers::MENU_ACCELERATOR)
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id(menu_ids::TYPE_NOTE, "Type a Note")
+                .accelerator(crate::quick_note::MENU_ACCELERATOR)
                 .build(app)?,
         )
         .separator()
@@ -162,6 +169,10 @@ pub fn handle_menu_event(app: &AppHandle<Wry>, event_id: &str) {
             crate::markers::commands::mark_from_shortcut(app);
             return;
         }
+        menu_ids::TYPE_NOTE => {
+            crate::quick_note::toggle(app);
+            return;
+        }
         menu_ids::EXPORT_RECORDING => "menu:export_recording",
         menu_ids::VIEW_RECORD => "menu:view_record",
         menu_ids::VIEW_RECORDINGS => "menu:view_recordings",
@@ -191,8 +202,9 @@ pub fn handle_menu_event(app: &AppHandle<Wry>, event_id: &str) {
     emit_to_frontend(app, event);
 }
 
-/// Menu items whose result is in the window. Stop, Pause and Mark work
-/// without it (the menu-bar icon shows the state).
+/// Menu items whose result is in the window. Stop, Pause, Mark and Type a
+/// Note work without it (the menu-bar icon shows the state; the note panel
+/// is its own).
 fn shows_window(event_id: &str) -> bool {
     matches!(
         event_id,
@@ -225,7 +237,13 @@ mod tests {
         ] {
             assert!(shows_window(id), "{id} acts in the window");
         }
-        for id in [menu_ids::STOP_RECORDING, menu_ids::PAUSE_RECORDING, menu_ids::MARK_MOMENT, menu_ids::CONTACT_SUPPORT] {
+        for id in [
+            menu_ids::STOP_RECORDING,
+            menu_ids::PAUSE_RECORDING,
+            menu_ids::MARK_MOMENT,
+            menu_ids::TYPE_NOTE,
+            menu_ids::CONTACT_SUPPORT,
+        ] {
             assert!(!shows_window(id), "{id} works without the window");
         }
     }
