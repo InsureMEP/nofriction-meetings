@@ -473,7 +473,7 @@ function runNotes(id: string): Promise<null> {
         window.setTimeout(() => {
             if (!demoById.get(id)?.notes) madeNotes.set(id, LIVE_NOTES[row.recording_kind]);
             for (const m of markers) {
-                if (m.meeting_id === id && m.kind === "note" && !noteDetails.has(m.id)) noteDetails.set(m.id, LIVE_NOTE_DETAIL);
+                if (m.meeting_id === id && m.kind === "note" && !noteDetails.has(m.id)) noteDetails.set(m.id, LIVE_NOTE_DETAIL[row.recording_kind]);
             }
             notesRuns.delete(id);
             emitEvent("notes_done", { meetingId: id, ok: true });

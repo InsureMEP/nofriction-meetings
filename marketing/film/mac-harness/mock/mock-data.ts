@@ -472,73 +472,9 @@ export const LIVE_NOTES: Record<Kind, NonNullable<DemoMeeting["notes"]>> = {
     },
 };
 
-/** What the harness writes under a note typed in a recording made there. */
-export const LIVE_NOTE_DETAIL =
-    "Dr. Reyes was explaining the sodium-potassium pump: it moves three sodium ions out and two potassium ions in for every ATP, and she said it will be on the exam.";
-
-// ── Live recording scripts (what streams in while "recording") ──────────
-
-export interface LiveScript {
-    title: string;
-    lines: { speaker: string; text: string }[];
-    /** Live insight cards: seconds after the recording really started
-     *  (not counting a backdated prefill), type, text */
-    insights: { at: number; type: string; text: string; assignee?: string }[];
-    /** Screens captured while recording (frames/<id>-thumb.jpg) */
-    frames: string[];
-}
-
-export const LIVE_SCRIPTS: Record<Kind, LiveScript> = {
-    meeting: {
-        title: "Acme launch check-in",
-        lines: [
-            { speaker: "Priya", text: "Okay, quick check-in on the launch. Let's start with the checklist." },
-            { speaker: "Marcus", text: "The status page is live in staging. I'll switch it on Thursday." },
-            { speaker: "Dana", text: "The onboarding sessions went well. Four of five teams finished setup in under two minutes." },
-            { speaker: "Priya", text: "That's a big jump. Last time it took them almost ten." },
-            { speaker: "Dana", text: "Moving the invites after the first project made the biggest difference." },
-            { speaker: "Marcus", text: "The billing load test is booked for Monday morning." },
-            { speaker: "Priya", text: "Great. Then the only open item is the launch email." },
-            { speaker: "Dana", text: "I'll send the draft around tonight." },
-            { speaker: "Priya", text: "Perfect. Let's lock the launch for December eighth." },
-            { speaker: "Marcus", text: "Works for me." },
-        ],
-        insights: [
-            { at: 0, type: "decision", text: "Status page goes live on Thursday." },
-            { at: 3, type: "action_item", text: "Send the launch email draft around tonight.", assignee: "Dana" },
-            { at: 8, type: "decision", text: "Launch date locked: December 8." },
-        ],
-        frames: ["acme-6", "acme-5", "acme-3", "acme-2"],
-    },
-    // The lecture after "BIO 101: Cell Biology": same slides, so the
-    // captured screens match. The 5th line ("…on the exam") streams in
-    // just before the Mark clip clicks Mark (4 lines prefilled).
-    class: {
-        title: "BIO 101: Membrane transport",
-        lines: [
-            { speaker: "Dr. Reyes", text: "Okay, let's pick up where we left off: how things get across the membrane." },
-            { speaker: "Dr. Reyes", text: "Small molecules like oxygen slip right through the bilayer. That's simple diffusion." },
-            { speaker: "Dr. Reyes", text: "Ions can't. They need a channel protein, and that's facilitated diffusion." },
-            { speaker: "Dr. Reyes", text: "Active transport is different: the sodium-potassium pump moves three sodium out and two potassium in for every ATP." },
-            { speaker: "Dr. Reyes", text: "Write that one down. It will be on the exam." },
-            { speaker: "Student", text: "Is that on Wednesday's quiz too?" },
-            { speaker: "Dr. Reyes", text: "Yes. Membranes and transport, all of it." },
-            { speaker: "Dr. Reyes", text: "Now, why does the cell spend energy on this? Let's look at what the gradient does." },
-        ],
-        insights: [
-            { at: 0, type: "topic_shift", text: "Membrane transport: passive vs. active" },
-            { at: 6, type: "key_point", text: "Diffusion and facilitated diffusion need no ATP." },
-            { at: 14, type: "key_point", text: "Na⁺/K⁺ pump: 3 out, 2 in per ATP. On the exam." },
-        ],
-        frames: ["bio-1", "bio-2", "bio-4", "bio-6"],
-    },
-    personal: {
-        title: "Personal note",
-        lines: [
-            { speaker: "Me", text: "Quick note before I forget: book the follow-up for January." },
-            { speaker: "Me", text: "And pick up the vitamin D on the way home." },
-        ],
-        insights: [],
-        frames: [],
-    },
+/** What the harness writes under a note typed in a recording made there (by type). */
+export const LIVE_NOTE_DETAIL: Record<Kind, string> = {
+    class: "Dr. Reyes was explaining the sodium-potassium pump: it moves three sodium ions out and two potassium ions in for every ATP, and she said it will be on the exam.",
+    meeting: "Marcus had just said the status page is live in staging and goes on Thursday; Dana reported four of five beta teams finished setup in under two minutes.",
+    personal: "The results came back normal, and the vitamin D is to be taken with breakfast.",
 };
