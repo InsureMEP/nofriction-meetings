@@ -19,7 +19,8 @@
   font-family: var(--ds-font-mono, 'SF Mono', Menlo, monospace);
   font-size: 11px;
   color: var(--text-secondary, #a3a3a3);
-  opacity: 0.6;
+  /* 4.5:1 on the transcript panel (it was 0.6, about 3.4:1) */
+  opacity: 0.85;
   padding-top: 5px;
   text-align: right;
   font-variant-numeric: tabular-nums;
