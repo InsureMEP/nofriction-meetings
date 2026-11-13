@@ -79,6 +79,10 @@ noFriction offers:
   FaceTime and similar apps, once one has had the microphone for ten
   seconds.
 
+When the suggestion is a notebook, the card also lists what that notebook's
+notes still have open (**Still open from last time**: the first three, and
+how many more), so you see what you said you'd do before you walk in.
+
 **Not now** hides that suggestion until tomorrow (a call: until it ends).
 **Record something else** opens the usual sheet. The menu-bar icon's first
 item becomes **Record BIO 101** too.
@@ -292,13 +296,17 @@ project**). The list narrows to it and its page opens beside it:
   open that recording at that moment.
 - **Review everything**: the flashcards and practice questions of every
   study or review guide in the notebook, as one deck and one quiz, oldest
-  recording first. A quiz answer's **Jump to this moment** opens the
-  recording it came from.
+  recording first. **Start from** picks the recording to begin with (say,
+  the first lecture after the midterm) and keeps everything after it. A
+  quiz answer's **Jump to this moment** opens the recording it came from.
 - **Record** starts a recording in this notebook with its usual type and
   your usual length. **Ask** opens Chat on this notebook.
 
 Click a recording to open it; **‹ BIO 101** above its title goes back to
 the page. **All** shows every recording again.
+
+The same ticks are in each recording's **Notes**, beside its action
+items, deadlines or to-dos: tick one in either place.
 
 The page is read from the notes, marks and guides you already have, so it
 is free and uses no AI. What fills it (notes and guides) is made by the Pro

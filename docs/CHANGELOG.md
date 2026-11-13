@@ -32,6 +32,12 @@ iPhone side is listed where it differs.
   starts what is up next.
 - **Notes are ready.** A notification when automatic notes finish and the
   app isn't in front, and a live **Making notes…** state in Notes.
+- **Ticks in Notes (Mac).** Each action item, deadline or to-do in a
+  recording's Notes has the same tick as on its notebook's page.
+- **Still open from last time (Mac).** The Up next card lists what the
+  suggested notebook's notes still have open.
+- **Review everything from one recording on (Mac).** **Start from** begins
+  the deck and quiz at any recording ("since the midterm").
 
 ### Changed
 - **Notes read the whole recording.** They were written from the first
@@ -43,7 +49,9 @@ iPhone side is listed where it differs.
 - **Automatic notes** also run for a recording of a minute or more that has
   a typed note or a mark (six minutes otherwise).
 - Buttons, fields and chips use the app's typeface instead of the browser's
-  control font; a recording's row shows the time under its day heading.
+  control font; a recording's row shows the time under its day heading; the
+  loading spinner uses the palette and stays still under Reduce Motion.
+- Deleting a typed note has Undo, like every other delete.
 
 ### Fixed
 - Notes made from a transcript that was edited while they were being

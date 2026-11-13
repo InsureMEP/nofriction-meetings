@@ -153,8 +153,9 @@ wrote.
   notes found, across the notebook, newest first, each with a checkbox and
   the recording it came from. Class: "Due". Meeting: "Action items".
   Personal: "To-dos".
-- **Marked.** Every ✎ (On the test / Follow up / Remember) and every
-  ? Question in the notebook, with what you wrote, one click from the moment.
+- **On the test and questions** (Follow ups / To remember, by type). Every
+  ✎ and every ? Question in the notebook, with what you wrote, one click
+  from the moment.
 - **Review everything.** The flashcards and practice questions from every
   study guide in the notebook as one deck and one quiz. No new AI call: it
   is the guides you already made, together. The night before the exam this
@@ -271,7 +272,8 @@ All times are local, as minutes of the day (no wrap past midnight).
   and deadlines" or "To-dos and reminders").
 - Done state is kept by a hash of the item's text, per recording. No item
   text is stored a second time.
-- Marked: marks of kind `test` and `question`, with the note and the time.
+- The marks section: marks of kind `test` and `question`, with the note and
+  the time, titled for the notebook's type.
 - Review everything: the union of the notebook's stored flashcards and quiz
   questions, in recording order.
 
@@ -283,5 +285,31 @@ All times are local, as minutes of the day (no wrap past midnight).
 | Their lines in the Notes view | **What you wrote** | My notes, user notes |
 | The suggestion | **Up next**; button **Record \<name\>** | Smart start, auto-detect |
 | Dismissing it | **Not now** | Dismiss, Snooze |
-| The notebook's page | the notebook's name; sections **Due / Action items / To-dos**, **Marked**, **Review everything** | Dashboard, Course home, Hub |
+| The notebook's page | the notebook's name; sections **Due / Action items / To-dos**, **On the test and questions** / **Follow ups and questions** / **To remember and questions**, **Review everything** | Dashboard, Course home, Hub |
 | The settings | **Remind me when something starts**, **Record by itself**, **Make notes automatically** | Auto-detect, Ambient, Smart |
+
+---
+
+## 7. What the design review added (2026-11-12)
+
+`/design-review` ran on the built Mac UI (report:
+`~/.gstack/projects/Cpotenzone-nofriction-meetings/designs/design-audit-20261112/`).
+Sixteen findings were fixed; three betterments it proposed were built:
+
+- **Ticks in Notes.** The tick beside an item is the same in a recording's
+  Notes and on its notebook's page.
+- **Still open from last time.** The Up next card lists what the suggested
+  notebook's notes still have open.
+- **Start from.** Review everything can begin at any recording.
+
+Decisions it left for the owner:
+
+- **Inter isn't bundled.** It shows only where it is installed; most Macs
+  see the system face. Bundle it (about 300 KB, OFL) or name the system
+  face in DESIGN.md.
+- **44px targets.** DESIGN.md asks for 44px; the app's controls are
+  30–40px, as desktop apps are. Either the rule or the controls should
+  change.
+- **A quick-note panel over other apps** (a non-activating floating field
+  on a global key) is the next thing to build once the note field has
+  earned it.
