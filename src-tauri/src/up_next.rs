@@ -133,7 +133,12 @@ pub fn routine(past: &[Past], now: NaiveDateTime) -> Option<Routine> {
             matching
                 .iter()
                 .filter_map(|p| p.duration_seconds.filter(|d| *d > 0))
-                .map(|d| (d + 59) / 60)
+                // Whole minutes it ran. A recording that stopped at its
+                // 60-minute limit ends a second or two after the hour: it
+                // ran 60 minutes, not 61 (rounded up, that second would
+                // make its usual length 90, then no limit). Same as the
+                // iPhone's `Routine.minutes`.
+                .map(|d| (d / 60).max(1))
                 .collect(),
         );
         let found = Routine {
@@ -733,6 +738,12 @@ mod tests {
         // No lengths stored: no limit
         let unknown: Vec<Past> = bio_wednesdays().into_iter().map(|p| Past { duration_seconds: None, ..p }).collect();
         assert_eq!(routine(&unknown, at(WED.0, WED.1, WED.2, 9, 0)).unwrap().duration, "none");
+        // Stopped by its 60-minute limit, a second or two late: still 60, week after week
+        let at_limit: Vec<Past> = bio_wednesdays().into_iter().map(|p| Past { duration_seconds: Some(3602), ..p }).collect();
+        assert_eq!(routine(&at_limit, at(WED.0, WED.1, WED.2, 9, 0)).unwrap().duration, "60");
+        // Under a minute counts as one
+        let brief: Vec<Past> = bio_wednesdays().into_iter().map(|p| Past { duration_seconds: Some(40), ..p }).collect();
+        assert_eq!(routine(&brief, at(WED.0, WED.1, WED.2, 9, 0)).unwrap().duration, "15");
     }
 
     #[test]

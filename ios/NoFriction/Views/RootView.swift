@@ -9,14 +9,19 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(RedactionCenter.self) private var redactions
     @Environment(WatchImporter.self) private var watchImporter
-    @State private var tab: AppTab = .now
+    /// Moves across tabs: Stop opens the recording, a notebook's Record and Ask, a reminder's tap
+    @Environment(AppRouter.self) private var router
+    @Environment(Store.self) private var store
+    @Environment(AISettings.self) private var aiSettings
+    @Environment(AutoNotes.self) private var autoNotes
     @AppStorage(Onboarding.completedKey) private var onboardingCompleted = false
 
     /// Record · Recordings · Chat · Settings. People live under Recordings.
-    enum AppTab: Hashable { case now, meetings, chat, settings }
+    typealias AppTab = AppRouter.Tab
 
     var body: some View {
-        TabView(selection: $tab) {
+        @Bindable var router = router
+        TabView(selection: $router.tab) {
             Tab("Record", systemImage: "waveform", value: AppTab.now) {
                 LiveView()
             }
@@ -51,11 +56,16 @@ struct RootView: View {
             if ProcessInfo.processInfo.arguments.contains("-NFAutoRecord") {
                 Task { await session.start() }
             }
+            DemoData.openIfRequested(router: router, context: context)
             #endif
         }
         .onChange(of: session.phase) { _, phase in
             // Watch imports wait while this iPhone records; carry on after
             if phase == .idle { watchImporter.resume() }
+        }
+        .onChange(of: session.lastStopped) { _, stopped in
+            guard let stopped else { return }
+            recordingStopped(stopped)
         }
         .onChange(of: scenePhase) { _, phase in
             // Pick up meetings recorded before calendar access was granted
@@ -66,6 +76,31 @@ struct RootView: View {
             if phase != .active { redactions.commitPending() }
             // A meeting-end countdown follows the app off screen as a notification
             session.sceneDidChange(active: phase == .active)
+            // The routine's reminders for the next days (never asks for permission here)
+            if phase == .active { planReminders() }
         }
+    }
+
+    /// A recording just stopped (docs/design/FADELL_V2.md).
+    private func recordingStopped(_ stopped: RecordingSession.Stopped) {
+        let id = stopped.meetingID
+        let meeting = (try? context.fetch(FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })))?.first
+        if let meeting {
+            // Notes by themselves, when nothing would have to be asked
+            // (Pro, AI set up, consent already given); otherwise Make notes is there
+            // and never while the next recording runs
+            let session = session
+            autoNotes.recordingStopped(meeting, isPro: store.isPro, endpoint: aiSettings.endpoint(), context: context,
+                                       isRecording: { session.phase != .idle })
+            // The user's own Stop opens the recording on its Notes. A stop
+            // the app made by itself leaves the screen alone.
+            if stopped.byUser, scenePhase == .active { router.open(recording: id) }
+        }
+        // It may have made, or kept, a routine
+        planReminders()
+    }
+
+    private func planReminders() {
+        Task { await RoutineReminders.replanAndPublish(context: context, excluding: session.meeting?.id) }
     }
 }

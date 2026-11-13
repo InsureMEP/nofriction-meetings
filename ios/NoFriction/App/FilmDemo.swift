@@ -15,6 +15,9 @@ import SwiftData
 ///                        line by line (the Simulator has no speech recognition)
 ///     -NFDemoLiveClass   with -NFDemoLive: a Class in BIO 101 being recorded
 ///                        (60-minute limit, 47 minutes left) instead of the meeting
+///     -NFDemoRecord      every start shows a demo recording (no microphone or
+///                        speech engine), as -NFFilm does, with the regular
+///                        sample data: UI tests of starts without the sheet
 ///
 /// Everything here is invented, like DemoData: no real people, companies or brands.
 enum FilmDemo {
@@ -22,6 +25,8 @@ enum FilmDemo {
     static var isOn: Bool { args.contains("-NFFilm") }
     static var liveFeed: Bool { args.contains("-NFDemoLiveFeed") }
     static var liveClass: Bool { args.contains("-NFDemoLiveClass") }
+    /// A start shows a demo recording instead of opening the microphone
+    static var demoRecord: Bool { isOn || args.contains("-NFDemoRecord") }
 
     /// Film runs: added to real times shown on screen, so a recording started
     /// now reads as 9:41 like the status bar. Zero otherwise.

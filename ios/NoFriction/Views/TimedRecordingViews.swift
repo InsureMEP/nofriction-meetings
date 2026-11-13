@@ -20,6 +20,16 @@ struct RecordPlanSheet: View {
 
     private var recents: [String] { Notebook.recent(notebookMeetings.map { ($0.courseName, $0.startedAt) }) }
 
+    /// `prefill`: opened from a notebook's page, with that notebook and its
+    /// usual type filled in. Otherwise the remembered type and no notebook.
+    init(prefill: AppRouter.RecordPrefill? = nil, onStart: @escaping (RecordingLimit, RecordingKind, String?) -> Void) {
+        self.onStart = onStart
+        if let prefill {
+            _kind = State(initialValue: prefill.kind)
+            _notebook = State(initialValue: prefill.notebook ?? "")
+        }
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -206,6 +216,8 @@ struct NotebookFilterBar: View {
 /// (edit, pick a recent one, or clear).
 struct RecordingKindNotebookField: View {
     @Bindable var meeting: Meeting
+    /// Offer the notebook's page (not when the recording was opened from it)
+    var opensNotebook = true
     @Environment(\.modelContext) private var context
     @State private var draft = ""
     @FocusState private var focused: Bool
@@ -247,6 +259,26 @@ struct RecordingKindNotebookField: View {
                     .onSubmit(commit)
                     .accessibilityLabel(Notebook.label)
                     .accessibilityIdentifier("meeting-notebook-field")
+                // The notebook is a place: what's due, the marks and review, on one page.
+                // On the notebook's own row, so the recording's first screen keeps its height
+                if opensNotebook, !focused, let notebook = meeting.courseName {
+                    NavigationLink {
+                        NotebookView(name: notebook)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("Open")
+                            Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.accent)
+                        .frame(minWidth: 44, minHeight: 32)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open \(notebook)")
+                    .accessibilityHint("Shows everything in this notebook on one page")
+                    .accessibilityIdentifier("meeting-open-notebook")
+                }
                 let others = recents.filter { $0.caseInsensitiveCompare(meeting.courseName ?? "") != .orderedSame }
                 if !others.isEmpty || meeting.courseName != nil {
                     Menu {

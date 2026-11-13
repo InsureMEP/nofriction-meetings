@@ -17,6 +17,13 @@ extension XCTestCase {
         add(attachment)
     }
 
+    /// The "Stricken from the record" bar in a transcript. Found by its
+    /// label as well as its identifier: the transcript row around it has an
+    /// identifier of its own ("transcript-line"), which replaces the bar's.
+    func strickenBar(in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ OR label BEGINSWITH %@", "stricken-marker", "Stricken from the record")).firstMatch
+    }
+
     /// Scroll until `element` is on screen and hittable (or give up).
     func scrollTo(_ element: XCUIElement, in app: XCUIApplication, maxSwipes: Int = 8) {
         for _ in 0..<maxSwipes where !(element.exists && element.isHittable) { app.swipeUp() }
@@ -99,7 +106,7 @@ final class AppStoreScreenshots: XCTestCase {
         shot("02-meeting-notes")
 
         // 3. Stricken from the record
-        let marker = app.descendants(matching: .any)["stricken-marker"].firstMatch
+        let marker = strickenBar(in: app)
         scrollTo(marker, in: app)   // the transcript is lazy: the marker exists once scrolled near
         XCTAssertTrue(marker.waitForExistence(timeout: 5))
         // Drag the marker to just above the middle of the screen, so the
@@ -174,7 +181,7 @@ final class StrikeFlowTests: XCTestCase {
 
         sleep(2)
         saveShot("strike-after-confirm")
-        let marker = app.descendants(matching: .any)["stricken-marker"].firstMatch
+        let marker = strickenBar(in: app)
         XCTAssertTrue(marker.waitForExistence(timeout: 10), "no marker after strike")
         XCTAssertTrue(marker.label.contains("privileged"))
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Quick one today")).firstMatch.exists)

@@ -188,9 +188,12 @@ the iPhone are saved on the Mac as Markdown (`model_used =
   receiver merges the section with the typed notes it holds: a bullet that
   quotes one of them becomes that note's detail, and a bullet it has no
   note for stays in the notes, so nothing the user wrote is hidden
-  (`notesLogic.ts::mergeSyncedWritten`). Adding, changing or deleting a
-  typed note sends the recording's notes again. Ticks on a notebook's page
-  and "Not now" stay on the device.
+  (`notesLogic.ts::mergeSyncedWritten`; iPhone `WhatYouWrote.merge`).
+  Adding, changing or deleting a typed note sends the recording's notes
+  again. On the iPhone a typed note the Mac deleted or changed updates the
+  section in the same step (`TypedNoteStore.removeFromNotes`,
+  `followInNotes`). Ticks on a notebook's page, "Not now" and the iPhone's
+  reminders stay on the device.
 - **Last writer wins per record** for recordings, notes, marks and
   references: the item with the later `mod` replaces the other. The Mac
   stamps `mod` when a row changes (triggers on each table write

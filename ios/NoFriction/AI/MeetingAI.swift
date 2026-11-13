@@ -71,12 +71,9 @@ enum MeetingAI {
         "Subject:" line. Only state facts that are in the transcript; never invent owners or dates.
         """
 
-    static func notes(context: String, endpoint: AIEndpoint, kind: RecordingKind = .meeting) async throws -> String {
-        try await AIClient.shared.complete([
-            .init(role: "system", content: notesSystem(for: kind)),
-            .init(role: "user", content: context),
-        ], maxTokens: 1500, temperature: 0.2, endpoint: endpoint)
-    }
+    // Notes are made by `MeetingAI.notes(_:contextTokens:complete:)` (NotesAI.swift):
+    // the whole transcript with times, condensed in parts when it is long,
+    // with the marks and the typed notes.
 
     static func followUpEmail(context: String, endpoint: AIEndpoint) async throws -> String {
         try await AIClient.shared.complete([
@@ -85,8 +82,8 @@ enum MeetingAI {
         ], maxTokens: 700, temperature: 0.5, endpoint: endpoint)
     }
 
-    /// Prompt text for a recording. Build it on the main actor (SwiftData
-    /// models aren't Sendable) and pass the string in.
+    /// Prompt text for a recording (the follow-up email). Build it on the
+    /// main actor (SwiftData models aren't Sendable) and pass the string in.
     @MainActor static func context(_ m: Meeting) -> String {
         var s = "\(m.kind.label): \(m.title)\nWhen: \(m.startedAt.formatted(date: .complete, time: .shortened))\n"
         if let notebook = m.courseName { s += "\(Notebook.label): \(notebook)\n" }

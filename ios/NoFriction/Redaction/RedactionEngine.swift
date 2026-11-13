@@ -342,6 +342,9 @@ enum RedactionEngine {
         StudyStore.purge(meeting, context: context)
         TopicStore.purgeAI(meeting, context: context)
         ChatStore.purge(meetingID: meeting.id, title: meeting.title, deleted: false, context: context)
+        // The notebook page's done marks are hashes of items in the notes: one
+        // whose item was just rewritten (or flagged) no longer matches and goes
+        NotebookItems.pruneDone(meeting, context: context)
     }
 
     /// Saved AI notes: redact the removed text and flag them as made before an edit.

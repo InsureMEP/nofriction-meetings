@@ -238,6 +238,9 @@ enum TopicStore {
     /// removed is skipped. Returns the topics now on the recording.
     @discardableResult
     static func applyAI(_ candidates: [TopicCandidate], to meeting: Meeting, context: ModelContext) throws -> [MeetingTopic] {
+        // The answer can arrive after the recording was deleted (here, or by
+        // the other device): nothing is written to a recording that is gone
+        guard meeting.modelContext != nil, !meeting.isDeleted else { return [] }
         for old in meeting.topics where !old.isUser { context.delete(old) }
         let userKeys = meeting.topics.filter(\.isUser).map(\.key)
         let removed = meeting.removedTopicKeys

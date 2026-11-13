@@ -68,12 +68,17 @@ final class Meeting {
     @Relationship(deleteRule: .cascade, inverse: \Redaction.meeting) var redactions: [Redaction] = []
     /// Links the user added (syllabus, readings, slides); docs/LINKS.md
     @Relationship(deleteRule: .cascade, inverse: \MeetingReference.meeting) var references: [MeetingReference] = []
-    /// Moments marked while recording (★ / ? / ✎) and the study guide (docs/STUDY_TOOLS.md)
+    /// Moments marked while recording (★ / ? / ✎), the lines the user typed
+    /// (kind `note`), and the study guide (docs/STUDY_TOOLS.md)
     @Relationship(deleteRule: .cascade, inverse: \MomentMarker.meeting) var markers: [MomentMarker] = []
     @Relationship(deleteRule: .cascade, inverse: \StudyMaterial.meeting) var studyMaterials: [StudyMaterial] = []
     /// Topics (docs/TOPICS_AND_CHAT.md): 1–4 short noun phrases named by the
     /// AI when notes are made or on demand, plus the user's own. Cascade.
     @Relationship(deleteRule: .cascade, inverse: \MeetingTopic.meeting) var topics: [MeetingTopic] = []
+    /// Items of the notebook page the user checked off: hashes only, never
+    /// the item's text (`NotebookItems`). Cascade; a new model with a
+    /// to-many relationship, so older stores migrate without a schema version.
+    @Relationship(deleteRule: .cascade, inverse: \NotebookItemDone.meeting) var doneItems: [NotebookItemDone] = []
     /// JSON `[key]`: AI topics the user removed, so a re-run never brings
     /// them back. Keys only (normalized labels), never transcript text.
     /// Optional, so older stores migrate without a schema version.
@@ -319,6 +324,7 @@ enum Storage {
         Meeting.self, Segment.self, Snapshot.self, Person.self, Attendance.self, Redaction.self,
         MeetingReference.self, MomentMarker.self, StudyMaterial.self,
         MeetingTopic.self, ChatThread.self, ChatThreadMessage.self,
+        NotebookItemDone.self,
     ]
 
     /// The app's store. Opened in App.init, before any view, because Apple

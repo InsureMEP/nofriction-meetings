@@ -133,17 +133,40 @@ enum ClassNotice {
 /// The three ways to mark a moment while recording (docs/STUDY_TOOLS.md).
 /// The stored value never changes; the third kind's label depends on what
 /// the recording is: On the test (Class), Follow up (Meeting), Remember (Personal).
+///
+/// `note` is a line the user typed while recording ("Type a note",
+/// docs/design/FADELL_V2.md §6). It is stored and synced beside the marks, so
+/// everything that handles marks handles notes, but it is not one of them:
+/// the kind chooser, the Marks list, its filter and its count, and the watch
+/// offer `markKinds` only.
 enum MarkerKind: String, CaseIterable, Codable, Sendable {
     case important, question, test
+    /// What the user typed while recording. Never offered as a kind of mark.
+    case note
 
     /// One tap marks this
     static let `default`: MarkerKind = .important
+
+    /// The three marks, in the order they are offered. Never `note`.
+    static let markKinds: [MarkerKind] = [.important, .question, .test]
+
+    /// One of the three marks (not a typed note)
+    var isMark: Bool { self != .note }
+
+    /// A mark from its stored value: nil for a typed note or a value this build doesn't know.
+    static func mark(rawValue: String) -> MarkerKind? {
+        MarkerKind(rawValue: rawValue).flatMap { $0.isMark ? $0 : nil }
+    }
+
+    /// Longest text: 280 characters on a mark, 1,000 for a typed note
+    var maxNoteLength: Int { self == .note ? 1000 : 280 }
 
     var symbol: String {
         switch self {
         case .important: "★"
         case .question: "?"
         case .test: "✎"
+        case .note: "✍"
         }
     }
 
@@ -157,6 +180,7 @@ enum MarkerKind: String, CaseIterable, Codable, Sendable {
             case .meeting: "Follow up"
             case .personal: "Remember"
             }
+        case .note: "Note"
         }
     }
 
@@ -166,6 +190,7 @@ enum MarkerKind: String, CaseIterable, Codable, Sendable {
         case .important: "star.circle.fill"
         case .question: "questionmark.circle.fill"
         case .test: "pencil.circle.fill"
+        case .note: "pencil.line"
         }
     }
 }

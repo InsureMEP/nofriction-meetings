@@ -9,51 +9,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-The v2 work (plan and reasons: docs/design/FADELL_V2.md). Mac first; the
-iPhone side is listed where it differs.
+The v2 work (plan and reasons: docs/design/FADELL_V2.md), on the Mac and on
+iPhone and iPad. An entry marked (Mac) or (iPhone) is on that platform
+only.
 
 ### Added
-- **Type a note while it listens (Mac).** One field under the live
-  transcript; Return keeps the line with its moment and it appears in the
-  transcript there. Rewind shows typed notes inline and as pins under the
-  scrubber; Notes opens with **What you wrote**. A typed note is stored
-  beside the marks (kind `note`), so Export, the review guide, Chat,
-  time-range Delete and sync handle it; it is never a fourth mark kind.
-- **A notebook's page (Mac).** Picking a Notebook chip in Recordings opens
-  its page: **Due** / **Action items** / **To-dos** from every recording's
-  notes with a tick each, **Marked** (every ✎ and ?), **Review everything**
-  (one deck and one quiz from every guide in the notebook), **Record** and
-  **Ask**. No AI is called; ticks are kept as hashes only.
-- **Up next (Mac).** When a calendar event is starting, a notebook you
-  usually record is due, or a call app takes the microphone, the Record
+- **Type a note while it listens.** One field under the live transcript;
+  Return keeps the line with its moment and it appears in the transcript
+  there. Notes opens with **What you wrote**. On the Mac, Rewind shows
+  typed notes inline and as pins under the scrubber. A typed note is stored
+  beside the marks (kind `note`), so Export, the review guide, Chat and
+  sync handle it (on the Mac, time-range Delete too); it is never a fourth
+  mark kind.
+- **A notebook's page.** **Due** / **Action items** / **To-dos** from every
+  recording's notes with a tick each, **Marked** (every ✎ and ?), **Review
+  everything** (one deck and one quiz from every guide in the notebook),
+  **Record** and **Ask**. No AI is called; ticks are kept as hashes only.
+  Mac: picking a Notebook chip in Recordings opens it. iPhone and iPad:
+  pick the chip and tap **Open BIO 101** above the list, or **Open** beside
+  the notebook on a recording.
+- **Up next.** When a calendar event is starting, a notebook you usually
+  record is due, or (Mac) a call app takes the microphone, the Record
   screen shows one card whose button starts it with the answers filled in.
-  **Remind me when something starts** (on) sends it as a notification;
-  **Record by itself** (off) starts the recording. The tray's first item
-  starts what is up next.
-- **Notes are ready.** A notification when automatic notes finish and the
-  app isn't in front, and a live **Making notes…** state in Notes.
-- **Ticks in Notes (Mac).** Each action item, deadline or to-do in a
-  recording's Notes has the same tick as on its notebook's page.
-- **Still open from last time (Mac).** The Up next card lists what the
-  suggested notebook's notes still have open.
-- **Review everything from one recording on (Mac).** **Start from** begins
-  the deck and quiz at any recording ("since the midterm").
+  **Remind me when something starts** (on) sends it as a notification.
+  Mac: **Record by itself** (off) starts the recording, and the tray's
+  first item starts what is up next. iPhone: the reminders are for the
+  notebooks you usually record, planned ahead so they arrive with the app
+  closed; the Record tab asks once before iOS asks for notifications.
+- **Start Recording shortcut (iPhone).** Siri, the Shortcuts app and the
+  Action button open noFriction and start a recording with your last type
+  and length.
+- **Making notes…** A live state in Notes while automatic notes are
+  written. Mac: a **Notes are ready** notification when they finish and the
+  app isn't in front.
+- **Ticks in Notes.** Each action item, deadline or to-do in a recording's
+  Notes has the same tick as on its notebook's page.
+- **Still open from last time.** The Up next card lists what the suggested
+  notebook's notes still have open.
+- **Review everything from one recording on.** **Start from** begins the
+  deck and quiz at any recording ("since the midterm").
 
 ### Changed
-- **Notes read the whole recording.** They were written from the first
-  8,000 characters of the transcript (about ten minutes of speech). A long
-  recording is now read in parts, the way the review guide is, and the
-  prompt lists what you marked and typed; each typed note gets a line under
-  it saying what was being said then.
-- **Stop opens the recording on Notes** (Mac), not Rewind.
+- **Notes read the whole recording.** On the Mac they were written from the
+  first 8,000 characters of the transcript (about ten minutes of speech);
+  on iPhone a long recording lost its middle. A long recording is now read
+  in parts, the way the review guide is, and the prompt lists what you
+  marked and typed; each typed note gets a line under it saying what was
+  being said then.
+- **Stop opens the recording on Notes**, not Rewind (Mac) or the Record tab
+  (iPhone).
 - **Automatic notes** also run for a recording of a minute or more that has
-  a typed note or a mark (six minutes otherwise).
-- Buttons, fields and chips use the app's typeface instead of the browser's
-  control font; a recording's row shows the time under its day heading; the
-  loading spinner uses the palette and stays still under Reduce Motion.
-- Deleting a typed note has Undo, like every other delete.
+  a typed note or a mark (six minutes otherwise). They are new on iPhone
+  and iPad: **Settings → Make notes automatically** (on), for Pro with an
+  AI connection that is set up and already allowed.
+- **Which calendar event a recording belongs to (iPhone).** The event that
+  is on now, the most recently started when several are, else one starting
+  within 15 minutes. It was the event with the most overlap, so a long
+  block could hide the meeting inside it.
+- Mac: buttons, fields and chips use the app's typeface instead of the
+  browser's control font; a recording's row shows the time under its day
+  heading; the loading spinner uses the palette and stays still under
+  Reduce Motion.
+- Deleting a typed note has Undo on the Mac, like every other delete; on
+  iPhone it asks first.
 
 ### Fixed
+
+On the Mac, unless marked.
+
 - **Undo on a delete could be skipped.** Where a screen passed its error
   handler inline, the Undo toast applied the delete on the next redraw
   instead of after five seconds (deleting a recording, a chat or a typed
@@ -78,7 +101,7 @@ iPhone side is listed where it differs.
   microphone no longer leaves its call to be offered again; "Recording …"
   is posted only once the recording runs.
 - Notes made from a transcript that was edited while they were being
-  written are no longer saved.
+  written are no longer saved (Mac and iPhone).
 - The notes' "Made" time was the time the view was opened, not when they
   were made.
 - A failed notes run no longer puts the model's answer in its error text.
@@ -86,6 +109,9 @@ iPhone side is listed where it differs.
   office", a birthday), and when two events overlap the one that started
   most recently is matched, not the longer block around it.
 - A note typed while the previous one was still being kept is never lost.
+- Up next's usual length no longer creeps up. A recording that stopped at
+  its 60-minute limit ends a second or two after the hour; counted as 61
+  minutes it was offered as 90 the next time, then with no limit.
 
 ## [Mac 3.9.0 (47) · iOS 1.1.0 (12)] - 2026-10-23
 

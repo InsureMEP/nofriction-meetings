@@ -10,7 +10,7 @@ struct MeetingsView: View {
     @Environment(RecordingSession.self) private var session
     @Environment(RedactionCenter.self) private var redactions
     @Environment(\.modelContext) private var context
-    @State private var selection: RecordingRoute?
+    @State private var selection: LibraryRoute?
     @State private var query = ""
     /// Lines that matched the search, by recording (`RecordingSearch`)
     @State private var lineHits: [UUID: RecordingSearch.Group] = [:]
@@ -18,6 +18,8 @@ struct MeetingsView: View {
     @State private var storeVersion = 0
     /// Notebook filter; nil = All
     @State private var notebookFilter: String?
+    /// "Open this recording" from elsewhere (the recording the user just stopped)
+    @Environment(AppRouter.self) private var router
 
     /// Notebooks of saved recordings, most recent first
     private var notebooks: [String] { Notebook.recent(meetings.map { ($0.courseName, $0.startedAt) }, limit: 50) }
@@ -63,6 +65,31 @@ struct MeetingsView: View {
     /// Sections by day, newest first (`RecordingsGrouping`)
     private var sections: [RecordingsGrouping.Section] { RecordingsGrouping.byDate(shown) }
 
+    /// "Due · On the test · Review everything": what the notebook's page holds, by its usual type
+    private func notebookPageSummary(_ notebook: String) -> String {
+        let kind = NotebookPage.usualKind(meetings.filter { Notebook.matches($0.courseName, filter: notebook) })
+        return "\(NotebookItems.title(for: kind)) · \(MarkerKind.test.label(for: kind)) · Review everything"
+    }
+
+    /// The recording the user just stopped opens here, on its Notes.
+    private func openRequested() {
+        if let name = router.openNotebook {
+            router.openNotebook = nil
+            // The spelling its recordings use; nothing opens for a notebook with no recordings
+            if let known = notebooks.first(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) {
+                notebookFilter = known
+                selection = .notebook(known)
+            }
+        }
+        guard let request = router.openRecording else { return }
+        guard let meeting = meetings.first(where: { $0.id == request.id }) else {
+            // Not in the query yet (just saved): looked at again when the list updates
+            return
+        }
+        router.openRecording = nil
+        selection = .recording(RecordingRoute(meeting: meeting, notes: request.notes))
+    }
+
     var body: some View {
         NavigationSplitView {
             List(selection: $selection) {
@@ -73,6 +100,25 @@ struct MeetingsView: View {
                     NotebookFilterBar(notebooks: notebooks, selection: $notebookFilter)
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                }
+                // A notebook is a place: its page has what's due, what was marked and review
+                if let notebook = activeNotebook, query.isEmpty {
+                    Section {
+                        NavigationLink(value: LibraryRoute.notebook(notebook)) {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Open \(notebook)")
+                                    Text(notebookPageSummary(notebook))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } icon: {
+                                Image(systemName: "book").foregroundStyle(Theme.accent)
+                            }
+                        }
+                        .accessibilityHint("Shows everything in this notebook on one page")
+                        .accessibilityIdentifier("recordings-open-notebook")
+                    }
                 }
                 if !people.isEmpty && query.isEmpty {
                     Section {
@@ -94,11 +140,11 @@ struct MeetingsView: View {
                 ForEach(sections) { section in
                     Section(section.title) {
                         ForEach(section.meetings) { meeting in
-                            NavigationLink(value: RecordingRoute(meeting: meeting)) { MeetingRow(meeting: meeting) }
+                            NavigationLink(value: LibraryRoute.recording(RecordingRoute(meeting: meeting))) { MeetingRow(meeting: meeting) }
                             // Search: the lines that matched, each opening the recording at that moment
                             if !query.isEmpty, let hits = lineHits[meeting.id] {
                                 ForEach(hits.lines) { line in
-                                    NavigationLink(value: RecordingRoute(meeting: meeting, line: line.id)) {
+                                    NavigationLink(value: LibraryRoute.recording(RecordingRoute(meeting: meeting, line: line.id))) {
                                         SearchLineRow(line: line)
                                     }
                                     .listRowSeparator(.hidden, edges: .top)
@@ -130,6 +176,18 @@ struct MeetingsView: View {
             .navigationTitle("Recordings")
             .searchable(text: $query, prompt: "Titles, people, topics, or anything said")
             .task(id: searchKey) { await runSearch(searchKey) }
+            .onAppear { openRequested() }
+            .onChange(of: router.openRecording) { _, _ in openRequested() }
+            .onChange(of: router.openNotebook) { _, _ in openRequested() }
+            .onChange(of: meetings.count) { before, now in
+                openRequested()
+                // The recording that was open is gone (deleted here, or by a sync)
+                if case .recording(let route) = selection, route.meeting.isDeleted || route.meeting.modelContext == nil { selection = nil }
+                // A recording was removed: its routine may be gone, and its reminders with it
+                if now < before {
+                    Task { await RoutineReminders.replanAndPublish(context: context, excluding: session.meeting?.id) }
+                }
+            }
             .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in
                 if !query.isEmpty { storeVersion &+= 1 }
             }
@@ -145,23 +203,39 @@ struct MeetingsView: View {
                 }
             }
         } detail: {
-            if let selection {
-                // A new route (another recording, or a line) opens a fresh view
-                MeetingDetailView(meeting: selection.meeting, jumpToLine: selection.line)
-                    .id(selection)
-            } else {
-                ContentUnavailableView("Select a recording", systemImage: "rectangle.stack")
-                    .background(Theme.background)
+            // A stack of its own: a notebook's page opens a recording (and a
+            // recording its notebook) on top, and Back returns to it. A new
+            // route (another recording, a line, a notebook) starts a fresh one
+            NavigationStack {
+                switch selection {
+                case .recording(let route):
+                    MeetingDetailView(meeting: route.meeting, jumpToLine: route.line, scrollToNotes: route.notes)
+                case .notebook(let name):
+                    NotebookView(name: name)
+                case nil:
+                    ContentUnavailableView("Select a recording", systemImage: "rectangle.stack")
+                        .background(Theme.background)
+                }
             }
+            .id(selection)
         }
     }
 }
 
-/// What the Recordings list opens: a recording at its top, or at a line
-/// that matched the search (scrolled to it, highlighted briefly).
+/// What the Recordings list shows beside it (iPad) or pushes (iPhone): a
+/// recording, or a notebook's page.
+enum LibraryRoute: Hashable {
+    case recording(RecordingRoute)
+    case notebook(String)
+}
+
+/// A recording at its top, or at a line that matched the search (scrolled
+/// to it, highlighted briefly).
 struct RecordingRoute: Hashable {
     let meeting: Meeting
     var line: PersistentIdentifier? = nil
+    /// Scrolled to its Notes (the recording the user just stopped)
+    var notes = false
 }
 
 /// A line that matched the search, under its recording: the time from the

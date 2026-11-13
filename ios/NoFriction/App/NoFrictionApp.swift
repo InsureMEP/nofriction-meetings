@@ -18,6 +18,8 @@ struct NoFrictionApp: App {
     @State private var screenCapture: ScreenCaptureCenter
     /// Sync with your Mac, device to device on the local network (docs/SYNC.md)
     @State private var sync: SyncCenter
+    /// Notes made by themselves after a recording stops (Settings → Make notes automatically)
+    @State private var autoNotes = AutoNotes()
 
     init() {
         Storage.prepare()
@@ -80,6 +82,9 @@ struct NoFrictionApp: App {
                 .modifier(ScreenCaptureSync(center: screenCapture, store: store))
                 .environment(sync)
                 .modifier(SyncTriggers(center: sync, session: session))
+                .environment(autoNotes)
+                // Stop opens the recording; a notebook's Record and Ask; a reminder's tap; the Start recording shortcut
+                .environment(AppRouter.shared)
                 .preferredColorScheme(.dark)
                 .tint(Theme.accent)
         }

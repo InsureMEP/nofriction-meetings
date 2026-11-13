@@ -167,12 +167,13 @@ wrote.
 
 ### Also in v2 (fixes, not features)
 
-- **Stop opens Notes** (Mac), with your lines there at once and "Making
-  notes…" while the AI works. iPhone: Stop opens the recording, and notes
-  are made by themselves when AI is set up (**Settings → Make notes
-  automatically**, on).
-- **Notes are ready.** A notification when automatic notes finish and the
-  app isn't in front.
+- **Stop opens Notes**, with your lines there at once and "Making notes…"
+  while the AI works. On the iPhone automatic notes are new: they are made
+  by themselves when AI is set up (**Settings → Make notes automatically**,
+  on).
+- **Notes are ready** (Mac). A notification when automatic notes finish
+  and the app isn't in front. Not on the iPhone: iOS pauses the app in the
+  background, so notes are made while it is open (§9).
 - **Automatic notes for short recordings you engaged with.** Six minutes
   stays the rule; a recording with a typed note or a mark gets notes from
   one minute.
@@ -224,8 +225,10 @@ So the Mac and the iPhone build the same thing.
 - Not one of the kinds a mark can be changed to, and not in the Marks list,
   its filter or its count. A note can be edited or deleted.
 - Symbol in prompts and exports: `✍`, label "Note".
-- A time-range Delete or Strike removes the notes inside it, like marks.
-  Word and line edits leave them alone (they are the user's words).
+- A time-range Delete or Strike (Mac) removes the notes inside it, like
+  marks. Word and line edits leave them alone (they are the user's words);
+  the iPhone edits by selection only, so its edits never remove a typed
+  note.
 
 **Notes generation**
 
@@ -251,11 +254,17 @@ So the Mac and the iPhone build the same thing.
   `BEGIN IMMEDIATE` transaction; iPhone: one synchronous step on the model
   context, with no `await` between the check and the insert).
 - **Nothing automatic calls the AI while a recording runs.** Automatic
-  notes wait for it to stop. The user's own **Make notes** is theirs to
+  notes wait for it to stop, and no automatic request starts while one
+  runs. A request already on its way when Record is pressed is left to
+  finish (both platforms). The user's own **Make notes** is theirs to
   press at any time.
 - **A typed note's detail never outlives the note.** Deleting a typed note
   (directly, by a time-range Delete or Strike, or from the other device)
-  removes what the notes wrote under it in the same step.
+  removes what the notes wrote under it in the same step. A detail belongs
+  to its note by identity (Mac: the marker id; iPhone: the ids the request
+  numbered, `WhatYouWrote.finalize(_:asked:now:)`): if the typed notes
+  change while notes are being written, an edited note keeps its detail, a
+  deleted note's detail is dropped, and it never lands under another line.
 - **A typed note belongs to the recording and the moment it was typed in.**
   The moment is taken at Return, and the line is kept on that recording
   even if Stop was pressed before the save arrived.
@@ -279,8 +288,10 @@ All times are local, as minutes of the day (no wrap past midnight).
 - Tie: the notebook with more matches, then the one recorded most recently.
 - The suggestion carries the notebook (its most recent spelling), its usual
   type (the type of its latest recording) and its usual length (the median
-  length of the matches, rounded up to 15/30/60/90; longer or unknown is no
-  limit).
+  length of the matches in whole minutes, rounded up to 15/30/60/90; longer
+  or unknown is no limit). Whole minutes are counted down: a recording that
+  stopped at its 60-minute limit ends a second or two after the hour and
+  ran 60 minutes, not 61.
 - Priority of sources: calendar event now → routine → (Mac) call app.
 - **Not now** hides that suggestion until the next local day.
 - iPhone reminder: at the median start time of a weekday's cluster (at
@@ -361,3 +372,62 @@ bugs. Fifteen findings; all were checked against the code and fixed:
 | 13 | The same stale answer on a notebook's page | Latest request wins |
 | 14 | A second call app inherited the first one's time on the microphone | The hold is per app |
 | 15 | "Recording …" was posted before the recording ran | Posted once it runs; else the reminder |
+
+---
+
+## 9. iPhone and iPad (2026-11-13)
+
+The three features were built for iPhone and iPad to the rules in §6
+(`ios/README.md` lists the files and tests).
+
+**Where the iPhone differs, and why**
+
+| | Mac | iPhone and iPad |
+|---|---|---|
+| What Up next reads | Calendar, routine, call apps | Calendar and routine. An iPhone app can't see which apps use the microphone |
+| Starting by itself | **Record by itself**, off by default | Not offered. An iPhone app can't start the microphone from the background |
+| From outside the app | The tray's first item | **Start Recording** App Shortcut (Siri, Shortcuts, Action button). It opens the app, then starts with the last type and length; a request made during first-run setup is dropped |
+| Reminder | Sent by the running app, for any of the three signals | Local notifications planned from the routine for the next 7 days (at most 24 pending), so they arrive with the app closed. Calendar events send none |
+| Notification permission | Asked by macOS | Asked in context: a card on the Record tab once a routine exists, button **Continue**. Never at launch; not on a day **Not now** was tapped |
+| Automatic notes | After Stop; **Notes are ready** when done | After Stop while the app is open; no notification |
+| Deleting a typed note | Undo toast | Asks first (no Undo) |
+| Time-range Delete | Removes the typed notes in its span | None: the iPhone edits by selection (words, lines, screens), which leaves typed lines alone and rewrites the notes |
+| Where a detail is kept | `meeting_notes.note_details` by marker id | In the notes' Markdown, `## What you wrote` |
+| A typed note in the review guide's prompt | Whole | Its first 280 characters |
+| The notebook's page | Opens beside the list when a chip is picked | **Open \<name\>** above the list when a chip is picked, and **Open** beside a recording's notebook |
+
+**What the correctness review found (iPhone branch)**
+
+The same independent review (Codex) read the iPhone branch. Ten findings:
+
+| | Finding | Outcome |
+|---|---|---|
+| 1 | A topics answer arriving after the recording was deleted could write to it | Fixed: `TopicStore.applyAI` and `AutoNotes` check the recording still exists |
+| 2 | A Shortcut start asked for during first-run setup stayed pending and could start later | Fixed: the request is dropped while setup is up |
+| 3 | Details were paired with typed notes by position when the count matched, so a delete plus a note arriving by sync during generation could put one note's detail under another | Fixed: paired by identity, as on the Mac (§6) |
+| 4 | On a small model window typed notes had a fixed half of their prompt space | Improved: they also take what the marks leave. With a very small window and a very long recording the last-resort fallback still samples lines, and typed notes are clipped and, past the budget, counted ("and N more"); every typed line is still listed in **What you wrote**, some with nothing under it |
+| 5 | Deleting transcript lines leaves typed notes in that time | As designed: the iPhone has no time-range edit, and §6 leaves typed lines alone for word and line edits. The notes, with **What you wrote**, are rewritten and flagged |
+| 6 | An automatic request already on its way continues when Record is pressed | Accepted, same as the Mac: no new automatic request starts while recording (§6) |
+| 7 | The routine window is narrower than "8:50 to 9:30" | Not a defect: §6 defines the window per recording, and both platforms compute it that way |
+| 8 | No **Notes are ready** notification | Not built on the iPhone (table above) |
+| 9 | The review guide reads the first 280 characters of a typed note | Accepted limit; Chat and the notes read the whole line |
+| 10 | A failed save to the store is not reported | Left as it is across the app (`try? context.save()` is the convention); not changed here |
+
+The review found these correct: no `await` between the notes' check and
+their save; the Pro, AI-set-up and consent gates; typed notes never among
+the marks; an unknown mark kind skipped in sync; the watch unchanged (no
+note kind, no network or speech); reminders capped and permission only
+after **Continue**; no host, key, URL or content logging added.
+
+One difference found on the way was a Mac bug and was fixed there: the
+routine's usual length counted a recording that ran 60:02 as 61 minutes,
+so a 60-minute class was offered as 90 the next week, then with no limit.
+
+**Not verified**
+
+The Simulator has no speech recognition, calendar events of its own,
+notification delivery from a closed app, Siri or an Action button, and no
+Apple on-device model. Recording flows were driven with demo data; the
+calendar source, a reminder firing, the Shortcut and the Apple model were
+not run. Nothing was run on a device. iPad was looked at in two
+screenshots; the UI tests ran on iPhone.

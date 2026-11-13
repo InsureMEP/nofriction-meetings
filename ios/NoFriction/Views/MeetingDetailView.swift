@@ -8,6 +8,12 @@ struct MeetingDetailView: View {
     var jumpTo: Date? = nil
     /// Open scrolled to this transcript line, highlighted briefly (a search result)
     var jumpToLine: PersistentIdentifier? = nil
+    /// Open scrolled to Notes (the recording the user just stopped; an item on the notebook page)
+    var scrollToNotes = false
+    /// Opened from its notebook's page: the notebook isn't offered again
+    var inNotebook = false
+    /// Notes being made by themselves after Stop ("Making notes…")
+    @Environment(AutoNotes.self) private var autoNotes
     @Environment(\.modelContext) private var context
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The line a search opened, highlighted for a moment
@@ -66,13 +72,18 @@ struct MeetingDetailView: View {
                 VStack(alignment: .leading, spacing: 28) {
                     header
                     if meeting.audioFileName != nil { playback }
-                    if !meeting.segments.isEmpty { notes }
+                    // Notes open with what the user wrote, so they show even with no transcript
+                    if !meeting.segments.isEmpty || !meeting.typedNotes.isEmpty {
+                        // A marker at the section's top edge is what "open on Notes" scrolls to
+                        notes.overlay(alignment: .top) { Color.clear.frame(height: 1).id(Self.notesAnchor).accessibilityHidden(true) }
+                    }
                     if !meeting.segments.isEmpty {
                         StudySection(meeting: meeting, working: studyRunning ? aiWorking : nil, busy: aiWorking != nil,
                                      progress: studyProgress, failures: studyFailures,
                                      onMake: { requestAI(.study) }, onOpen: { showStudy = true })
                     }
-                    if !meeting.markers.isEmpty { MarkersSection(meeting: meeting, onJump: jump) }
+                    // The three marks; typed notes are under Notes
+                    if !meeting.marks.isEmpty { MarkersSection(meeting: meeting, onJump: jump) }
                     if !meeting.people.isEmpty { people }
                     if !meeting.snapshots.isEmpty || !meeting.screenStrikes.isEmpty { photos }
                     MeetingLinksSection(meeting: meeting)
@@ -97,6 +108,13 @@ struct MeetingDetailView: View {
                         "Showing the line at \(max(0, segment.start.timeIntervalSince(meeting.startedAt)).clock)").post()
                     try? await Task.sleep(for: .seconds(2))
                     withAnimation(reduceMotion ? nil : .easeOut(duration: 0.6)) { highlightedLine = nil }
+                    return
+                }
+                if scrollToNotes {
+                    // After the push has settled (the bar changes the insets while it animates)
+                    try? await Task.sleep(for: .milliseconds(700))
+                    // A little down from the top, so the Notes title is clear of the bar that floats over the page
+                    withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo(Self.notesAnchor, anchor: UnitPoint(x: 0.5, y: 0.13)) }
                     return
                 }
                 guard let jumpTo else { return }
@@ -164,13 +182,15 @@ struct MeetingDetailView: View {
 
     // MARK: Sections
 
+    static let notesAnchor = "notes-section"
+
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             TextField("Title", text: $meeting.title, axis: .vertical)
                 .font(.title.weight(.semibold))
                 .onSubmit { try? context.save() }
             Text(whenLine).font(.subheadline).foregroundStyle(.secondary)
-            RecordingKindNotebookField(meeting: meeting)
+            RecordingKindNotebookField(meeting: meeting, opensNotebook: !inNotebook)
             if meeting.isFromWatch {
                 Label("Recorded on Apple Watch", systemImage: "applewatch")
                     .font(.subheadline)
@@ -230,7 +250,11 @@ struct MeetingDetailView: View {
     // MARK: AI notes (Pro)
 
     private var notes: some View {
-        SectionBlock(title: "Notes") {
+        // The notes' own "What you wrote" section is shown in place of the plain list, never both
+        let parsed = meeting.aiNotes.flatMap(WhatYouWrote.parse)
+        let hasTranscript = !meeting.segments.isEmpty
+        let auto = autoNotes.isWorking(meeting)
+        return SectionBlock(title: "Notes") {
             VStack(alignment: .leading, spacing: 12) {
                 if meeting.aiNotes != nil && meeting.aiNotesStale {
                     HStack(spacing: 8) {
@@ -242,20 +266,39 @@ struct MeetingDetailView: View {
                             .accessibilityLabel("Make notes again")
                             .font(.footnote.weight(.semibold))
                             .tint(Theme.ai)
-                            .disabled(aiWorking != nil)
+                            .disabled(aiWorking != nil || auto)
                     }
                     .accessibilityIdentifier("ai-notes-stale")
                 }
+                // What you wrote: the user's lines with their times, and what was
+                // being said then once notes are made. Free, with or without AI notes
+                if !meeting.typedNotes.isEmpty || !(parsed?.bullets.isEmpty ?? true) {
+                    WhatYouWroteBlock(meeting: meeting, parsed: parsed, onJump: jump)
+                    if meeting.aiNotes != nil || hasTranscript { Divider().overlay(Theme.hairline) }
+                }
                 if let md = meeting.aiNotes {
-                    // One renderer for every type: headings and bullets, not raw ## / **
-                    NotesMarkdownView(markdown: md)
-                        .font(.callout)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    let rest = parsed?.rest ?? md
+                    if !rest.isEmpty {
+                        // One renderer for every type: headings and bullets, not raw ## / **
+                        // The items the notes found carry the same tick as on the notebook's page
+                        NotesMarkdownView(markdown: rest, meeting: meeting)
+                            .font(.callout)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     if let at = meeting.aiNotesAt {
                         Text("Notes · \(at.formatted(date: .abbreviated, time: .shortened))")
                             .font(.caption2).foregroundStyle(.tertiary)
                     }
+                }
+                if auto && aiWorking == nil {
+                    // Automatic notes after Stop (Settings → Make notes automatically)
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("Making notes…").font(.footnote).foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("auto-notes-working")
                 }
                 if let aiWorking {
                     HStack(spacing: 8) {
@@ -267,29 +310,32 @@ struct MeetingDetailView: View {
                     Label(aiError, systemImage: "exclamationmark.triangle")
                         .font(.footnote).foregroundStyle(.orange)
                 }
-                HStack(spacing: 10) {
-                    Button(meeting.aiNotes == nil ? "Make notes" : "Make again", systemImage: "sparkles") {
-                        requestAI(.notes)
-                    }
-                    .accessibilityHint(notesHint)
-                    .accessibilityIdentifier("ai-summarize")
-                    // A follow-up email is about a meeting's attendees
-                    if meeting.kind == .meeting {
-                        Button("Follow-up email", systemImage: "envelope") {
-                            requestAI(.email)
+                if hasTranscript {
+                    HStack(spacing: 10) {
+                        Button(meeting.aiNotes == nil ? "Make notes" : "Make again", systemImage: "sparkles") {
+                            requestAI(.notes)
                         }
-                        .accessibilityHint("Drafts a follow-up email with your AI")
-                        .accessibilityIdentifier("ai-email")
+                        .accessibilityHint(notesHint)
+                        .accessibilityIdentifier("ai-summarize")
+                        // A follow-up email is about a meeting's attendees
+                        if meeting.kind == .meeting {
+                            Button("Follow-up email", systemImage: "envelope") {
+                                requestAI(.email)
+                            }
+                            .accessibilityHint("Drafts a follow-up email with your AI")
+                            .accessibilityIdentifier("ai-email")
+                        }
                     }
+                    .buttonStyle(.bordered)
+                    .tint(Theme.ai)
+                    .disabled(aiWorking != nil || auto)
+                    .font(.subheadline)
+                    Divider().overlay(Theme.hairline)
+                    TopicsEditor(meeting: meeting, busy: aiWorking != nil || auto, error: topicsError) { requestAI(.topics) }
                 }
-                .buttonStyle(.bordered)
-                .tint(Theme.ai)
-                .disabled(aiWorking != nil)
-                .font(.subheadline)
-                Divider().overlay(Theme.hairline)
-                TopicsEditor(meeting: meeting, busy: aiWorking != nil, error: topicsError) { requestAI(.topics) }
             }
             .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
     }
@@ -325,12 +371,11 @@ struct MeetingDetailView: View {
         switch action {
         case .notes:
             runAI("Making notes with \(aiName(endpoint))…") {
-                let text = try await MeetingAI.notes(context: MeetingAI.context(meeting), endpoint: endpoint,
-                                                     kind: meeting.kind)
-                meeting.aiNotes = text
-                meeting.aiNotesAt = .now
-                meeting.aiNotesStale = false
-                try? context.save()
+                // The whole recording, in parts when it is long, built on what was marked and typed
+                try await NotesStore.make(meeting, contextTokens: endpoint.contextTokens,
+                                          complete: MeetingAI.liveComplete(endpoint), context: context) { label in
+                    await MainActor.run { aiWorking = label }
+                }
                 // Same hook as the Mac: topics are named with the notes
                 await findTopics(endpoint)
             }
@@ -403,14 +448,13 @@ struct MeetingDetailView: View {
         jumpTarget = (rows.last { $0.start <= time } ?? rows.first)?.persistentModelID
     }
 
-    /// Markers by the transcript row they follow (the line being spoken when marked).
+    /// Marks and typed notes by the transcript row they follow (the line being spoken then).
     private var markersByRow: [PersistentIdentifier: [MomentMarker]] {
         let rows = transcriptRows
-        guard !rows.isEmpty else { return [:] }
+        let markers = meeting.orderedMarkers.filter { !$0.isTypedNote || $0.note != nil }
         var out: [PersistentIdentifier: [MomentMarker]] = [:]
-        for m in meeting.orderedMarkers {
-            let host = rows.last { $0.start <= m.at } ?? rows[0]
-            out[host.persistentModelID, default: []].append(m)
+        for (row, hosted) in TranscriptPlacement.hosted(markers.map(\.at), rows: rows.map(\.start)) {
+            out[rows[row].persistentModelID] = hosted.map { markers[$0] }
         }
         return out
     }
@@ -585,9 +629,13 @@ struct MeetingDetailView: View {
                                 }
                             }
                             .id(segment.persistentModelID)
-                        // Moments marked while this line was spoken
+                        // Moments marked, and lines typed, while this line was spoken
                         ForEach(inlineMarkers[segment.persistentModelID] ?? []) { m in
-                            MarkerInlineRow(marker: m, meeting: meeting)
+                            if m.isTypedNote {
+                                TypedNoteRow(text: m.note ?? "", time: m.at)
+                            } else {
+                                MarkerInlineRow(marker: m, meeting: meeting)
+                            }
                         }
                     }
                 }
@@ -872,9 +920,18 @@ enum MeetingExport {
         }
         out += "\n## Transcript\n\n"
         // Stricken spans render as [stricken from the record], struck screens
-        // as [screen stricken from the record] (docs/REDACTION.md)
-        for e in RedactionText.entries(m) {
+        // as [screen stricken from the record] (docs/REDACTION.md). What the
+        // user typed sits where it was written, as "✍ Note: …"
+        let entries = RedactionText.entries(m)
+        let typed = m.typedNotes
+        let hosted = TranscriptPlacement.hosted(typed.map(\.at), rows: entries.map(\.time))
+        func note(_ k: MomentMarker) -> String {
+            "**\(k.at.formatted(date: .omitted, time: .shortened))** \(MarkerKind.note.symbol) \(MarkerKind.note.label(for: m.kind)): \(k.note ?? "")\n\n"
+        }
+        if entries.isEmpty { for k in typed { out += note(k) } }
+        for (i, e) in entries.enumerated() {
             out += "**\(e.time.formatted(date: .omitted, time: .shortened))** \(e.text)\n\n"
+            for n in hosted[i] ?? [] { out += note(typed[n]) }
         }
         return out
     }

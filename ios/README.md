@@ -82,6 +82,13 @@ Pro bypass.
 | Apple on-device model (iOS 26+) | `AI/AppleOnDevice.swift` |
 | Keys (Keychain, this device only) / non-secret AI config | `AI/KeychainStore.swift`, `AI/AISettings.swift` |
 | Meeting prompts | `AI/MeetingAI.swift` |
+| Notes: the whole recording (condensed in parts when long), built on what was marked and typed; "What you wrote"; automatic notes after Stop (spec: `docs/design/FADELL_V2.md`) | `AI/NotesAI.swift` |
+| Typed notes while recording ("Type a note"): a mark of kind `note` | `Shared/RecordingVocabulary.swift`, `Study/StudyModels.swift`, the note line in `Views/LiveView.swift` |
+| Up next on the idle Record tab: the routine (pure), the calendar rules, Not now | `Capture/Routine.swift` |
+| "Remind me when something starts": local notifications planned from the routine | `Capture/RoutineReminders.swift` |
+| The notebook page: items with a tick (hash only), ✎ and ? marks, Review everything | `Notebook/` |
+| Moves across tabs (Stop opens the recording, a notebook's Record and Ask, a reminder's tap) | `App/AppRouter.swift` |
+| Start Recording App Shortcut (Siri, Shortcuts, Action button) | `App/StartRecordingIntent.swift` |
 | Edit / Delete / Strike from the record (spec: `docs/REDACTION.md`) | `Redaction/`, `Views/TranscriptEditing.swift` |
 | StoreKit 2 (noFriction Pro) + paywall | `Store/Store.swift`, `Views/PaywallView.swift` |
 | Settings tab, consent + recording notices | `Views/SettingsView.swift`, `Views/Sheets.swift` |
@@ -149,6 +156,18 @@ xcodebuild test -project NoFriction.xcodeproj -scheme NoFrictionWatch \
   writes the store set to `$NF_APPSTORE_DIR`.
 - `NoFrictionUITests/OnboardingTests` — the first-run flow end to end (`-NFResetOnboarding`),
   reopening it from Settings; `DynamicTypeTests` checks critical controls at XXXL text.
+- `NoFrictionTests/RoutineTests` — the routine with fixed dates and time zones (weekday, the 10/25-minute
+  window, recorded today, tie-break, fading after 42 days, usual length), reminders, the calendar rules for
+  Up next (never an all-day event, the most recently started one first, only a meeting not yet recorded), Not now.
+- `NoFrictionTests/TypedNotesTests` — the `note` kind (limits, never among the marks), the notes prompt (marks,
+  numbered typed notes, no ids, stricken text), condensing a long transcript without the client trimming,
+  "What you wrote" parsing, saving (refused only when a line that was read is gone), automatic notes, sync of a
+  note, and redaction of the section. The AI is a mock.
+- `NoFrictionTests/NotebookPageTests` — the items parser for the three note styles and the Mac's Markdown, ticks
+  kept as a hash, Review everything and "Start from", and the store migration.
+- `NoFrictionUITests/V2FlowTests` — Up next (one tap, Not now, the recording notice first), the note line with the
+  keyboard up, Stop opening the recording on its Notes, and the notebook page, on the sample data
+  (`-NFSeedDemo`; `-NFDemoRecord` makes a start show a demo recording, since the Simulator has no speech recognition).
 - `NoFrictionUITests/RecordingFlowTests` — end-to-end recording from an audio
   file (`NF_TEST_AUDIO`, debug builds only) — **device only**. Copy the file
   into the app's Documents with `xcrun devicectl device copy to …` and pass
