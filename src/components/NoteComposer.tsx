@@ -16,7 +16,8 @@ const COUNT_FROM = MAX_TYPED_NOTE_CHARS - 100;
 export function NoteComposer({ onSaved }: { onSaved: (row: StoredMarker) => void }) {
     const [text, setText] = useState("");
     const [error, setError] = useState<string | null>(null);
-    const [saving, setSaving] = useState(false);
+    // Lines on their way to being kept
+    const [saving, setSaving] = useState(0);
     const inputRef = useRef<HTMLInputElement>(null);
 
     // The cursor is ready when the recording starts: just type
@@ -24,24 +25,25 @@ export function NoteComposer({ onSaved }: { onSaved: (row: StoredMarker) => void
         inputRef.current?.focus({ preventScroll: true });
     }, []);
 
+    // The line leaves the field the moment Return is pressed, so the next
+    // one can be typed while it is being kept. If it can't be kept it comes
+    // back, ahead of whatever was typed since.
     const save = async () => {
-        if (saving) return;
         const line = cleanTypedNote(text);
         if (!line) {
             if (text.trim()) setError(`Keep a note under ${MAX_TYPED_NOTE_CHARS} characters.`);
             return;
         }
-        setSaving(true);
+        setText("");
         setError(null);
+        setSaving((n) => n + 1);
         try {
             onSaved(await markersApi.addNote(line));
-            setText("");
         } catch (e) {
-            // The text stays in the field so nothing typed is lost
+            setText((typed) => (typed.trim() ? `${line} ${typed}` : line));
             setError(`Couldn't keep that note: ${String(e)}`);
         } finally {
-            setSaving(false);
-            inputRef.current?.focus({ preventScroll: true });
+            setSaving((n) => n - 1);
         }
     };
 
@@ -54,7 +56,7 @@ export function NoteComposer({ onSaved }: { onSaved: (row: StoredMarker) => void
                     {error}
                 </p>
             )}
-            <div className="note-composer">
+            <div className="note-composer" aria-busy={saving > 0}>
                 <span className="note-composer__glyph" aria-hidden>
                     <NoteIcon size={15} strokeWidth={2} />
                 </span>
