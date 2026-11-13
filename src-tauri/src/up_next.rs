@@ -408,8 +408,10 @@ pub mod live {
             .collect()
     }
 
-    /// The calendar event on now or about to start, if Calendar access was
-    /// already granted. Never asks for it.
+    /// The calendar event to offer, if Calendar access was already granted
+    /// (this never asks for it): of the events on now or about to start, the
+    /// first that is a meeting (other people, a call link, or recorded
+    /// before under that title) and has no recording yet.
     async fn event_now(state: &AppState) -> Option<EventNow> {
         use crate::calendar_client::{CalendarAccessStatus, CalendarClient};
         if CalendarClient::check_access() != CalendarAccessStatus::Authorized {
@@ -417,40 +419,43 @@ pub mod live {
         }
         let client = state.calendar_client.clone();
         // EventKit off the async threads (it can take a moment the first time)
-        let event = tokio::task::spawn_blocking(move || client.read().get_current_event()).await.ok()??;
-        if event.is_all_day || event.title.trim().is_empty() {
-            return None;
-        }
+        let events = tokio::task::spawn_blocking(move || client.read().current_events()).await.ok()?;
         let pool = state.database.pool();
-        let last = sqlx::query(
-            "SELECT class_name, recording_kind FROM meetings WHERE title = ? COLLATE NOCASE ORDER BY started_at DESC LIMIT 1",
-        )
-        .bind(event.title.trim())
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
-        let recorded: Option<i64> = sqlx::query_scalar(
-            "SELECT 1 FROM meetings WHERE calendar_event_id = ? AND started_at >= ? AND started_at <= ? LIMIT 1",
-        )
-        .bind(&event.event_id)
-        .bind((event.start_time - Duration::minutes(30)).to_rfc3339())
-        .bind(event.end_time.to_rfc3339())
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
-        let others = event.participants.iter().any(|p| !p.is_self) || event.attendees.len() > 1;
-        Some(EventNow {
-            id: event.event_id.clone(),
-            title: event.title.clone(),
-            start: event.start_time,
-            end: event.end_time,
-            meeting_like: others || event.meeting_url.is_some() || last.is_some(),
-            notebook: last.as_ref().and_then(|r| r.get::<Option<String>, _>("class_name")).filter(|n| !n.trim().is_empty()),
-            kind: last.as_ref().map(|r| RecordingKind::from_stored(r.get::<Option<String>, _>("recording_kind").as_deref())),
-            recorded: recorded.is_some(),
-        })
+        for event in events.into_iter().filter(|e| !e.title.trim().is_empty()).take(6) {
+            let last = sqlx::query(
+                "SELECT class_name, recording_kind FROM meetings WHERE title = ? COLLATE NOCASE ORDER BY started_at DESC LIMIT 1",
+            )
+            .bind(event.title.trim())
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+            let recorded: Option<i64> = sqlx::query_scalar(
+                "SELECT 1 FROM meetings WHERE calendar_event_id = ? AND started_at >= ? AND started_at <= ? LIMIT 1",
+            )
+            .bind(&event.event_id)
+            .bind((event.start_time - Duration::minutes(30)).to_rfc3339())
+            .bind(event.end_time.to_rfc3339())
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+            let others = event.participants.iter().any(|p| !p.is_self) || event.attendees.len() > 1;
+            let found = EventNow {
+                id: event.event_id.clone(),
+                title: event.title.clone(),
+                start: event.start_time,
+                end: event.end_time,
+                meeting_like: others || event.meeting_url.is_some() || last.is_some(),
+                notebook: last.as_ref().and_then(|r| r.get::<Option<String>, _>("class_name")).filter(|n| !n.trim().is_empty()),
+                kind: last.as_ref().map(|r| RecordingKind::from_stored(r.get::<Option<String>, _>("recording_kind").as_deref())),
+                recorded: recorded.is_some(),
+            };
+            if found.meeting_like && !found.recorded {
+                return Some(found);
+            }
+        }
+        None
     }
 
     fn call_apps_now() -> Vec<String> {

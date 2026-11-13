@@ -59,6 +59,10 @@ iPhone side is listed where it differs.
 - The notes' "Made" time was the time the view was opened, not when they
   were made.
 - A failed notes run no longer puts the model's answer in its error text.
+- A recording is no longer named after an all-day calendar event ("Out of
+  office", a birthday), and when two events overlap the one that started
+  most recently is matched, not the longer block around it.
+- A note typed while the previous one was still being kept is never lost.
 
 ## [Mac 3.9.0 (47) · iOS 1.1.0 (12)] - 2026-10-23
 

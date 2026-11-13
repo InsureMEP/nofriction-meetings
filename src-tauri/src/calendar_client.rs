@@ -503,27 +503,19 @@ impl CalendarClient {
         }
     }
 
-    /// Get currently active or upcoming event
+    /// The event that is on now, else the one about to start (see
+    /// [`current_candidates`]).
     pub fn get_current_event(&self) -> Option<CalendarEventNative> {
-        let events = self.fetch_events().ok()?;
-        let now = Utc::now();
+        self.current_events().into_iter().next()
+    }
 
-        // First check for active meeting
-        for event in &events {
-            if now >= event.start_time && now <= event.end_time {
-                return Some(event.clone());
-            }
+    /// Every event that is on now or starts within 15 minutes, best match
+    /// first ([`current_candidates`]).
+    pub fn current_events(&self) -> Vec<CalendarEventNative> {
+        match self.fetch_events() {
+            Ok(events) => current_candidates(&events, Utc::now()),
+            Err(_) => Vec::new(),
         }
-
-        // Then check for upcoming in next 15 minutes
-        let soon = now + Duration::minutes(15);
-        for event in &events {
-            if event.start_time > now && event.start_time <= soon {
-                return Some(event.clone());
-            }
-        }
-
-        None
     }
 
     /// Clear the event cache
@@ -552,6 +544,21 @@ impl CalendarClient {
     ) -> Result<Vec<CalendarEventNative>, String> {
         Err("Calendar access only available on macOS".to_string())
     }
+}
+
+/// The events a recording made at `now` could be: the ones that are on,
+/// most recently started first (the meeting inside a longer block wins over
+/// the block), then the ones starting within 15 minutes, soonest first.
+/// All-day events are never a match: "Out of office" or a birthday isn't
+/// what is being recorded, and it used to hide the meeting that was.
+pub fn current_candidates(events: &[CalendarEventNative], now: DateTime<Utc>) -> Vec<CalendarEventNative> {
+    let timed = || events.iter().filter(|e| !e.is_all_day);
+    let mut on: Vec<&CalendarEventNative> = timed().filter(|e| now >= e.start_time && now <= e.end_time).collect();
+    on.sort_by(|a, b| b.start_time.cmp(&a.start_time));
+    let soon_until = now + Duration::minutes(15);
+    let mut soon: Vec<&CalendarEventNative> = timed().filter(|e| e.start_time > now && e.start_time <= soon_until).collect();
+    soon.sort_by(|a, b| a.start_time.cmp(&b.start_time));
+    on.into_iter().chain(soon).cloned().collect()
 }
 
 impl Default for CalendarClient {
@@ -673,6 +680,41 @@ mod tests {
         assert_eq!(config.lookahead_hours, 24);
         assert_eq!(config.lookbehind_hours, 2);
         assert!(config.excluded_calendars.contains(&"Birthdays".to_string()));
+    }
+
+    fn ev(id: &str, start_min: i64, len_min: i64, all_day: bool, now: DateTime<Utc>) -> CalendarEventNative {
+        CalendarEventNative {
+            event_id: id.into(),
+            title: id.into(),
+            start_time: now + Duration::minutes(start_min),
+            end_time: now + Duration::minutes(start_min + len_min),
+            location: None,
+            attendees: Vec::new(),
+            calendar_name: "Work".into(),
+            is_all_day: all_day,
+            meeting_url: None,
+            notes: None,
+            participants: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn the_meeting_inside_a_block_wins_and_all_day_events_never_match() {
+        let now = Utc::now();
+        let events = vec![
+            ev("out of office", -600, 1440, true, now),
+            ev("focus block", -120, 240, false, now),
+            ev("standup", -5, 15, false, now),
+            ev("design review", 10, 30, false, now),
+            ev("lunch", 90, 60, false, now),
+            ev("ended", -90, 30, false, now),
+        ];
+        let ids: Vec<String> = current_candidates(&events, now).into_iter().map(|e| e.event_id).collect();
+        // On now, most recently started first; then what starts within 15 minutes
+        assert_eq!(ids, vec!["standup", "focus block", "design review"]);
+        // Only an all-day event today: nothing matches
+        assert!(current_candidates(&[ev("birthday", -600, 1440, true, now)], now).is_empty());
+        assert!(current_candidates(&[], now).is_empty());
     }
 
     #[test]
