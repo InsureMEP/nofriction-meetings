@@ -516,6 +516,9 @@ const CLIPS = {
         await s.hold(1400);
         await s.click(".topbar__stop", { move: 520 });
         await s.hold(1500);
+        // Stop opens the recording on Notes (v2); the pins are in Rewind
+        await s.click(s.page.locator(".recording-detail > .deck-tabs .deck-tab", { hasText: "Rewind" }).first(), { move: 420 });
+        await s.hold(700);
         await s.click(pin(s, "test"), { move: 600 });
         await s.hold(2200);
         await s.cut();
@@ -656,7 +659,8 @@ const CLIPS = {
         await s.hold(900);
         await s.click(s.page.locator(".class-filter .class-chip", { hasText: "BIO 101" }).first(), { move: 600 });
         await s.hold(1200);
-        await s.click(s.page.locator(".meeting-item", { hasText: "BIO 101: Cell Biology" }).first(), { move: 500 });
+        // Picking a notebook opens its page, with the list beside it (v2)
+        await s.click(s.page.locator(".meeting-item, .compact-meeting-item", { hasText: "BIO 101: Cell Biology" }).first(), { move: 500 });
         await s.hold(2200);
         await s.key();
         await s.cut();

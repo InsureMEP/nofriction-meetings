@@ -253,7 +253,8 @@ const SITE_SHOTS = {
         await mode(page, "Recordings");
         await page.locator(".class-filter .class-chip", { hasText: "BIO 101" }).first().click();
         await sleep(600);
-        await page.locator(".meeting-item", { hasText: "BIO 101: Cell Biology" }).first().click();
+        // Picking a notebook opens its page, with the list beside it (v2)
+        await page.locator(".meeting-item, .compact-meeting-item", { hasText: "BIO 101: Cell Biology" }).first().click();
         await sleep(700);
         await page.locator(".recording-detail > .deck-tabs .deck-tab", { hasText: "Notes" }).first().click();
         await sleep(900);
