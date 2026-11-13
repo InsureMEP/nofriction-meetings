@@ -30,6 +30,9 @@ use sqlx::{Pool, Row, Sqlite};
 use std::sync::Arc;
 use uuid::Uuid;
 
+/// Fill in the blanks: what the notes missed, and their key ideas explained further
+pub mod fill;
+
 pub const NO_TRANSCRIPT: &str = "This recording has no transcript to make notes from.";
 pub const TRANSCRIPT_CHANGED: &str =
     "The transcript was edited while the notes were being made, so they weren't saved. Make notes again.";
@@ -104,6 +107,7 @@ pub struct NotesInput {
 /// (`redaction::AI_TABLES`).
 pub async fn ensure_schema(conn: &mut SqliteConnection) -> Result<(), sqlx::Error> {
     crate::database::ensure_columns(conn, "meeting_notes", &[("note_details", "TEXT")]).await?;
+    fill::ensure_schema(conn).await?;
     Ok(())
 }
 
@@ -430,6 +434,13 @@ pub async fn generate_and_save(
     if !input.study.has_transcript() {
         return Err(NO_TRANSCRIPT.into());
     }
+    // Text in a Delete's undo window is about to be removed: it isn't sent
+    {
+        let mut conn = pool.acquire().await.map_err(err("Database busy"))?;
+        if crate::study::has_pending_delete(&mut conn, meeting_id).await? {
+            return Err(crate::study::PENDING_EDIT.into());
+        }
+    }
     let read = input.study.transcript_lines();
     let (prompt_text, label) = crate::recording_kind::report_prompt(
         input.study.kind,
@@ -552,7 +563,8 @@ pub async fn typed_notes_changed(conn: &mut SqliteConnection, meeting_id: &str) 
             .execute(&mut *conn)
             .await?;
     }
-    Ok(())
+    // What was filled in beside a typed note doesn't outlive it either
+    fill::typed_notes_changed(conn, meeting_id).await
 }
 
 /// How many of the lines the notes were made from are no longer in the
@@ -636,18 +648,53 @@ pub mod run {
     /// Take the recording's one notes slot (released when the guard drops)
     /// and tell the window a run has begun.
     fn reserve(app: &AppHandle, meeting_id: &str) -> Result<RunGuard, String> {
+        reserve_as(app, meeting_id, "Making notes…")
+    }
+
+    /// The first thing a fill run says. The window tells the two kinds of
+    /// run apart by it.
+    pub const FILLING: &str = "Filling in the blanks…";
+
+    fn reserve_as(app: &AppHandle, meeting_id: &str, label: &str) -> Result<RunGuard, String> {
         {
             let mut running = RUNNING.lock();
             if running.contains_key(meeting_id) {
                 return Err("Notes are already being made for this recording.".into());
             }
-            running.insert(meeting_id.to_string(), "Making notes…".into());
+            running.insert(meeting_id.to_string(), label.into());
         }
-        let _ = app.emit(
-            PROGRESS_EVENT,
-            serde_json::json!({ "meetingId": meeting_id, "label": "Making notes…", "done": 0, "total": 1 }),
-        );
+        let _ = app.emit(PROGRESS_EVENT, serde_json::json!({ "meetingId": meeting_id, "label": label, "done": 0, "total": 1 }));
         Ok(RunGuard(meeting_id.to_string()))
+    }
+
+    /// Fill in the blanks for a recording whose notes exist (the button in
+    /// Notes). The recording's one notes slot is taken for the run, so it
+    /// never overlaps Make notes; the same events report it.
+    pub async fn fill(app: &AppHandle, state: &AppState, meeting_id: &str) -> Result<fill::Filled, String> {
+        if recording_meeting(state).as_deref() == Some(meeting_id) {
+            return Err(STILL_RECORDING.into());
+        }
+        let guard = reserve_as(app, meeting_id, FILLING)?;
+        let emit = {
+            let app = app.clone();
+            let id = meeting_id.to_string();
+            move |p: Progress| {
+                // Every label of this run starts the same way, so the window
+                // keeps saying which run it is
+                let label = if p.label.starts_with("Filling") { p.label.clone() } else { format!("{} {}", FILLING, p.label) };
+                if let Some(l) = RUNNING.lock().get_mut(&id) {
+                    *l = label.clone();
+                }
+                let _ = app.emit(
+                    PROGRESS_EVENT,
+                    serde_json::json!({ "meetingId": id, "label": label, "done": p.done, "total": p.total }),
+                );
+            }
+        };
+        let result = fill::fill_and_save(&crate::study::LiveCompleter, &state.database, meeting_id, &emit).await;
+        drop(guard);
+        let _ = app.emit(DONE_EVENT, serde_json::json!({ "meetingId": meeting_id, "ok": result.is_ok() }));
+        result
     }
 
     /// Make and save the notes in a slot already taken, telling the window
@@ -1336,5 +1383,346 @@ mod tests {
         let m = Mock::new(32_768);
         assert_eq!(generate_and_save(&m, &f2.db, "m1", "PROMPT", "default", &quiet()).await.unwrap_err(), NO_TRANSCRIPT);
         assert!(m.requests().is_empty());
+    }
+
+    // ── Fill in the blanks (fill.rs) ──
+
+    const FILL: &str = r#"{"missed":[
+        {"at":"0:40","point":"Osmosis moves water toward the higher solute concentration."},
+        {"at":"0:10","point":"The exam covers chapters three and four."},
+        {"at":"59:00","point":"A time that isn't in this recording."},
+        {"at":"0:10","point":"the exam covers chapters three and four."},
+        "A point with no time."],
+      "more":[
+        {"about":"Sodium-potassium pump","detail":"It moves three sodium out and two potassium in for each ATP.","at":"0:20","from":"recording"},
+        {"about":"Active transport","detail":"Transport that needs energy because it goes against the gradient.","at":null,"from":"background"},
+        {"about":"sodium-potassium pump","detail":"A second entry for the same idea."},
+        {"about":"","detail":"Nothing it is about."}]}"#;
+
+    #[test]
+    fn fill_prompts_follow_the_type_and_only_a_class_may_get_background() {
+        let class = fill::base_prompt(RecordingKind::Class, Some("BIO 101"));
+        assert!(class.contains("\"BIO 101\"") && class.contains("\"from\": \"background\""));
+        assert!(class.contains("Never present background as something that was said"));
+        for kind in [RecordingKind::Meeting, RecordingKind::Personal] {
+            let p = fill::base_prompt(kind, None);
+            assert!(p.contains("Do not add outside knowledge"), "{kind:?}");
+            assert!(!p.contains("textbook"), "{kind:?}");
+        }
+        // Every type is told the user's own lines are theirs
+        for kind in [RecordingKind::Class, RecordingKind::Meeting, RecordingKind::Personal] {
+            assert!(fill::base_prompt(kind, None).contains("Never rewrite or repeat the lines"));
+        }
+    }
+
+    #[test]
+    fn the_fill_prompt_shows_what_the_user_already_has_and_never_an_id() {
+        let i = input(&[(0, "Cells have membranes."), (20_000, "The pump moves sodium out.")], &[], &[(20_000, "pump: 3 Na out")]);
+        let notes = crate::database::MeetingNotes {
+            id: "n1".into(),
+            meeting_id: "m1".into(),
+            summary: Some("A lecture on membranes.".into()),
+            key_topics: Some(r#"["Membranes","Sodium-potassium pump"]"#.into()),
+            decisions: Some(r#"[{"text":"Osmosis: water moving across a membrane","context":"a raisin in water"}]"#.into()),
+            action_items: Some(r#"[{"task":"Read chapter 3","due_date":"Friday"}]"#.into()),
+            participants: None,
+            generated_at: chrono::Utc::now(),
+            model_used: Some("lecture-notes".into()),
+            stale_after_edit: false,
+            note_details: None,
+            filled: None,
+        };
+        let have = fill::have_block(&notes, &i.typed, 6_000);
+        for expected in [
+            "Summary: A lecture on membranes.",
+            "- Sodium-potassium pump",
+            "- Osmosis: water moving across a membrane (a raisin in water)",
+            "- Read chapter 3 (due Friday)",
+            "- [0:20] pump: 3 Na out",
+        ] {
+            assert!(have.contains(expected), "{expected}\n{have}");
+        }
+        let prompt = fill::build_prompt(&i, &have, false, "[0:00] Cells have membranes.");
+        assert!(prompt.contains("NOTES SO FAR:\nSummary:") && prompt.contains("\nTRANSCRIPT:\n[0:00] Cells have membranes."));
+        assert!(prompt.contains("stricken from the record"), "the reading rules are in every prompt");
+        for typed in &i.typed {
+            assert!(!prompt.contains(&typed.marker_id), "a marker id never goes to the AI");
+        }
+        // Nothing yet: it says so instead of leaving the block empty
+        assert!(fill::build_prompt(&i, " ", true, "x").contains("NOTES SO FAR:\n(none)\n\nNOTES (condensed"));
+    }
+
+    #[test]
+    fn fill_answers_are_parsed_tolerantly_and_background_stays_in_class() {
+        let class = fill::parse(FILL, RecordingKind::Class, 60_000).unwrap();
+        // In the order said, the repeat dropped, the time outside the recording dropped
+        assert_eq!(
+            class.missed.iter().map(|m| (m.at_ms, m.text.as_str())).collect::<Vec<_>>(),
+            vec![
+                (Some(10_000), "The exam covers chapters three and four."),
+                (Some(40_000), "Osmosis moves water toward the higher solute concentration."),
+                (None, "A time that isn't in this recording."),
+                (None, "A point with no time."),
+            ]
+        );
+        assert_eq!(class.more.len(), 2, "the repeat and the one about nothing are dropped");
+        assert_eq!((class.more[0].at_ms, class.more[0].background), (Some(20_000), false));
+        assert_eq!((class.more[1].at_ms, class.more[1].background), (None, true));
+        // A meeting never gets what wasn't said
+        let meeting = fill::parse(FILL, RecordingKind::Meeting, 60_000).unwrap();
+        assert_eq!(meeting.more.len(), 1);
+        assert!(!meeting.more[0].background);
+        // Whatever isn't recognisably from the recording is background: it
+        // never passes as said, however the answer words it
+        let sly = r#"{"missed":[],"more":[
+            {"about":"A","detail":"d","from":"textbook","at":"0:10"},
+            {"about":"B","detail":"d","from":"outside knowledge"},
+            {"about":"C","detail":"d","background":"true","from":"recording","at":"0:10"},
+            {"about":"D","detail":"d","source":"background"},
+            {"about":"E","detail":"d"},
+            {"about":"F","detail":"d","at":"0:30"},
+            {"about":"G","detail":"d","from":"Transcript","at":"0:40"},
+            {"about":"H","detail":"d","from":"recording","background":false}]}"#;
+        let class = fill::parse(sly, RecordingKind::Class, 60_000).unwrap();
+        assert_eq!(
+            class.more.iter().map(|m| (m.about.as_str(), m.background, m.at_ms)).collect::<Vec<_>>(),
+            vec![
+                ("A", true, None),
+                ("B", true, None),
+                ("C", true, None),
+                ("D", true, None),
+                ("E", true, None),
+                ("F", false, Some(30_000)),
+                ("G", false, Some(40_000)),
+                ("H", false, None),
+            ]
+        );
+        let meeting = fill::parse(sly, RecordingKind::Meeting, 60_000).unwrap();
+        assert_eq!(meeting.more.iter().map(|m| m.about.as_str()).collect::<Vec<_>>(), vec!["F", "G", "H"]);
+        // Nothing missing is an answer; no lists at all, or not an object, is not
+        assert!(fill::parse(r#"{"missed":[],"more":[]}"#, RecordingKind::Class, 0).unwrap().is_empty());
+        assert!(fill::parse(r#"{"summary":"notes again"}"#, RecordingKind::Class, 0).is_err());
+        assert!(fill::parse("[1,2]", RecordingKind::Class, 0).is_err());
+        // Sizes are capped
+        let many = format!(r#"{{"missed":[{}],"more":[]}}"#, (0..40).map(|n| format!(r#"{{"at":"0:{:02}","point":"point {}"}}"#, n, n)).collect::<Vec<_>>().join(","));
+        assert_eq!(fill::parse(&many, RecordingKind::Class, 0).unwrap().missed.len(), fill::MAX_MISSED);
+    }
+
+    #[test]
+    fn filled_sections_cross_to_the_iphone_under_the_shared_headings() {
+        let filled = fill::parse(FILL, RecordingKind::Class, 60_000).unwrap();
+        let md = fill::markdown(Some(&serde_json::to_string(&filled).unwrap())).unwrap();
+        assert!(md.starts_with("## What you missed\n- [0:10] The exam covers chapters three and four.\n"), "{md}");
+        assert!(md.contains("\n- A point with no time.\n\n## More detail\n"), "{md}");
+        assert!(md.contains("- **Sodium-potassium pump**: It moves three sodium out and two potassium in for each ATP. [0:20]"), "{md}");
+        assert!(md.ends_with("against the gradient. (background, not said in the recording)"), "{md}");
+        assert_eq!(fill::markdown(None), None);
+        assert_eq!(fill::markdown(Some(r#"{"missed":[],"more":[]}"#)), None);
+        assert_eq!(fill::markdown(Some("not json")), None);
+    }
+
+    #[test]
+    fn the_two_sections_are_taken_out_of_notes_text_cleanly() {
+        let md = "## What you wrote\n- **pump**: three sodium out\n\n## Summary\nMembranes.\n\n## What you missed\n- [0:10] The exam covers chapter three.\n\n## Key concepts\n- Osmosis\n\n## More detail\n- **Osmosis**: water moves. [0:40]\n";
+        assert_eq!(
+            fill::strip_sections(md),
+            "## What you wrote\n- **pump**: three sodium out\n\n## Summary\nMembranes.\n\n## Key concepts\n- Osmosis"
+        );
+        // Nothing of ours: unchanged (but for trailing blank lines)
+        assert_eq!(fill::strip_sections("## Summary\nMembranes.\n\n"), "## Summary\nMembranes.");
+        // Whatever the case of the heading
+        assert_eq!(fill::strip_sections("Intro\n## what you missed\n- x\n## MORE DETAIL ##\n- y"), "Intro");
+        assert_eq!(fill::strip_sections(""), "");
+        // A bold line is a heading too: it ends a section of ours, and can be one
+        assert_eq!(
+            fill::strip_sections("## What you missed\n- x\n**Key concepts**\n- Osmosis\n**More detail**\n- y"),
+            "**Key concepts**\n- Osmosis"
+        );
+        // The words inside a bullet or a paragraph are not a heading
+        let prose = "## Summary\nSee ## What you missed below.\n- **More detail** on osmosis: later";
+        assert_eq!(fill::strip_sections(prose), prose);
+    }
+
+    #[test]
+    fn a_small_model_is_shown_less_of_the_notes_so_the_recording_keeps_the_room() {
+        assert_eq!(fill::have_cap(4_096), 3_072);
+        assert_eq!(fill::have_cap(32_768), 6_000);
+        assert_eq!(fill::have_cap(512), 800);
+        let i = input(&[(0, "Cells have membranes.")], &[], &[]);
+        let notes = crate::database::MeetingNotes {
+            id: "n1".into(),
+            meeting_id: "m1".into(),
+            summary: Some("word ".repeat(2_000)),
+            key_topics: None,
+            decisions: None,
+            action_items: None,
+            participants: None,
+            generated_at: chrono::Utc::now(),
+            model_used: Some("lecture-notes".into()),
+            stale_after_edit: false,
+            note_details: None,
+            filled: None,
+        };
+        let have = fill::have_block(&notes, &i.typed, fill::have_cap(4_096));
+        assert!(have.chars().count() < 3_100 && have.ends_with("(more notes follow)\n"), "{}", have.chars().count());
+    }
+
+    async fn filled_json(f: &Fx) -> Option<String> {
+        f.db.get_meeting_notes("m1").await.unwrap().and_then(|n| n.filled)
+    }
+
+    #[tokio::test]
+    async fn filling_in_is_kept_on_the_notes_it_was_made_for() {
+        let f = fx().await;
+        let pool = f.db.pool();
+        line(&f, 0, None, "Cells have membranes.").await;
+        line(&f, 20, None, "The pump moves three sodium out and two potassium in.").await;
+        let t = start(&f).await;
+        let typed = crate::markers::add(pool, "m1", t + chrono::Duration::seconds(20), Some("note"), Some("pump: 3 Na out"), false)
+            .await
+            .unwrap();
+
+        // No notes yet: nothing is asked
+        let m = Mock::answering(32_768, &[FILL]);
+        assert_eq!(fill::fill_and_save(&m, &f.db, "m1", &quiet()).await.unwrap_err(), fill::NEEDS_NOTES);
+        assert!(m.requests().is_empty());
+
+        generate_and_save(&Mock::new(32_768), &f.db, "m1", "PROMPT", "default", &quiet()).await.unwrap();
+        let m = Mock::answering(32_768, &[FILL]);
+        let filled = fill::fill_and_save(&m, &f.db, "m1", &quiet()).await.unwrap();
+        assert_eq!(filled.missed.len(), 4);
+        assert_eq!(m.requests().len(), 1, "a short recording is one request");
+        assert!(m.requests()[0].contains("NOTES SO FAR:") && m.requests()[0].contains("pump: 3 Na out"));
+        assert!(!m.requests()[0].contains(&typed.id));
+        let stored: fill::Filled = serde_json::from_str(&filled_json(&f).await.unwrap()).unwrap();
+        assert_eq!(stored, filled);
+        assert_eq!(stored.typed.keys().collect::<Vec<_>>(), vec![&typed.id]);
+
+        // A typed note added later changes nothing; changing the one it was made beside removes it
+        crate::markers::add(pool, "m1", t + chrono::Duration::seconds(30), Some("note"), Some("ask about osmosis"), false)
+            .await
+            .unwrap();
+        assert!(filled_json(&f).await.is_some());
+        crate::markers::update(pool, &typed.id, None, Some(Some("pump: 2 K in"))).await.unwrap();
+        assert_eq!(filled_json(&f).await, None);
+
+        // Deleting it does the same
+        fill::fill_and_save(&Mock::answering(32_768, &[FILL]), &f.db, "m1", &quiet()).await.unwrap();
+        assert!(filled_json(&f).await.is_some());
+        crate::markers::delete(pool, &typed.id).await.unwrap();
+        assert_eq!(filled_json(&f).await, None);
+
+        // Deleting or striking transcript text removes it outright, whatever the words were
+        fill::fill_and_save(&Mock::answering(32_768, &[FILL]), &f.db, "m1", &quiet()).await.unwrap();
+        let mut conn = pool.acquire().await.unwrap();
+        crate::redaction::redact_ai_outputs(&mut conn, "m1", "a word that is nowhere in it", "[stricken from the record]").await.unwrap();
+        drop(conn);
+        assert_eq!(filled_json(&f).await, None);
+
+        // Making the notes again starts without it
+        fill::fill_and_save(&Mock::answering(32_768, &[FILL]), &f.db, "m1", &quiet()).await.unwrap();
+        generate_and_save(&Mock::new(32_768), &f.db, "m1", "PROMPT", "default", &quiet()).await.unwrap();
+        assert_eq!(filled_json(&f).await, None);
+    }
+
+    /// Notes that came from the iPhone carry the two sections in their own
+    /// text. Every removal that takes this Mac's result takes those too.
+    #[tokio::test]
+    async fn sections_inside_notes_from_the_iphone_are_removed_the_same_ways() {
+        const SYNCED: &str = "## What you wrote\n- **pump: 3 Na out**: three sodium out\n\n## Summary\nMembranes.\n\n## What you missed\n- [0:10] The exam covers chapter three.\n\n## More detail\n- **Osmosis**: water moves. [0:40]";
+        const BARE: &str = "## What you wrote\n- **pump: 3 Na out**: three sodium out\n\n## Summary\nMembranes.";
+        async fn synced(f: &Fx) {
+            sqlx::query("DELETE FROM meeting_notes").execute(f.db.pool()).await.unwrap();
+            sqlx::query("INSERT INTO meeting_notes (id, meeting_id, summary, model_used) VALUES ('s1', 'm1', ?, 'synced-markdown')")
+                .bind(SYNCED)
+                .execute(f.db.pool())
+                .await
+                .unwrap();
+        }
+        async fn summary(f: &Fx) -> String {
+            f.db.get_meeting_notes("m1").await.unwrap().unwrap().summary.unwrap()
+        }
+        let f = fx().await;
+        let pool = f.db.pool();
+        line(&f, 0, None, "Cells have membranes.").await;
+        let t = start(&f).await;
+        let typed = crate::markers::add(pool, "m1", t, Some("note"), Some("pump: 3 Na out"), false).await.unwrap();
+
+        // Delete or Strike of transcript text
+        synced(&f).await;
+        let mut conn = pool.acquire().await.unwrap();
+        assert!(fill::exists_for_meeting(&mut conn, "m1").await == false, "nothing of this Mac's is there");
+        crate::redaction::redact_ai_outputs(&mut conn, "m1", "nowhere in it", "[stricken from the record]").await.unwrap();
+        drop(conn);
+        assert_eq!(summary(&f).await, BARE);
+
+        // A typed note changed
+        synced(&f).await;
+        crate::markers::update(pool, &typed.id, None, Some(Some("pump: 2 K in"))).await.unwrap();
+        assert_eq!(summary(&f).await, BARE);
+
+        // This Mac fills in: its result replaces theirs, in the row and in what is sent back
+        synced(&f).await;
+        let m = Mock::answering(32_768, &[FILL]);
+        fill::fill_and_save(&m, &f.db, "m1", &quiet()).await.unwrap();
+        assert!(!m.requests()[0].contains("The exam covers chapter three"), "an earlier fill isn't what the user already has");
+        assert_eq!(summary(&f).await, BARE);
+        assert!(filled_json(&f).await.is_some());
+    }
+
+    #[tokio::test]
+    async fn nothing_in_a_deletes_undo_window_is_sent() {
+        let f = fx().await;
+        line(&f, 0, None, "The launch code is tangerine.").await;
+        generate_and_save(&Mock::new(32_768), &f.db, "m1", "PROMPT", "default", &quiet()).await.unwrap();
+        sqlx::query(
+            "INSERT INTO redactions (id, meeting_id, kind, action, created_at, pending_payload) VALUES ('r1', 'm1', 'words', 'delete', datetime('now'), '{}')",
+        )
+        .execute(f.db.pool())
+        .await
+        .unwrap();
+        let m = Mock::answering(32_768, &[FILL]);
+        assert_eq!(fill::fill_and_save(&m, &f.db, "m1", &quiet()).await.unwrap_err(), crate::study::PENDING_EDIT);
+        assert!(m.requests().is_empty());
+        let m = Mock::new(32_768);
+        assert_eq!(generate_and_save(&m, &f.db, "m1", "PROMPT", "default", &quiet()).await.unwrap_err(), crate::study::PENDING_EDIT);
+        assert!(m.requests().is_empty());
+    }
+
+    #[tokio::test]
+    async fn filling_in_is_not_saved_when_what_it_read_changed_meanwhile() {
+        // A line is removed while the AI is writing
+        let f = fx().await;
+        line(&f, 0, None, "The launch code is tangerine.").await;
+        generate_and_save(&Mock::new(32_768), &f.db, "m1", "PROMPT", "default", &quiet()).await.unwrap();
+        let m = Mock::answering(32_768, &[FILL]);
+        *m.edit.lock() =
+            Some((f.db.clone(), "UPDATE transcripts SET text = 'The launch code is.' WHERE meeting_id = 'm1'"));
+        assert_eq!(fill::fill_and_save(&m, &f.db, "m1", &quiet()).await.unwrap_err(), TRANSCRIPT_CHANGED);
+        assert_eq!(filled_json(&f).await, None);
+
+        // The notes are made again while the AI is writing: the answer was for the old ones
+        let f = fx().await;
+        line(&f, 0, None, "Cells have membranes.").await;
+        generate_and_save(&Mock::new(32_768), &f.db, "m1", "PROMPT", "default", &quiet()).await.unwrap();
+        let m = Mock::answering(32_768, &[FILL]);
+        *m.edit.lock() = Some((
+            f.db.clone(),
+            "INSERT INTO meeting_notes (id, meeting_id, summary, generated_at) VALUES ('newer', 'm1', 'Made again', datetime('now', '+1 minute'))",
+        ));
+        assert_eq!(fill::fill_and_save(&m, &f.db, "m1", &quiet()).await.unwrap_err(), fill::NOTES_CHANGED);
+        assert_eq!(filled_json(&f).await, None);
+
+        // An answer that can't be used is asked for once more, then reported without quoting it
+        let f = fx().await;
+        line(&f, 0, None, "Cells have membranes.").await;
+        generate_and_save(&Mock::new(32_768), &f.db, "m1", "PROMPT", "default", &quiet()).await.unwrap();
+        let m = Mock::answering(32_768, &["I can't help with that secret-sounding thing.", FILL]);
+        assert!(fill::fill_and_save(&m, &f.db, "m1", &quiet()).await.is_ok());
+        assert_eq!(m.requests().len(), 2);
+        let m = Mock::answering(32_768, &["no json here: tangerine"]);
+        let e = fill::fill_and_save(&m, &f.db, "m1", &quiet()).await.unwrap_err();
+        assert_eq!(e, UNUSABLE);
+        assert!(!e.contains("tangerine"));
     }
 }

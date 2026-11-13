@@ -854,6 +854,7 @@ pub fn run() {
             commands::get_meeting_report_prompt,
             commands::set_meeting_report_prompt,
             commands::generate_meeting_report,
+            commands::fill_in_notes,
             commands::get_ai_automation,
             commands::draft_followup_email,
             commands::set_ai_automation,

@@ -437,6 +437,18 @@ UI in `src/components/redaction/Redaction.tsx`.
   from backups; a backup holding a different version of that line that still
   has the words is deleted.
 - **Comments.** `meeting_comments` are never rewritten, for Delete or Strike.
+- **Fill in the blanks.** What it wrote (`meeting_notes.filled` on the Mac;
+  the `## What you missed` and `## More detail` sections of `aiNotes` on
+  iPhone) paraphrases the recording, so word matching can't clean it: any
+  Delete or Strike of that recording's transcript text removes it outright
+  (`meeting_notes::fill::clear_for_meeting`, called from
+  `redact_ai_outputs`). It also goes when a typed note it was made beside
+  is changed or deleted (`typed_notes_changed`, also when the change arrives
+  by sync), and notes made again start without it. Notes that came from the
+  iPhone carry the two sections in their own Markdown: the same removals
+  strip them from that text (`fill::strip_sections`). Neither Make notes nor
+  Fill in the blanks sends anything while a Delete is in its undo window.
+  Deleting the recording takes the notes row with it.
 - **Typed notes and the notebook page.** A typed note is a `meeting_markers`
   row (kind `note`): a time-range Delete or Strike removes the ones in its
   span, word and line edits leave them alone, and deleting the recording

@@ -14,6 +14,14 @@ iPhone and iPad. An entry marked (Mac) or (iPhone) is on that platform
 only.
 
 ### Added
+- **Fill in the blanks.** One button in a recording's Notes. It reads the
+  whole recording again beside the notes you have and adds **What you
+  missed** (things that were said and aren't in the notes, each with the
+  time it was said) and **More detail** (the notes' key ideas explained
+  further). For a Class it may also add what a textbook says, and marks
+  each such entry "Background, not said in the recording". Your own lines
+  are never rewritten. It runs only when you press it, and is part of Notes
+  (noFriction Pro).
 - **Type a note while it listens.** One field under the live transcript;
   Return keeps the line with its moment and it appears in the transcript
   there. Notes opens with **What you wrote**. On the Mac, Rewind shows
@@ -133,6 +141,9 @@ On the Mac, unless marked.
   waits for the recording to stop.
 - The consent dialog said it sends "selected screenshots". No feature sends
   a picture; it now says so.
+- **Make notes doesn't send text that is about to be deleted (Mac).** A run
+  started inside a Delete's five-second undo window read the transcript as
+  it still was. It now waits to be asked again.
 - Up next's usual length no longer creeps up. A recording that stopped at
   its 60-minute limit ends a second or two after the hour; counted as 61
   minutes it was offered as 90 the next time, then with no limit.

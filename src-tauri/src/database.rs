@@ -169,6 +169,10 @@ pub struct MeetingNotes {
     /// user typed (meeting_notes.rs)
     #[serde(default)]
     pub note_details: Option<String>,
+    /// JSON `{missed, more, typed}`: what Fill in the blanks wrote for
+    /// these notes (meeting_notes/fill.rs)
+    #[serde(default)]
+    pub filled: Option<String>,
 }
 
 /// User comment on a meeting
@@ -3504,8 +3508,8 @@ impl DatabaseManager {
         &self,
         meeting_id: &str,
     ) -> Result<Option<MeetingNotes>, sqlx::Error> {
-        let row = sqlx::query_as::<_, (String, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, String, Option<String>, i64, Option<String>)>(
-            "SELECT id, meeting_id, summary, key_topics, decisions, action_items, participants, generated_at, model_used, stale_after_edit, note_details FROM meeting_notes WHERE meeting_id = ? ORDER BY generated_at DESC, rowid DESC LIMIT 1"
+        let row = sqlx::query_as::<_, (String, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, String, Option<String>, i64, Option<String>, Option<String>)>(
+            "SELECT id, meeting_id, summary, key_topics, decisions, action_items, participants, generated_at, model_used, stale_after_edit, note_details, filled FROM meeting_notes WHERE meeting_id = ? ORDER BY generated_at DESC, rowid DESC LIMIT 1"
         )
         .bind(meeting_id)
         .fetch_optional(&self.pool)
@@ -3524,6 +3528,7 @@ impl DatabaseManager {
                 model_used,
                 stale,
                 note_details,
+                filled,
             )| {
                 MeetingNotes {
                     id,
@@ -3544,6 +3549,7 @@ impl DatabaseManager {
                     model_used,
                     stale_after_edit: stale != 0,
                     note_details,
+                    filled,
                 }
             },
         ))

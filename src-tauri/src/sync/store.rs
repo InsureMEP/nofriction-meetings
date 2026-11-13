@@ -620,7 +620,7 @@ pub async fn screen_file(pool: &Pool<Sqlite>, wire: &str) -> Option<Vec<u8>> {
 async fn notes_item(conn: &mut SqliteConnection, meeting_id: &str, modified: i64) -> Result<Option<p::NotesItem>, String> {
     let Some(rec) = p::wire_id(meeting_id) else { return Ok(None) };
     let Some(r) = sqlx::query(
-        "SELECT summary, key_topics, decisions, action_items, generated_at, model_used, stale_after_edit, note_details \
+        "SELECT summary, key_topics, decisions, action_items, generated_at, model_used, stale_after_edit, note_details, filled \
          FROM meeting_notes WHERE meeting_id = ? ORDER BY generated_at DESC, rowid DESC LIMIT 1",
     )
     .bind(meeting_id)
@@ -651,6 +651,13 @@ async fn notes_item(conn: &mut SqliteConnection, meeting_id: &str, modified: i64
         if let Some(section) = what_you_wrote_markdown(&typed, r.get::<Option<String>, _>("note_details").as_deref()) {
             md = if md.is_empty() { section } else { format!("{}\n\n{}", section, md) };
         }
+    }
+    // What Fill in the blanks wrote goes last, under the headings the
+    // iPhone writes when it fills in the blanks itself
+    if let Some(filled) = crate::meeting_notes::fill::markdown(r.get::<Option<String>, _>("filled").as_deref()) {
+        // Notes that came from the iPhone may carry its own two sections: this Mac's replace them
+        md = crate::meeting_notes::fill::strip_sections(&md);
+        md = if md.is_empty() { filled } else { format!("{}\n\n{}", md, filled) };
     }
     Ok(Some(p::NotesItem {
         rec,
@@ -1545,6 +1552,11 @@ async fn apply_mark(tx: &mut SqliteConnection, peer: &str, m: &p::MarkItem) -> R
     .execute(&mut *tx)
     .await
     .map_err(err("Couldn't save a mark"))?;
+    // A typed note that arrived or was edited on the other device: what
+    // was written beside the old line doesn't outlive it (meeting_notes.rs)
+    if is_note {
+        crate::meeting_notes::typed_notes_changed(tx, &rec).await.map_err(err("Couldn't save a mark"))?;
+    }
     Ok(true)
 }
 

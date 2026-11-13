@@ -101,9 +101,91 @@ export function mergeSyncedWritten(notes: TypedNote[], sections: SyncedNotesSect
     return { lines: notes.map((note) => ({ note, detail: details.get(note.id) ?? null })), sections: rest };
 }
 
-/** "Reading the recording (2 of 5)…" → shown under "Making notes…"; the
- *  generic first label says nothing more than the heading does. */
+/** The first words of every label a Fill in the blanks run reports
+ *  (meeting_notes.rs `run::FILLING`). */
+export const FILLING = "Filling in the blanks…";
+
+/** Whether the run a label belongs to is filling in the blanks, not making notes. */
+export function isFillRun(label: string | null | undefined): boolean {
+    return (label ?? "").trim().startsWith(FILLING);
+}
+
+/** "Reading the recording (2 of 5)…" → shown under "Making notes…" (or
+ *  "Filling in the blanks…"); the generic first label says nothing more
+ *  than the heading does. */
 export function progressDetail(label: string | null | undefined): string | null {
-    const l = (label ?? "").trim();
+    let l = (label ?? "").trim();
+    if (l.startsWith(FILLING)) l = l.slice(FILLING.length).trim();
     return l && l !== "Making notes…" && l !== "Done" ? l : null;
+}
+
+/** The headings of what Fill in the blanks writes, the same on every
+ *  platform (meeting_notes/fill.rs). */
+export const WHAT_YOU_MISSED = "What you missed";
+export const MORE_DETAIL = "More detail";
+
+/** Something that was said and the notes didn't have. */
+export interface MissedPoint {
+    /** When it was said, from the start of the recording */
+    atMs: number | null;
+    text: string;
+}
+
+/** One of the notes' key ideas, explained further. */
+export interface MoreDetail {
+    about: string;
+    detail: string;
+    atMs: number | null;
+    /** Not said in the recording: added by the AI (a Class only) */
+    background: boolean;
+}
+
+export interface Filled {
+    missed: MissedPoint[];
+    more: MoreDetail[];
+}
+
+const moment = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null);
+const words = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
+
+/**
+ * `meeting_notes.filled`: what Fill in the blanks wrote for these notes.
+ * Null when nothing was filled in or it can't be read; an object with two
+ * empty lists when the pass ran and found the notes complete.
+ */
+export function parseFilled(json: string | null | undefined): Filled | null {
+    if (!json) return null;
+    let v: unknown;
+    try {
+        v = JSON.parse(json);
+    } catch {
+        return null;
+    }
+    if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+    const o = v as { missed?: unknown; more?: unknown };
+    const list = (x: unknown): Record<string, unknown>[] =>
+        Array.isArray(x) ? x.filter((e): e is Record<string, unknown> => !!e && typeof e === "object" && !Array.isArray(e)) : [];
+    return {
+        missed: list(o.missed)
+            .map((e) => ({ atMs: moment(e.at_ms), text: words(e.text) }))
+            .filter((m) => m.text),
+        more: list(o.more)
+            .map((e) => ({ about: words(e.about), detail: words(e.detail), atMs: moment(e.at_ms), background: e.background === true }))
+            .filter((m) => m.about && m.detail),
+    };
+}
+
+const isFilledSection = (s: SyncedNotesSection) => {
+    const h = (s.heading ?? "").trim().toLowerCase();
+    return h === WHAT_YOU_MISSED.toLowerCase() || h === MORE_DETAIL.toLowerCase();
+};
+
+/** Notes that came from the other device carry the two sections in their Markdown. */
+export function hasFilledSections(sections: SyncedNotesSection[]): boolean {
+    return sections.some(isFilledSection);
+}
+
+/** Those notes without the two sections (this Mac filled in the blanks again and shows its own). */
+export function withoutFilledSections(sections: SyncedNotesSection[]): SyncedNotesSection[] {
+    return sections.filter((s) => !isFilledSection(s));
 }

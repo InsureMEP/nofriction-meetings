@@ -381,3 +381,61 @@
   color: var(--text-secondary, #a3a3a3);
   text-decoration: line-through;
 }
+
+/* What Fill in the blanks wrote (meeting_notes/fill.rs) */
+.mn-filled__none {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary, #a3a3a3);
+}
+
+.mn-section ol.mn-filled__list,
+.mn-section ul.mn-filled__more {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* The same text as the rest of the notes */
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.mn-section ol.mn-filled__list li + li {
+  margin-top: 0;
+}
+
+.mn-filled__row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 6px 0;
+}
+
+.mn-section ul.mn-filled__more li {
+  padding: 8px 0;
+}
+
+.mn-section ul.mn-filled__more li + li {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.mn-section ul.mn-filled__more p {
+  margin: 4px 0 6px;
+}
+
+.mn-filled__tag,
+.mn-filled__from {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary, #a3a3a3);
+}
+
+/* Not from the recording: said plainly, in a quiet chip */
+.mn-filled__tag {
+  padding: 2px 8px;
+  border: 1px solid var(--border-color, #262626);
+  border-radius: 999px;
+}
+

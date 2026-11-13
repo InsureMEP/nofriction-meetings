@@ -18,13 +18,20 @@ import { AiSetupNotice, useAiStatus } from "./AiSetupNotice";
 import { notesLayout, notesStyleHint } from "../lib/recordingKind";
 import { SYNCED_NOTES_MODEL, syncedNotesSections, type SyncedNotesSection } from "../lib/syncLogic";
 import {
+    MORE_DETAIL,
     NOTES_DONE_EVENT,
     NOTES_PROGRESS_EVENT,
+    WHAT_YOU_MISSED,
     WHAT_YOU_WROTE,
+    hasFilledSections,
+    isFillRun,
     mergeSyncedWritten,
+    parseFilled,
     parseNoteDetails,
     progressDetail,
+    withoutFilledSections,
     writtenLines,
+    type Filled,
     type NotesProgress,
     type WrittenLine,
 } from "../lib/notesLogic";
@@ -53,6 +60,8 @@ interface SavedNotes {
     stale_after_edit?: boolean;
     /** JSON `[{marker_id, detail}]`: what was being said at each typed note */
     note_details?: string | null;
+    /** JSON `{missed, more}`: what Fill in the blanks wrote for these notes */
+    filled?: string | null;
 }
 
 interface FollowUpEmail {
@@ -97,6 +106,8 @@ export function MeetingNotesPanel({ meetingId, onJump }: MeetingNotesPanelProps)
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [generating, setGenerating] = useState(false);
+    // Fill in the blanks, started here
+    const [filling, setFilling] = useState(false);
     // A run going in the background (automatic notes after Stop): what it is doing
     const [running, setRunning] = useState<string | null>(null);
     // What the user typed while listening
@@ -198,6 +209,24 @@ export function MeetingNotesPanel({ meetingId, onJump }: MeetingNotesPanelProps)
         }
     };
 
+    // Fill in the blanks: what the notes missed, and their key ideas
+    // explained further (meeting_notes/fill.rs). Same AI, gates and one run
+    // per recording as Make notes.
+    const fill = async () => {
+        setFilling(true);
+        setActionError(null);
+        setNeedsAi(false);
+        try {
+            await tauri.fillInNotes(meetingId);
+            await load();
+        } catch (e) {
+            if (isNoProviderError(e)) setNeedsAi(true);
+            else setActionError(aiFailure(e, "Notes"));
+        } finally {
+            setFilling(false);
+        }
+    };
+
     const draftEmail = async () => {
         setDrafting(true);
         setActionError(null);
@@ -230,7 +259,9 @@ export function MeetingNotesPanel({ meetingId, onJump }: MeetingNotesPanelProps)
 
     const proNote = proSuffix(caps?.pro_gating, isPro);
     const showSetup = configured === false || needsAi;
-    const busy = generating || running !== null;
+    const busy = generating || filling || running !== null;
+    // Which kind of run is going: started here, or one this view found going
+    const fillRun = filling || (!generating && isFillRun(running));
     const busyDetail = progressDetail(running);
     // Notes made on the iPhone carry "What you wrote" in their text: its
     // details go under the typed lines here, and whatever it holds that
@@ -238,12 +269,31 @@ export function MeetingNotesPanel({ meetingId, onJump }: MeetingNotesPanelProps)
     const synced =
         notes?.model_used === SYNCED_NOTES_MODEL ? mergeSyncedWritten(typed, syncedNotesSections(notes.summary ?? "")) : null;
     const lines = synced ? synced.lines : writtenLines(typed, parseNoteDetails(notes?.note_details));
+    // What Fill in the blanks wrote on this Mac. Notes from the iPhone may
+    // carry the same two sections in their text; this Mac's own replace them.
+    const filled = parseFilled(notes?.filled);
+    const syncedSections = synced ? (filled ? withoutFilledSections(synced.sections) : synced.sections) : undefined;
+    const wasFilled = filled !== null || (synced !== null && hasFilledSections(synced.sections));
 
     const actions = (
         <div className="mn-actions">
             <button className="mn-btn primary" onClick={generate} disabled={busy || showSetup}>
-                {busy ? "Making notes…" : notes ? "Make again" : "Make notes"}
+                {busy && !fillRun ? "Making notes…" : notes ? "Make again" : "Make notes"}
             </button>
+            {notes && (
+                <button
+                    className="mn-btn"
+                    onClick={fill}
+                    disabled={busy || showSetup || !!notes.stale_after_edit}
+                    title={
+                        notes.stale_after_edit
+                            ? "Make the notes again first: they were made before an edit"
+                            : "Reads the whole recording again beside your notes: what they missed, and their key ideas explained further"
+                    }
+                >
+                    {busy && fillRun ? "Filling in the blanks…" : `${wasFilled ? "Fill again" : "Fill in the blanks"}${proNote}`}
+                </button>
+            )}
             {kind === "meeting" && (
                 <button className="mn-btn" onClick={draftEmail} disabled={drafting || showSetup}>
                     {drafting ? "Drafting…" : `Follow-up email${proNote}`}
@@ -276,12 +326,14 @@ export function MeetingNotesPanel({ meetingId, onJump }: MeetingNotesPanelProps)
                 <div className="mn-busy" role="status" aria-live="polite">
                     <div className="loading-spinner" aria-hidden />
                     <div>
-                        <p className="mn-busy__title">Making notes…</p>
+                        <p className="mn-busy__title">{fillRun ? "Filling in the blanks…" : "Making notes…"}</p>
                         <p className="mn-busy__detail">
                             {busyDetail ??
-                                (lines.length > 0
-                                    ? "Reading the whole recording, starting from what you wrote."
-                                    : "Reading the whole recording.")}
+                                (fillRun
+                                    ? "Reading the whole recording again, beside the notes you have."
+                                    : lines.length > 0
+                                      ? "Reading the whole recording, starting from what you wrote."
+                                      : "Reading the whole recording.")}
                         </p>
                     </div>
                 </div>
@@ -307,11 +359,12 @@ export function MeetingNotesPanel({ meetingId, onJump }: MeetingNotesPanelProps)
                         <div className="rd-stale" role="status">
                             <span>These notes were made before an edit.</span>
                             <button className="rd-btn" onClick={generate} disabled={busy || showSetup}>
-                                {busy ? "Making notes…" : "Make again"}
+                                {busy && !fillRun ? "Making notes…" : "Make again"}
                             </button>
                         </div>
                     )}
-                    <NotesBody notes={notes} items={items} onTick={tick} syncedSections={synced?.sections} />
+                    <NotesBody notes={notes} items={items} onTick={tick} syncedSections={syncedSections} />
+                    {filled && <FilledSections filled={filled} onJump={onJump} />}
                     <p className="mn-meta">
                         Made {new Date(notes.generated_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
                     </p>
@@ -322,6 +375,64 @@ export function MeetingNotesPanel({ meetingId, onJump }: MeetingNotesPanelProps)
 
             {email && <FollowUpSheet email={email} onClose={() => setEmail(null)} />}
         </div>
+    );
+}
+
+/**
+ * What Fill in the blanks wrote: things that were said and the notes didn't
+ * have (each with its time: click to hear it), then the notes' key ideas
+ * explained further. An entry that wasn't said in the recording says so.
+ */
+function FilledSections({ filled, onJump }: { filled: Filled; onJump?: (ms: number) => void }) {
+    if (filled.missed.length === 0 && filled.more.length === 0) {
+        return <p className="mn-filled__none">Nothing to add: the notes already cover the recording.</p>;
+    }
+    const time = (ms: number) => (
+        <button
+            type="button"
+            className="mn-wrote__time"
+            onClick={() => onJump?.(ms)}
+            disabled={!onJump}
+            title="Hear this moment in Rewind"
+            aria-label={`Open Rewind at ${clock(ms)}`}
+        >
+            {clock(ms)}
+        </button>
+    );
+    return (
+        <>
+            {filled.missed.length > 0 && (
+                <section className="mn-section mn-filled" aria-label={WHAT_YOU_MISSED}>
+                    <h4>{WHAT_YOU_MISSED}</h4>
+                    <ol className="mn-filled__list">
+                        {filled.missed.map((m, i) => (
+                            <li key={i} className="mn-filled__row">
+                                {m.atMs !== null ? time(m.atMs) : <span aria-hidden />}
+                                <span>{m.text}</span>
+                            </li>
+                        ))}
+                    </ol>
+                </section>
+            )}
+            {filled.more.length > 0 && (
+                <section className="mn-section mn-filled" aria-label={MORE_DETAIL}>
+                    <h4>{MORE_DETAIL}</h4>
+                    <ul className="mn-filled__more">
+                        {filled.more.map((m, i) => (
+                            <li key={i}>
+                                <strong>{m.about}</strong>
+                                <p>{m.detail}</p>
+                                {m.background ? (
+                                    <span className="mn-filled__tag">Background, not said in the recording</span>
+                                ) : (
+                                    m.atMs !== null && <span className="mn-filled__from">From the recording {time(m.atMs)}</span>
+                                )}
+                            </li>
+                        ))}
+                    </ul>
+                </section>
+            )}
+        </>
     );
 }
 

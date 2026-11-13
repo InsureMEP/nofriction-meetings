@@ -680,6 +680,9 @@ pub async fn redact_ai_outputs(
     // (docs/TOPICS_AND_CHAT.md)
     changed += crate::topics::purge_ai_for_meeting(conn, meeting_id).await?;
     changed += crate::chat::purge_for_meeting(conn, meeting_id).await?;
+    // What Fill in the blanks wrote paraphrases the recording, like a study
+    // guide: it is removed outright, not matched word by word
+    changed += crate::meeting_notes::fill::clear_for_meeting(conn, meeting_id).await?;
     let tables = table_names(conn).await?;
     let re = distinctive_phrase_regex(removed);
 
@@ -2478,6 +2481,12 @@ async fn ai_preview(conn: &mut SqliteConnection, meeting_id: &str) -> Vec<String
     if crate::lessons::count_for_meeting(conn, meeting_id).await > 0 {
         items.push(
             "The lesson made from this recording in LESSONS, with its progress and certificate: deleted; make it again after the edit"
+                .into(),
+        );
+    }
+    if crate::meeting_notes::fill::exists_for_meeting(conn, meeting_id).await {
+        items.push(
+            "What Fill in the blanks added to the notes (What you missed, More detail): deleted; fill in again after the edit"
                 .into(),
         );
     }

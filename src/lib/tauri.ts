@@ -921,6 +921,12 @@ export async function generateMeetingReport(meetingId: string): Promise<MeetingR
     return withAiConsent(() => invoke<MeetingReport>("generate_meeting_report", { meetingId }), "notes");
 }
 
+/** Fill in the blanks for a recording's notes (meeting_notes/fill.rs). The
+ *  result is read back with `get_meeting_notes` (`filled`). */
+export async function fillInNotes(meetingId: string): Promise<void> {
+    await withAiConsent(() => invoke("fill_in_notes", { meetingId }), "notes");
+}
+
 // ============================================
 // Prompt Management Commands
 // ============================================
