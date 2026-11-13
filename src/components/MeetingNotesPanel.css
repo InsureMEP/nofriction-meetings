@@ -347,3 +347,37 @@
   font-size: 13px;
   color: var(--text-secondary, #a3a3a3);
 }
+
+/* ── Things to do, each with its tick (ActionItems) ──────────────── */
+
+.mn-section ul.mn-items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mn-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* An item the ticks don't know keeps the list's bullet */
+.mn-item.is-plain {
+  display: list-item;
+  margin-left: 20px;
+  list-style: disc;
+}
+
+.mn-item__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mn-item.is-done .mn-item__text {
+  color: var(--text-secondary, #a3a3a3);
+  text-decoration: line-through;
+}

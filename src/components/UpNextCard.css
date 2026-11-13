@@ -42,6 +42,38 @@
   color: var(--text-secondary, #a3a3a3);
 }
 
+/* What is still open in this notebook */
+.upnext__open {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.upnext__open-title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #f5f5f5);
+}
+
+.upnext__open ul {
+  margin: 0;
+  padding: 0 0 0 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-primary, #f5f5f5);
+}
+
+.upnext__open-due,
+.upnext__open-more {
+  color: var(--text-secondary, #a3a3a3);
+}
+
+.upnext__open-more {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
 .upnext__error {
   margin: 8px 0 0;
   font-size: 13px;

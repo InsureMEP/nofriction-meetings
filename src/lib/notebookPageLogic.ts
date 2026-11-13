@@ -62,6 +62,8 @@ export interface ReviewQuestion extends QuizQuestion {
 }
 
 export interface NotebookReview {
+    /** The recordings with a card or a question, oldest first */
+    recordings: { id: string; title: string; started_at: string }[];
     cards: ReviewCard[];
     questions: ReviewQuestion[];
 }
@@ -127,6 +129,44 @@ export function splitItems(items: NotebookItem[]): { open: NotebookItem[]; done:
 /** The items after ticking or unticking one. */
 export function toggleItem(items: NotebookItem[], meetingId: string, key: string, done: boolean): NotebookItem[] {
     return items.map((i) => (i.meeting_id === meetingId && i.key === key ? { ...i, done } : i));
+}
+
+/** An item of one recording's notes with its tick (the Notes view). */
+export interface RecordingItem {
+    key: string;
+    task: string;
+    done: boolean;
+}
+
+const oneLine = (s: string) => s.split(/\s+/).filter(Boolean).join(" ");
+
+/** The tick for an action item as the Notes view shows it, by its text. */
+export function itemFor(items: RecordingItem[], task: string): RecordingItem | null {
+    const t = oneLine(task);
+    return items.find((i) => i.task === t) ?? null;
+}
+
+/** The open items to show under a suggestion: the first few, and how many more. */
+export function openItemsPreview(items: NotebookItem[], max = 3): { shown: NotebookItem[]; more: number } {
+    const open = items.filter((i) => !i.done);
+    return { shown: open.slice(0, max), more: Math.max(0, open.length - max) };
+}
+
+/**
+ * The review from one recording on ("since the midterm"): that recording
+ * and every later one. No id, the first one or an unknown one is the whole
+ * review.
+ */
+export function reviewFrom(review: NotebookReview, fromId: string | null): NotebookReview {
+    const order = review.recordings.map((r) => r.id);
+    const start = fromId ? order.indexOf(fromId) : -1;
+    if (start <= 0) return review;
+    const keep = new Set(order.slice(start));
+    return {
+        recordings: review.recordings.slice(start),
+        cards: review.cards.filter((c) => keep.has(c.meeting_id)),
+        questions: review.questions.filter((q) => keep.has(q.meeting_id)),
+    };
 }
 
 /** What "Review everything" holds, or null when no guide has been made. */

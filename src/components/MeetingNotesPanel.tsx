@@ -33,6 +33,9 @@ import { MAX_TYPED_NOTE_CHARS, cleanTypedNote, clock } from "../lib/studyLogic";
 import { useMarkers } from "./study/MarkerList";
 import { NoteIcon, TrashIcon } from "./icons";
 import { useUndoDelete } from "./UndoToast";
+import { ItemCheck } from "./ItemCheck";
+import { notebookApi } from "../lib/notebookPage";
+import { itemFor, type RecordingItem } from "../lib/notebookPageLogic";
 import { useRecordingKind } from "../hooks/useRecordingKind";
 import ErrorState from "./ErrorState";
 import { TopicsEditor } from "./TopicChips";
@@ -98,6 +101,8 @@ export function MeetingNotesPanel({ meetingId, onJump }: MeetingNotesPanelProps)
     const [running, setRunning] = useState<string | null>(null);
     // What the user typed while listening
     const { notes: typed, reload: reloadTyped } = useMarkers(meetingId);
+    // The ticks on what the notes say is to be done (the notebook's page shows the same ones)
+    const [items, setItems] = useState<RecordingItem[]>([]);
     const [actionError, setActionError] = useState<string | null>(null);
     const [needsAi, setNeedsAi] = useState(false);
     const [email, setEmail] = useState<FollowUpEmail | null>(null);
@@ -116,12 +121,24 @@ export function MeetingNotesPanel({ meetingId, onJump }: MeetingNotesPanelProps)
         setLoadError(null);
         try {
             setNotes(await invoke<SavedNotes | null>("get_meeting_notes", { meetingId }));
+            // Without ticks the list still shows; it just has no boxes
+            setItems(await notebookApi.recordingItems(meetingId).catch(() => []));
         } catch (e) {
             setLoadError(String(e));
         } finally {
             setLoading(false);
         }
     }, [meetingId]);
+
+    const tick = (item: RecordingItem, done: boolean) => {
+        // The tick lands at once; if it can't be saved it is put back
+        const set = (v: boolean) => setItems((all) => all.map((i) => (i.key === item.key ? { ...i, done: v } : i)));
+        set(done);
+        notebookApi.setDone(meetingId, item.key, done).catch((e) => {
+            set(!done);
+            setActionError(`Couldn't save that tick: ${String(e)}`);
+        });
+    };
 
     useEffect(() => {
         setNotes(null);
@@ -288,7 +305,7 @@ export function MeetingNotesPanel({ meetingId, onJump }: MeetingNotesPanelProps)
                             </button>
                         </div>
                     )}
-                    <NotesBody notes={notes} />
+                    <NotesBody notes={notes} items={items} onTick={tick} />
                     <p className="mn-meta">
                         Made {new Date(notes.generated_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
                     </p>
@@ -450,7 +467,34 @@ function WrittenRow({
 
 /** The layout follows the prompt that wrote the notes (`model_used`), so
  *  notes written before a type change keep their headings until regenerated. */
-function NotesBody({ notes }: { notes: SavedNotes }) {
+type Ticks = { items: RecordingItem[]; onTick: (item: RecordingItem, done: boolean) => void };
+
+/**
+ * What the notes say is to be done. Each line has the same tick as on its
+ * notebook's page; an item the ticks don't know (older notes) is a plain
+ * line.
+ */
+function ActionItems({ actions, detail, items, onTick }: { actions: ActionItem[]; detail: (a: ActionItem) => string } & Ticks) {
+    return (
+        <ul className="mn-items">
+            {actions.map((a, i) => {
+                const item = itemFor(items, a.task);
+                const more = detail(a);
+                return (
+                    <li key={i} className={`mn-item${item?.done ? " is-done" : ""}${item ? "" : " is-plain"}`}>
+                        {item && <ItemCheck done={item.done} label={a.task} onToggle={(next) => onTick(item, next)} />}
+                        <span className="mn-item__text">
+                            {a.task}
+                            {more && <span className="mn-muted"> — {more}</span>}
+                        </span>
+                    </li>
+                );
+            })}
+        </ul>
+    );
+}
+
+function NotesBody({ notes, items, onTick }: { notes: SavedNotes } & Ticks) {
     if (notes.model_used === SYNCED_NOTES_MODEL) {
         return <SyncedNotesBody markdown={notes.summary ?? ""} />;
     }
@@ -458,11 +502,12 @@ function NotesBody({ notes }: { notes: SavedNotes }) {
     const decisions = parseList<Decision>(notes.decisions);
     const actions = parseList<ActionItem>(notes.action_items);
     const layout = notesLayout(notes.model_used);
+    const ticks = { items, onTick };
     if (layout === "lecture") {
-        return <LectureNotesBody summary={notes.summary} concepts={topics} definitions={decisions} announcements={actions} />;
+        return <LectureNotesBody summary={notes.summary} concepts={topics} definitions={decisions} announcements={actions} ticks={ticks} />;
     }
     if (layout === "personal") {
-        return <PersonalNotesBody summary={notes.summary} points={topics} todos={actions} />;
+        return <PersonalNotesBody summary={notes.summary} points={topics} todos={actions} ticks={ticks} />;
     }
     return (
         <>
@@ -500,18 +545,11 @@ function NotesBody({ notes }: { notes: SavedNotes }) {
                 {actions.length === 0 ? (
                     <p className="mn-muted">None recorded.</p>
                 ) : (
-                    <ul>
-                        {actions.map((a, i) => (
-                            <li key={i}>
-                                {a.task}
-                                <span className="mn-muted">
-                                    {" "}
-                                    — {a.assignee || "owner not stated"}
-                                    {a.due_date ? ` · ${a.due_date}` : ""}
-                                </span>
-                            </li>
-                        ))}
-                    </ul>
+                    <ActionItems
+                        actions={actions}
+                        detail={(a) => `${a.assignee || "owner not stated"}${a.due_date ? ` · ${a.due_date}` : ""}`}
+                        {...ticks}
+                    />
                 )}
             </section>
         </>
@@ -550,11 +588,13 @@ function LectureNotesBody({
     concepts,
     definitions,
     announcements,
+    ticks,
 }: {
     summary: string | null;
     concepts: string[];
     definitions: Decision[];
     announcements: ActionItem[];
+    ticks: Ticks;
 }) {
     return (
         <>
@@ -594,14 +634,7 @@ function LectureNotesBody({
                 {announcements.length === 0 ? (
                     <p className="mn-muted">None mentioned.</p>
                 ) : (
-                    <ul>
-                        {announcements.map((a, i) => (
-                            <li key={i}>
-                                {a.task}
-                                {a.due_date && <span className="mn-muted"> — {a.due_date}</span>}
-                            </li>
-                        ))}
-                    </ul>
+                    <ActionItems actions={announcements} detail={(a) => a.due_date ?? ""} {...ticks} />
                 )}
             </section>
         </>
@@ -609,7 +642,7 @@ function LectureNotesBody({
 }
 
 /** Same stored shape, framed for a personal recording: key points, to-dos and reminders. */
-function PersonalNotesBody({ summary, points, todos }: { summary: string | null; points: string[]; todos: ActionItem[] }) {
+function PersonalNotesBody({ summary, points, todos, ticks }: { summary: string | null; points: string[]; todos: ActionItem[]; ticks: Ticks }) {
     return (
         <>
             <section className="mn-section">
@@ -633,14 +666,7 @@ function PersonalNotesBody({ summary, points, todos }: { summary: string | null;
                 {todos.length === 0 ? (
                     <p className="mn-muted">None mentioned.</p>
                 ) : (
-                    <ul>
-                        {todos.map((a, i) => (
-                            <li key={i}>
-                                {a.task}
-                                {a.due_date && <span className="mn-muted"> — {a.due_date}</span>}
-                            </li>
-                        ))}
-                    </ul>
+                    <ActionItems actions={todos} detail={(a) => a.due_date ?? ""} {...ticks} />
                 )}
             </section>
         </>

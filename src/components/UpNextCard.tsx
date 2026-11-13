@@ -9,6 +9,8 @@ import { listen } from "@tauri-apps/api/event";
 import { CalendarIcon, ClockIcon, MicIcon } from "./icons";
 import { UP_NEXT_EVENT, upNextApi } from "../lib/upNext";
 import { planFor, planSummary, recordLabel, sourceLabel, type UpNext } from "../lib/upNextLogic";
+import { notebookApi } from "../lib/notebookPage";
+import { openItemsPreview, type NotebookItem } from "../lib/notebookPageLogic";
 import type { StartPlan } from "../lib/recordPlan";
 import "./UpNextCard.css";
 
@@ -52,6 +54,22 @@ interface UpNextCardProps {
 export function UpNextCard({ upNext, onStart, onDismiss }: UpNextCardProps) {
     const [starting, setStarting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // What the notebook's notes still have open: what you said you'd do,
+    // before you walk in. Read from the notes that exist; no AI.
+    const [open, setOpen] = useState<{ shown: NotebookItem[]; more: number } | null>(null);
+    const notebook = upNext.notebook;
+    useEffect(() => {
+        setOpen(null);
+        if (!notebook) return;
+        let live = true;
+        notebookApi
+            .overview(notebook)
+            .then((page) => live && setOpen(openItemsPreview(page.items)))
+            .catch(() => {});
+        return () => {
+            live = false;
+        };
+    }, [notebook]);
     const Icon = upNext.source === "calendar" ? CalendarIcon : upNext.source === "call" ? MicIcon : ClockIcon;
 
     const start = async () => {
@@ -75,6 +93,20 @@ export function UpNextCard({ upNext, onStart, onDismiss }: UpNextCardProps) {
             <h2 className="upnext__title">{upNext.source === "call" ? upNext.detail : upNext.title}</h2>
             {upNext.source !== "call" && <p className="upnext__detail">{upNext.detail}</p>}
             <p className="upnext__plan">{planSummary(upNext)}</p>
+            {open && open.shown.length > 0 && (
+                <div className="upnext__open">
+                    <p className="upnext__open-title">Still open from last time</p>
+                    <ul>
+                        {open.shown.map((i) => (
+                            <li key={`${i.meeting_id}:${i.key}`}>
+                                {i.task}
+                                {i.due && <span className="upnext__open-due"> · {i.due}</span>}
+                            </li>
+                        ))}
+                    </ul>
+                    {open.more > 0 && <p className="upnext__open-more">and {open.more} more</p>}
+                </div>
+            )}
             {error && (
                 <p className="upnext__error" role="alert">
                     Couldn't start: {error}

@@ -959,6 +959,7 @@ pub fn run() {
             notebook_page::commands::get_notebook_overview,
             notebook_page::commands::get_notebook_review,
             notebook_page::commands::set_notebook_item_done,
+            notebook_page::commands::get_recording_items,
             up_next::live::get_up_next,
             up_next::live::dismiss_up_next,
             recording_kind::set_meeting_recording_kind,

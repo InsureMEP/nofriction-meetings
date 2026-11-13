@@ -5,10 +5,13 @@ import assert from "node:assert/strict";
 import {
     asQuizQuestion,
     headline,
+    itemFor,
     itemsEmpty,
     itemsTitle,
     markedEmpty,
     markedTitle,
+    openItemsPreview,
+    reviewFrom,
     reviewSummary,
     shortDate,
     splitItems,
@@ -83,4 +86,42 @@ test("dates and stored quiz questions", () => {
     const q = asQuizQuestion({ question: "Q", choices: ["a", "b"], answer: 1, explanation: null, at_ms: null, meeting_id: "m1", meeting_title: "L" });
     assert.equal(q.explanation, "");
     assert.equal(q.meeting_id, "m1");
+});
+
+test("a note's action item finds its tick by its text, spacing aside", () => {
+    const items = [{ key: "k1", task: "Read chapter 7", done: true }, { key: "k2", task: "Quiz Wednesday", done: false }];
+    assert.equal(itemFor(items, "  Read   chapter 7 ")?.key, "k1");
+    assert.equal(itemFor(items, "Quiz Wednesday")?.done, false);
+    assert.equal(itemFor(items, "Something the notes no longer say"), null);
+    assert.equal(itemFor([], "Read chapter 7"), null);
+});
+
+test("the suggestion shows the first open items and counts the rest", () => {
+    const items = [item("a"), item("b", true), item("c"), item("d"), item("e"), item("f")];
+    const p = openItemsPreview(items);
+    assert.deepEqual(p.shown.map((i) => i.key), ["a", "c", "d"]);
+    assert.equal(p.more, 2);
+    assert.deepEqual(openItemsPreview([item("x", true)]), { shown: [], more: 0 });
+    assert.equal(openItemsPreview(items, 10).more, 0);
+});
+
+test("a review can start from any recording and keeps everything after it", () => {
+    const from = (id: string) => ({ meeting_id: id, meeting_title: id.toUpperCase() });
+    const review = {
+        recordings: [
+            { id: "l1", title: "L1", started_at: "2026-10-30T09:00:00Z" },
+            { id: "l2", title: "L2", started_at: "2026-11-06T09:00:00Z" },
+            { id: "l3", title: "L3", started_at: "2026-11-11T09:00:00Z" },
+        ],
+        cards: [{ front: "a", back: "1", ...from("l1") }, { front: "b", back: "2", ...from("l2") }, { front: "c", back: "3", ...from("l3") }],
+        questions: [{ question: "q", choices: ["x", "y"], answer: 0, explanation: "", at_ms: null, ...from("l3") }],
+    };
+    const since = reviewFrom(review, "l2");
+    assert.deepEqual(since.cards.map((c) => c.front), ["b", "c"]);
+    assert.equal(since.questions.length, 1);
+    assert.deepEqual(since.recordings.map((r) => r.id), ["l2", "l3"]);
+    // The first recording, none, or one that isn't there: everything
+    assert.equal(reviewFrom(review, "l1"), review);
+    assert.equal(reviewFrom(review, null), review);
+    assert.equal(reviewFrom(review, "gone"), review);
 });

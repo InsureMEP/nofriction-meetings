@@ -15,6 +15,7 @@ import {
     itemsTitle,
     markedEmpty,
     markedTitle,
+    reviewFrom,
     reviewSummary,
     shortDate,
     splitItems,
@@ -35,7 +36,8 @@ import { FlashcardDeck } from "./study/FlashcardDeck";
 import { QuizRunner } from "./study/QuizRunner";
 import { MarkerGlyph } from "./study/MarkerBits";
 import ErrorState from "./ErrorState";
-import { CheckIcon, NotebookIcon } from "./icons";
+import { ItemCheck } from "./ItemCheck";
+import { NotebookIcon } from "./icons";
 import "./MeetingNotesPanel.css";
 import "./NotebookPage.css";
 
@@ -266,17 +268,7 @@ function ItemRow({
 }) {
     return (
         <li className={`nb-item${item.done ? " is-done" : ""}`}>
-            <button
-                type="button"
-                role="checkbox"
-                aria-checked={item.done}
-                className="nb-item__check"
-                onClick={() => onTick(item, !item.done)}
-                aria-label={item.task}
-                title={item.done ? "Mark as not done" : "Mark as done"}
-            >
-                {item.done && <CheckIcon size={12} strokeWidth={3} />}
-            </button>
+            <ItemCheck done={item.done} label={item.task} onToggle={(next) => onTick(item, next)} />
             <div className="nb-item__body">
                 <p className="nb-item__task">
                     {item.task}
@@ -330,15 +322,18 @@ function ReviewSheet({
     onClose: () => void;
     onOpenAt: (meetingId: string, ms: number) => void;
 }) {
-    const [data, setData] = useState<NotebookReview | null>(null);
+    const [all, setAll] = useState<NotebookReview | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [tab, setTab] = useState(mode);
+    // "Since the midterm": start from one recording and keep everything after it
+    const [fromId, setFromId] = useState<string | null>(null);
+    const data = all ? reviewFrom(all, fromId) : null;
 
     useEffect(() => {
         let live = true;
         notebookApi
             .review(notebook)
-            .then((r) => live && setData(r))
+            .then((r) => live && setAll(r))
             .catch((e) => live && setError(String(e)));
         return () => {
             live = false;
@@ -367,6 +362,19 @@ function ReviewSheet({
                         Close
                     </button>
                 </header>
+                {all && all.recordings.length > 1 && (
+                    <label className="nb-sheet__from">
+                        <span>Start from</span>
+                        <select value={fromId ?? all.recordings[0].id} onChange={(e) => setFromId(e.target.value)}>
+                            {all.recordings.map((r, i) => (
+                                <option key={r.id} value={r.id}>
+                                    {r.title} · {shortDate(r.started_at)}
+                                    {i === 0 ? " (everything)" : ""}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                )}
                 {both && (
                     <div className="deck-tabs nb-sheet__tabs" role="tablist" aria-label="Review">
                         <button role="tab" aria-selected={tab === "cards"} className={`deck-tab ${tab === "cards" ? "active" : ""}`} onClick={() => setTab("cards")}>

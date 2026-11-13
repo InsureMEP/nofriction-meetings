@@ -549,6 +549,9 @@ function notebookReview(notebook: string) {
     const from = (r: MeetingRow) => ({ meeting_id: r.id, meeting_title: r.title });
     const study = (id: string) => (demoById.get(id)?.study ?? {}) as { flashcards?: { cards: object[] }; quiz?: { questions: object[] } };
     return {
+        recordings: recs
+            .filter((r) => study(r.id).flashcards || study(r.id).quiz)
+            .map((r) => ({ id: r.id, title: r.title, started_at: r.started_at })),
         cards: recs.flatMap((r) => (study(r.id).flashcards?.cards ?? []).map((c) => ({ ...c, ...from(r) }))),
         questions: recs.flatMap((r) => (study(r.id).quiz?.questions ?? []).map((q) => ({ ...q, ...from(r) }))),
     };
@@ -713,6 +716,12 @@ function handle(cmd: string, args: Args): unknown {
             return notebookOverview(a.notebook);
         case "get_notebook_review":
             return notebookReview(a.notebook);
+        case "get_recording_items":
+            return (notesOf(a.meetingId)?.action_items ?? []).map((x) => ({
+                key: itemKey(x.task),
+                task: x.task,
+                done: doneItems.has(`${a.meetingId}:${itemKey(x.task)}`),
+            }));
         case "set_notebook_item_done":
             if (a.done) doneItems.add(`${a.meetingId}:${a.key}`);
             else doneItems.delete(`${a.meetingId}:${a.key}`);

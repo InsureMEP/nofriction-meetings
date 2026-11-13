@@ -221,8 +221,19 @@ pub struct ReviewQuestion {
     pub meeting_title: String,
 }
 
+/// A recording the review draws on.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ReviewRecording {
+    pub id: String,
+    pub title: String,
+    pub started_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Default)]
 pub struct NotebookReview {
+    /// The recordings with a card or a question, oldest first (the review
+    /// can start from any of them: "since the midterm")
+    pub recordings: Vec<ReviewRecording>,
     pub cards: Vec<ReviewCard>,
     pub questions: Vec<ReviewQuestion>,
 }
@@ -464,6 +475,7 @@ pub async fn review(pool: &Pool<Sqlite>, notebook: &str) -> Result<NotebookRevie
     let mut out = NotebookReview::default();
     let mut fronts = HashSet::new();
     for rec in &recs {
+        let before = (out.cards.len(), out.questions.len());
         for c in cards.get(&rec.id).and_then(|v| v["cards"].as_array()).map(Vec::as_slice).unwrap_or_default() {
             let (Some(front), Some(back)) = (text(&c["front"]), text(&c["back"])) else { continue };
             // The same card from two lectures is asked once
@@ -485,8 +497,57 @@ pub async fn review(pool: &Pool<Sqlite>, notebook: &str) -> Result<NotebookRevie
                 meeting_title: rec.title.clone(),
             });
         }
+        if (out.cards.len(), out.questions.len()) != before {
+            out.recordings.push(ReviewRecording {
+                id: rec.id.clone(),
+                title: rec.title.clone(),
+                started_at: rec.started_at.clone(),
+            });
+        }
     }
     Ok(out)
+}
+
+/// One recording's items with their ticks, in the order its newest notes
+/// list them: the Notes view shows the same checkbox as the notebook page.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct RecordingItem {
+    pub key: String,
+    pub task: String,
+    pub done: bool,
+}
+
+pub async fn recording_items(pool: &Pool<Sqlite>, meeting_id: &str) -> Result<Vec<RecordingItem>, String> {
+    let row = sqlx::query(
+        "SELECT summary, action_items, model_used FROM meeting_notes WHERE meeting_id = ? \
+         ORDER BY generated_at DESC, rowid DESC LIMIT 1",
+    )
+    .bind(meeting_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(err("Couldn't read the notes"))?;
+    let Some(r) = row else { return Ok(Vec::new()) };
+    let model: Option<String> = r.get("model_used");
+    let items = if model.as_deref() == Some(crate::sync::store::SYNCED_NOTES_MODEL) {
+        items_from_markdown(&r.get::<Option<String>, _>("summary").unwrap_or_default())
+    } else {
+        items_from_json(r.get::<Option<String>, _>("action_items").as_deref())
+    };
+    let done: HashSet<String> = sqlx::query_scalar("SELECT item_key FROM notebook_item_done WHERE meeting_id = ?")
+        .bind(meeting_id)
+        .fetch_all(pool)
+        .await
+        .map_err(err("Couldn't read the notes"))?
+        .into_iter()
+        .collect();
+    let mut seen = HashSet::new();
+    Ok(items
+        .into_iter()
+        .filter_map(|it| {
+            let key = item_key(&it.task);
+            seen.insert(key.clone()).then(|| RecordingItem { done: done.contains(&key), key, task: it.task })
+        })
+        .collect())
 }
 
 /// Tick or untick an item. Only the key is kept.
@@ -531,6 +592,12 @@ pub mod commands {
     #[tauri::command(rename_all = "camelCase")]
     pub async fn get_notebook_review(state: State<'_, AppState>, notebook: String) -> Result<NotebookReview, String> {
         review(state.database.pool(), &notebook).await
+    }
+
+    /// The items in one recording's notes, with their ticks (Notes view).
+    #[tauri::command(rename_all = "camelCase")]
+    pub async fn get_recording_items(state: State<'_, AppState>, meeting_id: String) -> Result<Vec<RecordingItem>, String> {
+        recording_items(state.database.pool(), &meeting_id).await
     }
 
     #[tauri::command(rename_all = "camelCase")]
@@ -691,6 +758,7 @@ mod tests {
         let r = review(pool, "BIO 101").await.unwrap();
         assert_eq!(r.cards.iter().map(|c| c.front.as_str()).collect::<Vec<_>>(), vec!["What is a cell?", "ATP?", "Na/K pump?"]);
         assert_eq!(r.cards[0].meeting_title, "Cell biology");
+        assert_eq!(r.recordings.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), vec!["old", "new"]);
         assert_eq!(r.questions.len(), 1);
         assert_eq!((r.questions[0].answer, r.questions[0].at_ms, r.questions[0].meeting_id.as_str()), (0, Some(60_000), "new"));
 
@@ -727,6 +795,16 @@ mod tests {
         assert_eq!(page.items.iter().map(|i| (i.task.as_str(), i.done)).collect::<Vec<_>>(), vec![("read chapter 7.", true), ("Bring a calculator", false)]);
         let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM notebook_item_done").fetch_one(pool).await.unwrap();
         assert_eq!(left, 1);
+
+        // The recording's own Notes view reads the same ticks, in the notes' order
+        assert_eq!(
+            recording_items(pool, "new").await.unwrap(),
+            vec![
+                RecordingItem { key: key.clone(), task: "read chapter 7.".into(), done: true },
+                RecordingItem { key: item_key("Bring a calculator"), task: "Bring a calculator".into(), done: false },
+            ]
+        );
+        assert!(recording_items(pool, "old").await.unwrap().is_empty(), "no notes, no items");
 
         // Untick; a bad key is refused
         set_done(pool, "new", &key, false).await.unwrap();
