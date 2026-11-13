@@ -260,17 +260,17 @@ Copyright remains dependent on the confirmed legal seller name.
 
 ### Promotional text (limit 170)
 
-**164 / 170 characters**
+**157 / 170 characters**
 
 ```text
-Record and transcribe meetings, classes and life on your device. New: type notes while it listens, a page for every notebook, and one tap to record what's starting.
+Record and transcribe meetings, classes and life on your device. New: type notes while it listens, Fill in the blanks, and one tap to record what's starting.
 ```
 
 ### Description (limit 4000)
 
 App Store Connect rejects some symbols in descriptions with "This field contains one or more invalid characters" (seen 2026-10-07 for ★; key glyphs like ⌘ are avoided too). Write marks and shortcuts in words here; bullets (•) are fine.
 
-**3984 / 4000 characters**
+**3997 / 4000 characters**
 
 ```text
 noFriction records and transcribes on your iPhone or iPad so you can stay in the moment: a meeting, a class, or anything else worth keeping. Then create notes, follow-up drafts and review guides with the AI you choose.
@@ -291,15 +291,16 @@ RECORD ANYTHING, FIND WHAT MATTERS
 • Up next: one tap records the event or class that's starting
 • Group recordings into Notebooks, such as "Acme project", "BIO 101" or "Health". Each has a page with what's due and to-dos to tick
 • Play back audio and search everything you've recorded
-• Add photos of slides, whiteboards and handouts
+• Add photos of slides and whiteboards
 
 FOR MEETINGS
-• Link recordings to calendar events and their attendees
+• Link recordings to calendar events and attendees
 • Meeting notes (summary, key topics, decisions, action items) and follow-up email drafts
 
 FOR CLASSES
-• Lecture notes: key concepts, definitions and examples, and announcements and deadlines
-• The review guide becomes a study guide, with questions to ask your instructor. Moments marked On the test or Important get extra weight
+• Lecture notes: key concepts, definitions, examples and deadlines
+• Fill in the blanks adds what your notes missed and explains the key ideas
+• The review guide becomes a study guide, with questions to ask your instructor. Marked moments get extra weight
 
 FOR EVERYDAY LIFE
 • Personal covers everything else: conversations, appointments, talks, ideas
@@ -366,13 +367,14 @@ Welcome to noFriction for iPhone and iPad.
 
 ### What's New in iOS 2.0.0 (limit 4000)
 
-**998 / 4000 characters**
+**1207 / 4000 characters**
 
 ```text
 Type while it listens, and let noFriction tell you what's next.
 • Type a note: one field under the live transcript. Press Return and the line is kept with its moment. Free
 • Notes open with What you wrote. With Pro, your AI adds what was being said under each line and writes the rest of the notes around what you typed and marked
 • Notes now read the whole recording, however long it is
+• Fill in the blanks (Pro): one button in Notes adds what you missed, with when it was said, and explains the key ideas further. For a class it can add what a textbook says, always marked as not said in class
 • Up next: when a calendar event is starting, or it's time for something you usually record, the Record tab offers it in one tap with the type, length and notebook filled in
 • Reminders for what you usually record, planned on your iPhone so they arrive with the app closed. Turn them off in Settings
 • Start Recording in Siri, Shortcuts and the Action button
@@ -406,21 +408,21 @@ below is for TestFlight and the next version.
 
 ### Promotional text (limit 170)
 
-**140 / 170 characters**
+**148 / 170 characters**
 
 ```text
-New: type a note from any app while it records, a page for every notebook, and one click to record what's starting. Transcribed on your Mac.
+New: type a note from any app while it records, Fill in the blanks for your notes, and one click to record what's starting. Transcribed on your Mac.
 ```
 
 ### Description (limit 4000)
 
-**3991 / 4000 characters**
+**3993 / 4000 characters**
 
 ```text
 noFriction keeps your Mac's recordings, transcripts, screenshots and notes in one place: meetings, classes and anything else worth keeping. Go back to any moment in Rewind, turn the transcript into notes with the AI you choose, and turn a class into a lesson.
 
 WORKS OFFLINE
-Download a speech model once; after that, transcription runs on your Mac without an internet connection. Pro can use Apple on-device AI (Apple Intelligence Macs, macOS 26 or later) or a local model for notes, guides, lessons and Chat. Or connect your own AI in one step: sign in, paste a key, or let noFriction find a model running on your Mac.
+Download a speech model once; after that, transcription runs on your Mac offline. Pro can use Apple on-device AI (Apple Intelligence Macs, macOS 26 or later) or a local model for notes, guides, lessons and Chat. Or connect your own AI in one step: sign in, paste a key, or let noFriction find a model running on your Mac.
 
 noFriction hosts no AI models and includes no cloud AI usage. An endpoint you add uses your own account and may charge you. Recording content goes straight to the endpoint you chose.
 
@@ -442,14 +444,15 @@ FOR CLASSES
 • Lecture notes: concepts, definitions, examples and deadlines
 • Mark On the test, then show only those marks before an exam
 • A study guide with questions to ask your instructor
-• Make lesson turns a class into a short course with worked examples, checkpoint questions and a final exam
+• Fill in the blanks adds what your notes missed and explains the key ideas
+• Make lesson turns a class into a short course with worked examples and a final exam
 
 FOR EVERYDAY LIFE
 • Personal covers conversations, appointments, talks and ideas
 • Notes with a summary, key points and to-dos
 
 LESSONS
-Take lessons offline: the built-in Stoichiometry course, lessons you import and lessons you made. Track mastery, review what's due, pass the final exam and print a certificate.
+Take lessons offline: the built-in Stoichiometry course and lessons you import or make. Track mastery, pass the final exam and print a certificate.
 
 REVIEW AND ASK
 Pro makes a review guide from any recording: summary, key terms, flashcards, a practice quiz and questions to ask. Export flashcards as CSV for popular flashcard apps. Ask your transcripts questions in Chat. Check generated text before relying on it.
@@ -491,7 +494,7 @@ meeting,notes,transcription,recorder,slides,lecture,class,minutes,action items,f
 
 ### What's New in macOS 4.0.0 (limit 4000)
 
-**1088 / 4000 characters**
+**1297 / 4000 characters**
 
 ```text
 Type while it listens, from any app, and let noFriction tell you what's next.
@@ -499,6 +502,7 @@ Type while it listens, from any app, and let noFriction tell you what's next.
 • From any app: press Control-Option-Command-N and a note field opens over your slides, call or browser. Return keeps the line, and the app you were in stays in front
 • Notes open with What you wrote. With Pro, your AI adds what was being said under each line and writes the rest of the notes around what you typed and marked
 • Notes now read the whole recording, however long it is
+• Fill in the blanks (Pro): one button in Notes adds what you missed, with when it was said, and explains the key ideas further. For a class it can add what a textbook says, always marked as not said in class
 • Up next: when a calendar event is starting, it's time for something you usually record, or a call app starts using the microphone, the Record screen offers it in one click. A notification can remind you
 • Record by itself: an option, off until you turn it on, that starts the recording for you
 • A page for every notebook: what's due, action items and to-dos you can tick, the moments you marked, and Review everything as one deck and quiz
@@ -623,14 +627,14 @@ review credential through App Review; never place a secret in the app or repo.
 
 ### iOS
 
-**3980 / 4000 characters**
+**3997 / 4000 characters**
 
 ```text
 No noFriction account or app login is required. The app provides no hosted AI model or cloud-provider account.
 
 RECORD, TRANSCRIBE AND TYPE A NOTE (free)
 1. Open Record and tap Record. After the one-time recording notice, keep Meeting in What is it?, pick a length in How long? (No limit is fine), optionally a Notebook (type BIO 101), and tap Record.
-2. Allow Microphone and Speech Recognition (Calendar enables calendar matching). On a physical device, speak and check the live transcript.
+2. Allow Microphone and Speech Recognition. On a physical device, speak and check the live transcript.
 3. Type a few words in Type a note under the transcript and press Return: the line is kept with its moment. Tap Mark this moment, then ? Question or the third mark.
 4. Stop. The recording opens on Notes, which starts with What you wrote. A timed recording stops by itself after a warning with +15 min.
 
@@ -638,7 +642,8 @@ NEW IN 2.0.0
 • Up next: a card on the Record tab offers a calendar event that is starting, or a notebook recorded at this time on this weekday at least twice. Its button starts that recording. Nothing is sent anywhere.
 • Notifications: once such a habit exists, a card on the Record tab explains reminders; the iOS prompt appears only after the user taps Continue. They are local notifications scheduled on the device; no push server. Settings > Remind me when something starts turns them off.
 • The app never starts recording by itself. The Start Recording App Shortcut (Siri, Shortcuts, Action button) opens the app, then starts a recording.
-• A notebook's page: in Recordings, pick a Notebook chip and tap Open: items from the notes with ticks, marked moments, Review everything. It calls no AI.
+• A notebook's page (Recordings > a Notebook chip > Open): items with ticks, marked moments, Review everything. No AI.
+• Fill in the blanks (Pro, only when pressed): adds What you missed and More detail to the notes; same AI, consent and Pro check as Make notes. For a Class, textbook background is marked as not said.
 • Automatic notes after Stop run only with Pro, an AI already set up and consent already given (Settings > Make notes automatically).
 
 PRO AND RESTORE
@@ -646,12 +651,12 @@ PRO AND RESTORE
 6. Test with the App Store sandbox. Product IDs: com.nofriction.meetings.pro.monthly and com.nofriction.meetings.pro.yearly. All AI features, including local AI, require Pro; recording, microphone transcription and typed notes don't.
 
 OFFLINE AI PATH
-Use an Apple Intelligence-compatible device running iOS 26 or later with Apple Intelligence enabled and its model downloaded. In the AI setup sheet or Settings > Connect, choose Apple on-device, then return to Make notes. This runs on the device without a provider account or API key.
+Use an Apple Intelligence-compatible device running iOS 26 or later with Apple Intelligence enabled and its model downloaded. In the AI setup sheet or Settings > Connect, choose Apple on-device, then return to Make notes. No provider account or API key.
 
 Alternatively, enter your own OpenAI-compatible model server and model in Settings. Provider presets only fill in the endpoint and model (OpenRouter's Sign in returns the user's own key); the user supplies their own key, nothing is sent until they consent, and no provider is active by default. No provider credential is supplied.
 
 REVIEW (Pro)
-7. In the recording's Review section, make the guide: Summary, Key terms, Flashcards, Practice quiz and Questions to ask (Study guide for a Class). Its share button exports flashcards as CSV and the guide as Markdown.
+7. The recording's Review section makes the guide (Study guide for a Class); its share button exports flashcards as CSV and the guide as Markdown.
 
 SCREEN CAPTURE (physical device only)
 8. On the Record sheet, turn on Capture screen and tap Record. Apple's broadcast sheet opens with noFriction selected; tap Start Broadcast and open another app. Stop ends both; the screens appear in the recording. Free. With Pro, Transcribe what's playing also transcribes the sound playing, on the device.
@@ -660,7 +665,7 @@ APPLE WATCH
 The watch app records and sends the audio to the iPhone, which transcribes it on the device. Needs a physical iPhone and Apple Watch.
 
 EDITING
-Select transcript text in a recording. Delete offers a brief undo. Strike from the record is permanent and leaves a marker.
+Select transcript text in a recording. Delete has an undo. Strike from the record is permanent and leaves a marker.
 
 SYNC WITH YOUR MAC (Pro; a Mac with noFriction on the same Wi-Fi)
 Mac: Settings > Sync > Pair a device. iPhone: Settings > Sync with your Mac > Pair with your Mac; scan the code, allow Local Network. No server.
@@ -670,7 +675,7 @@ Mac: Settings > Sync > Pair a device. iPhone: Settings > Sync with your Mac > Pa
 
 Mac 3.9.0 (47). The 3.8.0 notes are the same without Make lesson, Export and the sign-in listener.
 
-**3995 / 4000 characters**
+**3993 / 4000 characters**
 
 ```text
 ENTITLEMENT com.apple.security.network.server
@@ -679,7 +684,7 @@ noFriction listens in two cases only. (1) Sync with your iPhone (Pro): when the 
 No noFriction account or login is required. The app provides no hosted AI model or cloud-provider account.
 
 SETUP AND RECORDING
-1. Setup is one screen: allow Microphone, Screen & System Audio Recording and Calendar. The speech model downloads in the background; later transcription works offline. Click Continue.
+1. Setup is one screen: allow Microphone, Screen & System Audio Recording and Calendar. The speech model downloads in the background; later transcription works offline.
 2. On Record, click Record. Keep Meeting in What is it?, pick a length (No limit is fine), optionally a Notebook (BIO 101), and click Start recording.
 3. Type a few words in Type a note under the transcript and press Return. Click Mark, or press Control-Option-Command-M with another app in front.
 4. With another app in front, press Control-Option-Command-N: one text field opens over it. Type a line and press Return; it is kept as a note and the field closes. The two keys are registered hot keys (no Accessibility access, no key monitoring). The field never starts a recording.
@@ -688,21 +693,21 @@ SETUP AND RECORDING
 NEW IN 4.0.0
 • Up next: a card on Record offers a calendar event that is starting, a notebook recorded at this time on this weekday at least twice, or a call when a call app starts using the microphone (the app asks macOS which apps hold the microphone; it reads no content). Its button starts the recording. Nothing is sent anywhere.
 • Record by itself (Settings > Recording) is off by default. Only if the user turns it on does a recording start without a click, and its setting tells them to tell people they are recording. The menu-bar icon shows a recording is on.
-• A notebook's page: in Recordings, pick a Notebook chip. Items from the notes with ticks, marked moments, Review everything. It calls no AI.
+• A notebook's page (Recordings > a Notebook chip): items with ticks, marked moments, Review everything. No AI.
+• Fill in the blanks (Pro, only when pressed): adds What you missed and More detail to the notes; same AI, consent and Pro check as Make notes. For a Class, textbook background is marked as not said.
 • Notifications are local: a reminder that something is starting, and Notes are ready.
 
 PRO AND RESTORE
 6. Settings (gear) > Subscription offers plans, Restore Purchases and Manage subscription. Without Pro, an AI action, Make lesson, Sync or Export to Obsidian opens the paywall naming that feature. Product IDs: com.nofriction.meetings.pro.monthly and com.nofriction.meetings.pro.yearly. All AI features, including local AI, require Pro; recording, transcription and typed notes don't.
 
 OFFLINE AI PATH
-On a Mac with macOS 26+ and Apple Intelligence enabled (model downloaded), the app uses Apple's on-device model; no cloud account or API key needed. Or Settings > AI > Find AI on this Mac finds a local OpenAI-compatible server (it asks 127.0.0.1 only, on click). Then Recordings > a recording > Notes > Make notes, or ask in Chat. No AI runs during a recording.
+On a Mac with macOS 26+ and Apple Intelligence enabled (model downloaded), the app uses Apple's on-device model; no cloud account or API key needed. Or Settings > AI > Find AI on this Mac finds a local OpenAI-compatible server (it asks 127.0.0.1 only, on click). Then Notes > Make notes, or ask in Chat. No AI runs during a recording.
 
 REVIEW, MAKE LESSON AND EXPORT
-7. Select a Class recording > Study guide (Pro), or Make lesson (Pro), which builds a short course in Lessons. Taking lessons, including the built-in course, is free and offline.
-8. Export… (File > Export Recording…, Command-E) is free; its AI buttons need Pro. Deleting or striking transcript text deletes the guide and lesson made from it.
+7. A Class recording offers Study guide and Make lesson (both Pro); taking lessons, including the built-in course, is free and offline. Export… (Command-E) is free; its AI buttons need Pro. No screenshot or image is ever sent to an AI.
 
 AI CONNECTION
-Settings > AI: Sign in with OpenRouter (OAuth PKCE in the default browser; the user's own key goes to the Keychain), Paste key and connect, or provider cards that only fill in the endpoint and model. The user supplies their own key or sign-in, nothing is sent until they consent, and no provider is active by default. Connect and Test connection send only the word "Hi". The speech model is a data file (Whisper weights), not code.
+Settings > AI: Sign in with OpenRouter (OAuth PKCE; the user's own key goes to the Keychain), Paste key and connect, or provider cards that only fill in the endpoint and model. The user supplies their own key or sign-in, nothing is sent until they consent, and no provider is active by default. Connect and Test connection send only the word "Hi". The speech model is a data file (Whisper weights), not code.
 ```
 
 Optional attachment: a short screen recording of a recording → Make notes
