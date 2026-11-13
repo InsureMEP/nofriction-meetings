@@ -14,6 +14,14 @@ iPhone and iPad. An entry marked (Mac) or (iPhone) is on that platform
 only.
 
 ### Added
+- **Fill in the blanks.** One button in a recording's Notes. It reads the
+  whole recording again beside the notes you have and adds **What you
+  missed** (things that were said and aren't in the notes, each with the
+  time it was said) and **More detail** (the notes' key ideas explained
+  further). For a Class it may also add what a textbook says, and marks
+  each such entry "Background, not said in the recording". Your own lines
+  are never rewritten. It runs only when you press it, and is part of Notes
+  (noFriction Pro).
 - **Type a note while it listens.** One field under the live transcript;
   Return keeps the line with its moment and it appears in the transcript
   there. Notes opens with **What you wrote**. On the Mac, Rewind shows

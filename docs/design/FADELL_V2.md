@@ -536,3 +536,64 @@ or undefined behaviour, and these:
   included. Over another app the panel is never the app in front, so it
   isn't read. With noFriction itself in front it is read like the main
   window's note field always was.
+
+---
+
+## 11. Fill in the blanks (2026-11-13)
+
+The owner, during the release: "add a magic button to fill in the blanks
+for class notes or to extend them with key and additional details."
+
+One button in a recording's Notes, once notes exist. It reads the whole
+recording again beside the notes that exist and the lines the user typed,
+and adds two sections:
+
+- **What you missed.** Things that were said and aren't in the notes, in
+  the order said, each with its time (on the Mac, a click opens Rewind
+  there). At most 12.
+- **More detail.** The notes' key ideas explained further from what was
+  said. At most 10.
+
+**Rules**
+
+- **Only on a click.** Never automatic, never while that recording is still
+  running. The same gates as Make notes: Pro (Mac App Store build), an AI
+  that is set up, consent.
+- **The user's lines are theirs.** Typed notes are shown to the AI so it
+  knows what is covered; they are never rewritten.
+- **What wasn't said is marked.** For a Class the AI may add what a
+  standard textbook says about a concept the lecture didn't explain. Every
+  such entry is stored and shown as background, "not said in the
+  recording", and carries no time. A Meeting or Personal recording gets
+  only what was said: an answer that marks something as background there is
+  dropped.
+- **The answer is untrusted.** Sizes are capped, a time outside the
+  recording is dropped, repeats are dropped, and an unusable answer is
+  asked for once more, then reported without quoting it.
+- **Saved under the notes' check.** One transaction: no Delete pending,
+  every line that was read still there, the notes row still the
+  recording's latest, and the typed notes it was made beside unchanged.
+- **It never outlives what it was made from.** Delete or Strike of
+  transcript text removes it outright (it paraphrases the recording). A
+  typed note it was made beside being changed or deleted removes it. Notes
+  made again start without it.
+- **One form on both platforms.** `## What you missed` and `## More detail`
+  with fixed bullet forms (docs/SYNC.md), because the result crosses
+  between devices inside the notes' Markdown.
+
+**Where it lives.** Mac: `meeting_notes/fill.rs`, `meeting_notes.filled`
+(JSON), the `fill_in_notes` command, the button in `MeetingNotesPanel.tsx`.
+iPhone and iPad: the two sections at the end of `aiNotes`.
+
+**Not in yet.** For notes made on the Mac, Export, Chat and the Obsidian
+export read the notes' own columns and don't carry the two sections.
+
+**Verified (Mac).** Unit tests for the prompts by type, the parsing rules,
+saving and each way it is removed; the screen in the film harness (the
+button, progress, both sections, **Fill again**, and the paywall without
+Pro).
+
+**Not verified.** No real AI was asked: the quality of what a model writes
+for a real lecture, and how well a small model keeps to "mark background",
+are untested. Not run in the real app.
+

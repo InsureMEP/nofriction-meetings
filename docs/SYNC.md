@@ -177,6 +177,14 @@ the iPhone are saved on the Mac as Markdown (`model_used =
 
 ## Merge
 
+- **What Fill in the blanks wrote travels in the notes' Markdown**, as two
+  last sections: `## What you missed` (`- [m:ss] point`, or `- point`) and
+  `## More detail` (`- **idea**: explanation [m:ss]`, or ending
+  `(background, not said in the recording)`). Both devices write exactly
+  these forms (`meeting_notes/fill.rs::markdown` on the Mac). The Mac keeps
+  its own result in `meeting_notes.filled` and appends the sections when it
+  sends; notes that arrived from the iPhone carry them in their text, and
+  if the Mac fills in again its own replace them (`fill::strip_sections`).
 - **Typed notes travel as marks.** A typed note is a `mark` item with the
   kind `note`; there is no protocol change. A device that doesn't know the
   kind (Mac 3.9.0 and earlier, iPhone 1.1.0 and earlier) skips the item

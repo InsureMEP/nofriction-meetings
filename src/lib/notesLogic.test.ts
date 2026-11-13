@@ -2,7 +2,18 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { hasWhatYouWrote, mergeSyncedWritten, parseNoteDetails, progressDetail, writtenLines } from "./notesLogic.ts";
+import {
+    FILLING,
+    hasFilledSections,
+    hasWhatYouWrote,
+    isFillRun,
+    mergeSyncedWritten,
+    parseFilled,
+    parseNoteDetails,
+    progressDetail,
+    withoutFilledSections,
+    writtenLines,
+} from "./notesLogic.ts";
 import { syncedNotesSections } from "./syncLogic.ts";
 import type { TypedNote } from "./studyLogic.ts";
 
@@ -68,3 +79,51 @@ test("the progress line adds something or stays out of the way", () => {
     assert.equal(progressDetail(null), null);
     assert.equal(progressDetail("  "), null);
 });
+
+test("what Fill in the blanks wrote is read tolerantly, and nothing readable is nothing filled in", () => {
+    const f = parseFilled(
+        JSON.stringify({
+            missed: [{ at_ms: 10000, text: " The exam covers chapter three. " }, { at_ms: null, text: "No time." }, { at_ms: -5, text: "Bad time" }, { text: "  " }, "junk"],
+            more: [
+                { about: "Osmosis", detail: "Water moves toward the solute.", at_ms: 40000, background: false },
+                { about: "Active transport", detail: "It needs energy.", at_ms: null, background: true },
+                { about: "", detail: "About nothing" },
+                { about: "No detail" },
+            ],
+            typed: { n1: "abc" },
+        }),
+    );
+    assert.deepEqual(f?.missed, [
+        { atMs: 10000, text: "The exam covers chapter three." },
+        { atMs: null, text: "No time." },
+        { atMs: null, text: "Bad time" },
+    ]);
+    assert.deepEqual(f?.more, [
+        { about: "Osmosis", detail: "Water moves toward the solute.", atMs: 40000, background: false },
+        { about: "Active transport", detail: "It needs energy.", atMs: null, background: true },
+    ]);
+    // The pass ran and found nothing: an object, with two empty lists
+    assert.deepEqual(parseFilled('{"missed":[],"more":[]}'), { missed: [], more: [] });
+    // Never filled in, or unreadable
+    for (const bad of [null, undefined, "", "not json", "[]", "7"]) assert.equal(parseFilled(bad), null);
+});
+
+test("a fill run is told apart from a notes run by its label", () => {
+    assert.equal(isFillRun(FILLING), true);
+    assert.equal(isFillRun(`${FILLING} Reading the recording (2 of 5)…`), true);
+    assert.equal(isFillRun("Making notes…"), false);
+    assert.equal(isFillRun(null), false);
+    // Under the heading only what the heading doesn't already say
+    assert.equal(progressDetail(FILLING), null);
+    assert.equal(progressDetail(`${FILLING} Reading the recording (2 of 5)…`), "Reading the recording (2 of 5)…");
+    assert.equal(progressDetail("Reading the recording (2 of 5)…"), "Reading the recording (2 of 5)…");
+    assert.equal(progressDetail("Making notes…"), null);
+});
+
+test("notes from the iPhone may carry the two sections, and this Mac's own replace them", () => {
+    const sections = syncedNotesSections("## Summary\nMembranes.\n\n## What you missed\n- [0:10] The exam covers chapter three.\n\n## More detail\n- **Osmosis**: water moves. [0:40]");
+    assert.equal(hasFilledSections(sections), true);
+    assert.deepEqual(withoutFilledSections(sections).map((s) => s.heading), ["Summary"]);
+    assert.equal(hasFilledSections(syncedNotesSections("## Summary\nMembranes.")), false);
+});
+

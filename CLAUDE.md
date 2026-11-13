@@ -241,6 +241,17 @@ these rules apply.
     panel without the app or its data. Don't take a screenshot to look at
     it (`screencapture` puts a Screen Recording dialog on the owner's
     screen); the example's `RENDER=` saves the panel's own drawing.
+  - **Fill in the blanks is a second pass kept with the notes**
+    (`meeting_notes/fill.rs`; FADELL_V2.md §11). It runs only on the
+    user's click, through the same gates as Make notes. The user's typed
+    lines are never rewritten. Background (what a textbook says) is
+    allowed only for a Class and is always marked; a Meeting or Personal
+    recording gets only what was said. The result is saved under the same
+    transcript check as notes and is removed outright by
+    `redact_ai_outputs`, by a typed note it was made beside changing
+    (`typed_notes_changed`) and by Make again. The two headings and their
+    bullet forms are the same on both platforms (`fill::markdown`),
+    because they cross in the notes' Markdown.
   - **Notes read the whole recording.** Never truncate a transcript for a
     prompt; condense it in parts (`study::condense_to_budget`,
     `MeetingAI`'s condense step). Prompts carry marks and typed notes by

@@ -330,6 +330,18 @@ pub async fn generate_meeting_report(
     }))
 }
 
+/// Fill in the blanks (Recordings → Notes): what the notes missed, and
+/// their key ideas explained further (meeting_notes/fill.rs). The result is
+/// read back with `get_meeting_notes` (`filled`).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn fill_in_notes(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    meeting_id: String,
+) -> Result<crate::meeting_notes::fill::Filled, String> {
+    crate::meeting_notes::run::fill(&app, &state, &meeting_id).await
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Automatic notes (Settings → AI → "Make notes automatically")
 // ═══════════════════════════════════════════════════════════════════

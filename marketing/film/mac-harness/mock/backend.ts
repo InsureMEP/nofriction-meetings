@@ -92,6 +92,8 @@ const noteDetails = new Map<string, string>();
 const madeNotes = new Map<string, NonNullable<DemoMeeting["notes"]>>();
 /** Recordings whose notes are being made, with what the run is doing */
 const notesRuns = new Map<string, string>();
+/** What Fill in the blanks wrote, by recording (meeting_notes/fill.rs `Filled` as JSON) */
+const filledNotes = new Map<string, string>();
 /** Ticked items on the notebook page: "meetingId:key" */
 const doneItems = new Set<string>();
 const settingsStore = new Map<string, string>();
@@ -452,7 +454,57 @@ function notesFor(id: string) {
         model_used: n.model_used,
         stale_after_edit: false,
         note_details: details.length ? JSON.stringify(details) : null,
+        filled: filledNotes.get(id) ?? null,
     };
+}
+
+/** What a fill pass finds, by recording type (only a class gets background). */
+const LIVE_FILLED: Record<string, { missed: { at_ms: number | null; text: string }[]; more: { about: string; detail: string; at_ms: number | null; background: boolean }[] }> = {
+    class: {
+        missed: [
+            { at_ms: 9 * 60_000 + 20_000, text: "Cholesterol keeps the membrane fluid when it is cold and firm when it is warm." },
+            { at_ms: 15 * 60_000 + 40_000, text: "On the exam: name the four parts of the membrane and what each one does." },
+            { at_ms: 31 * 60_000 + 5_000, text: "Facilitated diffusion uses a channel protein but no energy." },
+        ],
+        more: [
+            { about: "Sodium-potassium pump", detail: "It moves three sodium ions out and two potassium ions in for every ATP, which keeps the inside of the cell negative.", at_ms: 38 * 60_000, background: false },
+            { about: "Osmosis", detail: "Water crosses a membrane toward the side with more dissolved solute, until the concentrations even out or pressure stops it.", at_ms: null, background: true },
+        ],
+    },
+    meeting: {
+        missed: [
+            { at_ms: 6 * 60_000 + 10_000, text: "Marcus said the annual plan needs a monthly option before the pricing page changes." },
+            { at_ms: 18 * 60_000 + 30_000, text: "Five beta teams, not ten: Dana can only support five in the first two weeks." },
+        ],
+        more: [{ about: "Onboarding test", detail: "The team chose a test over a survey because the last survey had eleven answers and none from new accounts.", at_ms: 17 * 60_000 + 45_000, background: false }],
+    },
+    personal: {
+        missed: [{ at_ms: 2 * 60_000 + 15_000, text: "Take the second dose with food." }],
+        more: [{ about: "Follow-up visit", detail: "Book it for three weeks from now, and bring the list of what changed.", at_ms: 4 * 60_000, background: false }],
+    },
+};
+
+/** Fill in the blanks the way meeting_notes.rs reports it: progress, then done. */
+function runFill(id: string): Promise<null> {
+    const row = meetingById(id);
+    if (!row || notesRuns.has(id)) return Promise.resolve(null);
+    const filling = "Filling in the blanks…";
+    const steps = [filling, `${filling} Reading the recording (1 of 2)…`, `${filling} Reading the recording (2 of 2)…`, `${filling} Finding what the notes are missing…`];
+    notesRuns.set(id, filling);
+    return new Promise((resolve) => {
+        steps.forEach((label, i) =>
+            window.setTimeout(() => {
+                notesRuns.set(id, label);
+                emitEvent("notes_progress", { meetingId: id, label, done: i, total: steps.length });
+            }, i * NOTES_STEP_MS),
+        );
+        window.setTimeout(() => {
+            filledNotes.set(id, JSON.stringify({ ...(LIVE_FILLED[row.recording_kind] ?? LIVE_FILLED.meeting), typed: {} }));
+            notesRuns.delete(id);
+            emitEvent("notes_done", { meetingId: id, ok: true });
+            resolve(null);
+        }, steps.length * NOTES_STEP_MS);
+    });
 }
 
 /** How long each step of a notes run takes in the harness */
@@ -993,10 +1045,16 @@ function handle(cmd: string, args: Args): unknown {
 
         // AI (Pro in the Mac App Store build: ai::client::complete → PRO_REQUIRED)
         case "generate_meeting_report":
+        case "fill_in_notes":
         case "draft_followup_email":
         case "generate_study_guide":
             if (!isPro) throw "PRO_REQUIRED: noFriction Pro unlocks the AI features.";
-            if (cmd === "generate_meeting_report") return runNotes(a.meetingId);
+            if (cmd === "generate_meeting_report") {
+                // Notes made again start without what was filled in
+                filledNotes.delete(a.meetingId);
+                return runNotes(a.meetingId);
+            }
+            if (cmd === "fill_in_notes") return runFill(a.meetingId);
             if (cmd === "draft_followup_email") {
                 return { subject: "Acme sync: decisions and next steps", body: "Hi all,\n\nThanks for today. We locked the plan names and agreed to test onboarding with five beta teams.\n\nPriya", to: ["dana@example.com", "marcus@example.com"] };
             }

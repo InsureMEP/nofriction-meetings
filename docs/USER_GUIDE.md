@@ -458,6 +458,7 @@ Apple on-device or your own endpoint (see [Connect your AI](#connect-your-ai)).
   style (see [Notes by type](#notes-by-type)). Owners and due dates appear
   only if someone said them. The recording's **Topics** are named at the
   same time (see [Find and review recordings](#find-and-review-recordings)).
+- **Fill in the blanks** (once there are notes): see below.
 - **Find topics**: name the topics without redoing the notes.
 - **Follow-up email** (meetings): a draft to the attendees, recapping
   decisions and next steps.
@@ -506,6 +507,29 @@ the same consent dialog when the endpoint is a public one.
   made, they aren't saved; make them again.
 
 AI can be wrong. Check names, numbers and dates before you send anything.
+
+### Fill in the blanks
+
+In a recording's **Notes**, once notes exist, **Fill in the blanks** reads
+the whole recording again beside the notes you have, and adds two sections:
+
+- **What you missed**: things that were said and aren't in your notes, in
+  the order they were said. On the Mac each has its time; click it to hear
+  that moment in Rewind.
+- **More detail**: the key ideas in your notes, explained further from what
+  was said.
+
+For a **Class** it may also add what a textbook would say about a concept
+the lecture didn't explain. Every such entry is marked **Background, not
+said in the recording**, so you always know what came from your class and
+what didn't. A Meeting or Personal recording never gets background.
+
+Your own typed lines are never rewritten. It runs only when you press it
+(never by itself), uses the same AI and permission as **Make notes**, and
+is part of noFriction Pro. **Fill again** redoes it. If you delete or
+strike part of the transcript, change or delete one of your typed notes, or
+make the notes again, what was filled in is removed and you can fill in
+again. Check what it wrote against the recording before relying on it.
 
 ---
 
