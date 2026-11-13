@@ -106,6 +106,15 @@ struct ExportSheet: View {
         }
     }
 
+    /// "3 marked · 2 notes"
+    private var marksDetail: String {
+        let marks = meeting.marks.count, notes = meeting.typedNotes.count
+        var parts: [String] = []
+        if marks > 0 { parts.append("\(marks) marked") }
+        if notes > 0 { parts.append(notes == 1 ? "1 note" : "\(notes) notes") }
+        return parts.joined(separator: " · ")
+    }
+
     private var whenLine: String {
         var parts = [meeting.startedAt.formatted(.dateTime.weekday(.wide).month(.wide).day().hour().minute())]
         if let d = meeting.duration { parts.append(d.minutesLabel) }
@@ -128,7 +137,8 @@ struct ExportSheet: View {
                     detail: "\(picked.count) of \(snapshots.count) picked", action: nil) {}
             }
             if !meeting.markers.isEmpty {
-                row("Marked moments", on: $include.marks, enabled: true, detail: "\(meeting.markers.count) marked", action: nil) {}
+                // The three marks, and what the user typed ("✍ Note" in the package)
+                row("Marked moments", on: $include.marks, enabled: true, detail: marksDetail, action: nil) {}
             }
             if !links.isEmpty {
                 row("Links", on: $include.links, enabled: true, detail: "\(links.count) said or added", action: nil) {}
@@ -437,11 +447,8 @@ struct ExportSheet: View {
 
     private func makeNotes(_ endpoint: AIEndpoint) async throws {
         working = "Making notes…"
-        let text = try await MeetingAI.notes(context: MeetingAI.context(meeting), endpoint: endpoint, kind: meeting.kind)
-        meeting.aiNotes = text
-        meeting.aiNotesAt = .now
-        meeting.aiNotesStale = false
-        try? context.save()
+        // The same path as Make notes on the recording: the whole transcript, the marks and the typed notes
+        try await NotesStore.make(meeting, contextTokens: endpoint.contextTokens, complete: MeetingAI.liveComplete(endpoint), context: context)
         include.notes = true
         // Same hook as Make notes: topics are named with the notes (a failure here is quiet)
         if let found = try? await MeetingAI.findTopics(StudyInput(meeting: meeting), contextTokens: endpoint.contextTokens,

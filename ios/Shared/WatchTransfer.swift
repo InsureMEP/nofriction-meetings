@@ -313,7 +313,8 @@ struct WatchMarker: Codable, Equatable, Sendable, Identifiable {
         id = try c.decode(UUID.self, forKey: .id)
         at = try c.decode(Date.self, forKey: .at)
         let kind: String? = try? c.decodeIfPresent(String.self, forKey: .kind)
-        self.kind = kind.flatMap(MarkerKind.init(rawValue:)) ?? .default
+        // The watch makes the three marks only (typed notes are an iPhone and Mac thing)
+        self.kind = kind.flatMap(MarkerKind.mark(rawValue:)) ?? .default
         let offset: Double? = try? c.decodeIfPresent(Double.self, forKey: .offset)
         self.offset = offset.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
     }
@@ -329,7 +330,7 @@ struct WatchMarker: Codable, Equatable, Sendable, Identifiable {
         guard let id = (d[Key.id] as? String).flatMap(UUID.init(uuidString:)),
               let at = WatchRecordingMetadata.date(d[Key.at]) else { return nil }
         let offset = WatchRecordingMetadata.number(d[Key.offset]).flatMap { $0 >= 0 ? $0 : nil }
-        self.init(id: id, kind: (d[Key.kind] as? String).flatMap(MarkerKind.init(rawValue:)) ?? .default,
+        self.init(id: id, kind: (d[Key.kind] as? String).flatMap(MarkerKind.mark(rawValue:)) ?? .default,
                   at: at, offset: offset)
     }
 

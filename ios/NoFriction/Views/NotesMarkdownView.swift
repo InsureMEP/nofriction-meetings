@@ -42,7 +42,8 @@ enum NotesMarkdown {
         return out
     }
 
-    private static func heading(_ line: String) -> (String, Int)? {
+    /// A heading line: its text and level (`## Summary`, or a line that is only bold)
+    static func heading(_ line: String) -> (String, Int)? {
         // A line that is only bold ("**Summary**", "**Action items:**") is a
         // heading too; models write it as often as "## Summary". Joined into
         // the next line, it read "Summary How cells turn…".
@@ -62,7 +63,8 @@ enum NotesMarkdown {
         return text.isEmpty ? nil : (text, hashes)
     }
 
-    private static func bullet(_ line: String) -> String? {
+    /// A bullet line's text (`- `, `* `, `• `, `1. `)
+    static func bullet(_ line: String) -> String? {
         for marker in ["- ", "* ", "• "] where line.hasPrefix(marker) {
             return String(line.dropFirst(marker.count)).trimmingCharacters(in: .whitespaces)
         }
@@ -83,9 +85,15 @@ enum NotesMarkdown {
 
 struct NotesMarkdownView: View {
     let markdown: String
+    /// The recording these notes belong to. With it, the items under the
+    /// notes' last heading (Action items / Announcements and deadlines /
+    /// To-dos and reminders) show their tick: the same one as on the
+    /// notebook's page, kept in the same place.
+    var meeting: Meeting? = nil
 
     var body: some View {
         let blocks = NotesMarkdown.blocks(markdown)
+        let items = meeting == nil ? [:] : NotebookItems.itemBlocks(blocks)
         VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { i, block in
                 switch block {
@@ -95,11 +103,26 @@ struct NotesMarkdownView: View {
                         .padding(.top, i == 0 ? 0 : 6)
                         .accessibilityAddTraits(.isHeader)
                 case .bullet(let text, let indent):
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("•").foregroundStyle(.secondary)
-                        Text(NotesMarkdown.inline(text))
+                    if let meeting, let parsed = items[i] {
+                        let item = NotebookItems.item(parsed, meetingID: meeting.id)
+                        let done = NotebookItems.isDone(item, in: meeting)
+                        HStack(alignment: .center, spacing: 0) {
+                            ItemTick(item: item, meeting: meeting)
+                            // The tick already says the item to VoiceOver
+                            Text(NotesMarkdown.inline(text))
+                                .strikethrough(done)
+                                .foregroundStyle(done ? .secondary : .primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .accessibilityHidden(true)
+                        }
+                        .padding(.leading, -10)
+                    } else {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("•").foregroundStyle(.secondary)
+                            Text(NotesMarkdown.inline(text))
+                        }
+                        .padding(.leading, CGFloat(indent) * 14)
                     }
-                    .padding(.leading, CGFloat(indent) * 14)
                 case .paragraph(let text):
                     Text(NotesMarkdown.inline(text))
                 }

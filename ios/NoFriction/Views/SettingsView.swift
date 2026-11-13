@@ -551,6 +551,12 @@ struct SettingsView: View {
     @State private var customModel = ""
     @AppStorage(MeetingEndDetector.Config.enabledKey) private var autoStop = true
     @AppStorage(Onboarding.completedKey) private var onboardingCompleted = false
+    /// Notes by themselves after Stop, when Pro and AI are set up (docs/design/FADELL_V2.md)
+    @AppStorage(AutoNotes.settingKey) private var autoNotes = true
+    /// A notification when something you usually record is about to start
+    @AppStorage(RoutineReminders.settingKey) private var routineReminders = true
+    @Environment(\.modelContext) private var context
+    @Environment(AppRouter.self) private var router
 
     var body: some View {
         NavigationStack {
@@ -579,7 +585,7 @@ struct SettingsView: View {
 
     // MARK: Recording
 
-    private var recordingSection: some View {
+    @ViewBuilder private var recordingSection: some View {
         Section {
             Toggle("Stop when it's over", isOn: $autoStop)
                 .accessibilityIdentifier("auto-stop-toggle")
@@ -587,6 +593,21 @@ struct SettingsView: View {
             Text("Recording")
         } footer: {
             Text("When the calendar event is over and the room goes quiet, or nobody has spoken for \(Int(MeetingEndDetector.Config().silenceMinutes)) minutes, noFriction asks, then stops after 30 seconds unless you keep recording. Everything said is kept.")
+        }
+        Section {
+            Toggle("Make notes automatically", isOn: $autoNotes)
+                .accessibilityIdentifier("auto-notes-toggle")
+        } footer: {
+            Text("After a recording stops, its notes are made by themselves, built on what you typed and marked. This needs noFriction Pro and an AI connection you have already allowed; otherwise the recording keeps its Make notes button. Recordings under six minutes get notes only if you typed a note or marked a moment.")
+        }
+        Section {
+            Toggle("Remind me when something starts", isOn: $routineReminders)
+                .accessibilityIdentifier("routine-reminders-toggle")
+                .onChange(of: routineReminders) { _, on in
+                    Task { await RoutineReminders.settingChanged(on: on, context: context) }
+                }
+        } footer: {
+            Text("When you record a notebook at the same time on the same weekday, noFriction learns it and sends a notification when it is about to start. There is no schedule to set up, and nothing leaves this \(DeviceName.current).")
         }
     }
 

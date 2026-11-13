@@ -4,7 +4,9 @@ import UIKit
 
 /// Launch with -NFSeedDemo to fill an empty store with sample meetings
 /// (App Store screenshots / layout checks); add -NFDemoLive to show a
-/// meeting being recorded. Debug builds only.
+/// meeting being recorded. `-NFOpenRecording "<title>"` opens that recording
+/// on its Notes and `-NFOpenNotebook "<name>"` opens that notebook's page
+/// (layout checks without tapping). Debug builds only.
 ///
 /// Everything here is invented: people, companies (on the reserved
 /// `.example` domain), links and conversations. No real personal data.
@@ -40,6 +42,9 @@ enum DemoData {
             for p in (try? context.fetch(FetchDescriptor<Person>())) ?? [] { context.delete(p) }
             for t in (try? context.fetch(FetchDescriptor<ChatThread>())) ?? [] { context.delete(t) }
             try? context.save()
+            // Up next as on a first day: nothing hidden by an earlier Not now
+            UserDefaults.standard.removeObject(forKey: UpNextDismissals.key)
+            UserDefaults.standard.removeObject(forKey: RoutineReminders.promptAnsweredKey)
         }
         guard ProcessInfo.processInfo.arguments.contains("-NFSeedDemo"),
               ((try? context.fetchCount(FetchDescriptor<Meeting>())) ?? 0) == 0 else { return }
@@ -180,6 +185,186 @@ enum DemoData {
         try? context.save()
         // -NFFilm: more lectures and a stored study guide (FilmDemo)
         FilmDemo.seed(context)
+        // v2: typed notes, "What you wrote", things due, study guides and a routine
+        seedV2(context)
+    }
+
+    /// v2 samples (docs/design/FADELL_V2.md), not in film runs (the film has
+    /// its own BIO 101 lectures): two earlier BIO 101 lectures with typed
+    /// notes, notes that open with "What you wrote", things due, ✎ and ?
+    /// marks and stored study guides (the notebook page has something in
+    /// every section), and a notebook recorded at this time on this weekday
+    /// for three weeks, so the Record tab shows its Up next card.
+    @MainActor
+    private static func seedV2(_ context: ModelContext) {
+        guard !FilmDemo.isOn else { return }
+        let day: TimeInterval = 86_400
+        let a = anchor
+        func lecture(_ title: String, daysAgo: Double, lines: [String]) -> Meeting {
+            let m = meeting(title, start: a.addingTimeInterval(-daysAgo * day - 100 * 60), minutes: 50, lines: lines,
+                            spacing: 6 * 60, attendees: [], organizer: -1, calendar: false, in: context)
+            m.kind = .class
+            m.courseName = "BIO 101"
+            m.plannedMinutes = 60
+            return m
+        }
+        func mark(_ m: Meeting, minute: Double, _ kind: MarkerKind, _ note: String?) {
+            let marker = MomentMarker(at: m.startedAt.addingTimeInterval(minute * 60), kind: kind, note: note)
+            context.insert(marker)
+            marker.meeting = m
+        }
+        func guide(_ m: Meeting, cards: [StudyCards.Card], quiz: [StudyQuiz.Item]) {
+            let encoder = JSONEncoder()
+            func json<T: Encodable>(_ value: T) -> String { (try? encoder.encode(value)).map { String(decoding: $0, as: UTF8.self) } ?? "{}" }
+            let fingerprint = StudyInput(meeting: m).fingerprint
+            for (kind, body) in [(StudyKind.flashcards, json(StudyCards(cards: cards))), (.quiz, json(StudyQuiz(questions: quiz)))] {
+                let material = StudyMaterial(kind: kind, json: body, transcriptFingerprint: fingerprint,
+                                             createdAt: (m.endedAt ?? m.startedAt).addingTimeInterval(120))
+                context.insert(material)
+                material.meeting = m
+            }
+        }
+
+        let enzymes = lecture("Lecture 6: Enzymes", daysAgo: 5, lines: [
+            "Enzymes speed up reactions without being used up.",
+            "Each one fits its substrate at the active site, like a key in a lock.",
+            "A competitive inhibitor sits in the active site and blocks the substrate.",
+            "A non-competitive inhibitor binds somewhere else and changes the enzyme's shape.",
+            "Heat does the same thing: the shape changes, and the enzyme stops working.",
+            "pH matters too. Each enzyme has a range where it works best.",
+            "Lab report two is due Monday. Use the template on the course page, and read chapter 8 before Thursday.",
+        ])
+        mark(enzymes, minute: 7.5, .note, "lock and key = active site?")
+        mark(enzymes, minute: 15, .test, "competitive vs non-competitive inhibitors")
+        mark(enzymes, minute: 25.5, .note, "ask why heat stops it")
+        mark(enzymes, minute: 32, .question, "does pH work the same way as heat?")
+        mark(enzymes, minute: 37.5, .note, "lab report: use the template")
+        enzymes.aiNotes = """
+        ## What you wrote
+        - **lock and key = active site?**: Yes. Each enzyme fits its substrate at the active site, the way a key fits one lock.
+        - **ask why heat stops it**: Heat changes the enzyme's shape, so the substrate no longer fits the active site and the reaction stops.
+        - **lab report: use the template**: Lab report two has to follow the template on the course page.
+
+        ## Summary
+        How enzymes speed up reactions, what the active site does, and what stops an enzyme from working.
+
+        ## Key concepts
+        - Enzymes speed up reactions without being used up
+        - Each enzyme fits its substrate at the active site
+        - Heat and pH change the enzyme's shape
+
+        ## Definitions
+        - **Active site**: where the substrate binds to the enzyme
+        - **Inhibitor**: a molecule that slows an enzyme down
+
+        ## Examples
+        - A competitive inhibitor blocks the active site; a non-competitive one changes the enzyme's shape
+
+        ## Announcements and deadlines
+        - Lab report two is due Monday
+        - Read chapter 8 before Thursday's lecture
+        """
+        enzymes.aiNotesAt = enzymes.endedAt
+        guide(enzymes, cards: [
+            .init(front: "What does an enzyme do?", back: "It speeds up a reaction without being used up."),
+            .init(front: "Where does the substrate bind?", back: "At the active site."),
+            .init(front: "What does heat do to an enzyme?", back: "It changes the enzyme's shape, so it stops working."),
+        ], quiz: [
+            .init(question: "Where does a competitive inhibitor bind?",
+                  choices: ["The active site", "The cell membrane", "The nucleus", "The substrate"], answer: 0,
+                  explanation: "It sits in the active site and blocks the substrate.", atMs: (2 * 6 * 60 + 20) * 1000),
+            .init(question: "Why does an enzyme stop working when it gets too hot?",
+                  choices: ["It is used up", "Its shape changes", "It splits in two", "It turns into its substrate"], answer: 1,
+                  explanation: "Heat changes the shape, so the substrate no longer fits.", atMs: (4 * 6 * 60 + 20) * 1000),
+        ])
+
+        let membranes = lecture("Lecture 5: Cell membranes", daysAgo: 12, lines: [
+            "The membrane is a double layer of phospholipids.",
+            "Small, uncharged molecules slip through on their own.",
+            "Everything else needs a channel or a pump.",
+            "Quiz one is next Tuesday, on chapters 5 and 6.",
+        ])
+        mark(membranes, minute: 13, .test, "what crosses on its own, what needs a pump")
+        membranes.aiNotes = """
+        ## Summary
+        What the cell membrane is made of, and how molecules get across it.
+
+        ## Key concepts
+        - The membrane is a double layer of phospholipids
+        - Small, uncharged molecules cross on their own; everything else needs a channel or a pump
+
+        ## Definitions
+        None.
+
+        ## Examples
+        None.
+
+        ## Announcements and deadlines
+        - Quiz one is next Tuesday, on chapters 5 and 6
+        """
+        membranes.aiNotesAt = membranes.endedAt
+        guide(membranes, cards: [
+            .init(front: "What is the cell membrane made of?", back: "A double layer of phospholipids."),
+            .init(front: "Which molecules cross the membrane on their own?", back: "Small, uncharged ones."),
+        ], quiz: [
+            .init(question: "What does a charged molecule need to cross the membrane?",
+                  choices: ["Nothing", "A channel or a pump", "Heat", "An enzyme"], answer: 1,
+                  explanation: "Only small, uncharged molecules slip through on their own.", atMs: (2 * 6 * 60 + 20) * 1000),
+        ])
+
+        // A routine: CHEM 201 at about this time on this weekday, three weeks running
+        let now = Date.now
+        for (weeks, minutes) in [(1, -4.0), (2, 3.0), (3, -1.0)] {
+            guard let sameTime = Calendar.current.date(byAdding: .day, value: -7 * weeks, to: now) else { continue }
+            let start = sameTime.addingTimeInterval(minutes * 60)
+            let m = meeting(RecordingSession.notebookTitle("CHEM 201", at: start), start: start, minutes: 50, lines: [
+                "Today we balance redox reactions in acidic solution.",
+                "Split the reaction into two half-reactions first.",
+                "Balance the atoms, then the charge, then add them back together.",
+            ], spacing: 9 * 60, attendees: [], organizer: -1, calendar: false, in: context)
+            m.kind = .class
+            m.courseName = "CHEM 201"
+            m.plannedMinutes = 60
+            // What its notes still have open shows under the Up next card
+            if weeks == 1 {
+                m.aiNotes = """
+                ## Summary
+                Balancing redox reactions in acidic solution with half-reactions.
+
+                ## Key concepts
+                - Split the reaction into two half-reactions
+                - Balance the atoms, then the charge
+
+                ## Definitions
+                None.
+
+                ## Examples
+                None.
+
+                ## Announcements and deadlines
+                - Problem set 6 is due Friday
+                - Midterm two covers chapters 9 to 12
+                """
+                m.aiNotesAt = m.endedAt
+            }
+        }
+        try? context.save()
+    }
+
+    /// -NFOpenRecording "<title>" / -NFOpenNotebook "<name>": straight to a
+    /// recording's Notes or a notebook's page.
+    @MainActor
+    static func openIfRequested(router: AppRouter, context: ModelContext) {
+        let args = ProcessInfo.processInfo.arguments
+        func value(_ flag: String) -> String? {
+            guard let i = args.firstIndex(of: flag), args.indices.contains(i + 1) else { return nil }
+            return args[i + 1]
+        }
+        if let name = value("-NFOpenNotebook") { router.open(notebook: name) }
+        if let title = value("-NFOpenRecording"),
+           let m = try? context.fetch(FetchDescriptor<Meeting>(predicate: #Predicate { $0.title == title })).first {
+            router.open(recording: m.id)
+        }
     }
 
     /// -NFSeedWatchDemo: two Apple Watch recordings, one transcribed and one
@@ -238,6 +423,12 @@ enum DemoData {
             attendees: [0, 1, 4, selfIndex], organizer: 0, in: context)
         m.scheduledStart = anchor.addingTimeInterval(-26 * 60)  // 9:15
         m.scheduledEnd = anchor.addingTimeInterval(19 * 60)     // 10:00
+        // A line typed while it was said ("Type a note"), where it was written
+        if m.typedNotes.isEmpty {
+            let note = MomentMarker(at: start.addingTimeInterval(19 * 60), kind: .note, note: "get the new onboarding flow from Sofia")
+            context.insert(note)
+            note.meeting = m
+        }
         try? context.save()
         session.showDemo(meeting: m, startedAt: Date.now.addingTimeInterval(-25 * 60 - 12),
                          partial: "We can have a beta in six weeks if we keep the scope to recording and")

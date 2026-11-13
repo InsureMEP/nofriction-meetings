@@ -27,6 +27,23 @@ final class RecordingSession {
     /// "5 minutes left" is showing (cleared by +15, No limit, OK or stop)
     private(set) var timeWarningVisible = false
 
+    /// A recording that stopped, and how: the user's own Stop opens it on
+    /// its Notes; a stop by itself (time limit, the meeting ended, a
+    /// notification's Stop now) leaves the screen alone. Either way its
+    /// notes may be made automatically (docs/design/FADELL_V2.md).
+    struct Stopped: Equatable {
+        var meetingID: UUID
+        var byUser: Bool
+        var at: Date
+    }
+    private(set) var lastStopped: Stopped?
+    /// The in-app "Stop now" was tapped: the stop that follows is the user's
+    private var userStopRequested = false
+    /// Called at the very start of `stop()`, while the recording still
+    /// counts as running: a line still in the note field is kept on this
+    /// recording, at this moment, whatever stopped it
+    @ObservationIgnored var beforeStop: (() -> Void)?
+
     private var context: ModelContext?
     private var capture: AudioCapture?
     private var engine: TranscriptionEngine?
@@ -71,8 +88,8 @@ final class RecordingSession {
     func start(limit: RecordingLimit? = nil, kind: RecordingKind? = nil, notebook: String? = nil, captureScreen: Bool = false) async {
         guard phase == .idle, let context else { return }
         #if DEBUG
-        // Film footage (-NFFilm): a demo recording; the Simulator has no speech recognition
-        if FilmDemo.isOn {
+        // Film footage (-NFFilm) and UI tests (-NFDemoRecord): a demo recording; the Simulator has no speech recognition
+        if FilmDemo.demoRecord {
             return FilmDemo.startRecording(session: self, limit: limit ?? RecordingLimitStore.remembered(),
                                            kind: kind ?? RecordingKindStore.remembered(),
                                            notebook: Notebook.normalize(notebook), context: context)
@@ -140,8 +157,13 @@ final class RecordingSession {
         screenCapture?.recordingStarted(meeting)
     }
 
-    func stop() async {
+    /// `byUser`: the Stop button (or the in-app "Stop now"), as opposed to a
+    /// stop the app made by itself. Same path either way.
+    func stop(byUser: Bool = false) async {
         guard phase == .recording || phase == .paused else { return }
+        let byUser = byUser || userStopRequested
+        userStopRequested = false
+        beforeStop?()
         phase = .stopping
         meterTask?.cancel()
         detectorTask?.cancel()
@@ -184,9 +206,11 @@ final class RecordingSession {
         levels = LevelHistory()
         lastKeptText = nil
         endWasDetected = false
+        let stopped = meeting.map { Stopped(meetingID: $0.id, byUser: byUser, at: .now) }
         meeting = nil
         startedAt = nil
         phase = .idle
+        lastStopped = stopped
     }
 
     func togglePause() {
@@ -315,8 +339,11 @@ final class RecordingSession {
         apply(detector?.keepRecording())
     }
 
-    /// Banner / notification: "Stop now".
-    func stopNow() {
+    /// Banner / notification: "Stop now". `byUser`: tapped on the banner in
+    /// the app (the notification's action stops without opening anything).
+    func stopNow(byUser: Bool = false) {
+        guard detector != nil else { return }
+        userStopRequested = byUser
         apply(detector?.stopNow())
     }
 

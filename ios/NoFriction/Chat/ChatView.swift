@@ -26,6 +26,8 @@ struct ChatView: View {
     @State private var consentFor: AIProvider?
     @State private var pendingQuestion: String?
     @FocusState private var composing: Bool
+    /// A notebook's Ask: a new chat scoped to it
+    @Environment(AppRouter.self) private var router
 
     /// Saved recordings (not the one being recorded)
     private var saved: [Meeting] { meetings.filter { $0.id != session.meeting?.id && !$0.segments.isEmpty } }
@@ -85,7 +87,9 @@ struct ChatView: View {
                 if thread == nil, let t = threads.first { thread = t; scope = t.scope }
                 // A thread's recording may be gone: fall back to all
                 if case .recording(let id, _) = scope, !meetings.contains(where: { $0.id == id }) { scope = .all }
+                takeRequestedScope()
             }
+            .onChange(of: router.chatScope) { _, _ in takeRequestedScope() }
         }
     }
 
@@ -245,6 +249,14 @@ struct ChatView: View {
     }
 
     // MARK: Actions
+
+    /// Opened from a notebook's page: a new chat, asking about that notebook.
+    private func takeRequestedScope() {
+        guard let requested = router.chatScope else { return }
+        router.chatScope = nil
+        newChat()
+        scope = requested
+    }
 
     private func newChat() {
         thread = nil

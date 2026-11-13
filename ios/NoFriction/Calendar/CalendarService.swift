@@ -41,6 +41,23 @@ struct CalendarEventInfo: Sendable, Equatable {
 }
 
 enum CalendarMatching {
+    /// An event is offered, and names a recording, from 15 minutes before it starts
+    static let soonMinutes = 15
+
+    /// The events a recording made at `now` could be: the ones that are on,
+    /// most recently started first (the meeting inside a longer block wins
+    /// over the block), then the ones starting within 15 minutes, soonest
+    /// first. All-day events are never a match: "Out of office" or a
+    /// birthday isn't what is being recorded, and it used to hide the
+    /// meeting that was. (Same rule as the Mac's `current_candidates`.)
+    static func currentCandidates(_ events: [CalendarEventInfo], now: Date) -> [CalendarEventInfo] {
+        let timed = events.filter { !$0.isAllDay }
+        let on = timed.filter { now >= $0.start && now <= $0.end }.sorted { $0.start > $1.start }
+        let until = now.addingTimeInterval(TimeInterval(soonMinutes * 60))
+        let soon = timed.filter { $0.start > now && $0.start <= until }.sorted { $0.start < $1.start }
+        return on + soon
+    }
+
     /// The timed event this recording belongs to: most overlap, and a
     /// meaningful one, so a recording isn't pinned to a meeting it merely
     /// brushed. Recordings often start a few minutes early. (Same rules as
@@ -83,11 +100,18 @@ final class CalendarService {
         return store.events(matching: predicate).map(Self.info)
     }
 
-    /// The event happening now (or starting within 10 minutes).
+    /// Every event that is on now or starts within 15 minutes, best match
+    /// first (`CalendarMatching.currentCandidates`). Never an all-day event.
+    func currentEvents(at date: Date = .now) -> [CalendarEventInfo] {
+        CalendarMatching.currentCandidates(events(from: date.addingTimeInterval(-6 * 3600), to: date.addingTimeInterval(3600)), now: date)
+    }
+
+    /// The event a recording started now belongs to: the one that is on
+    /// (the most recently started, when several are), else the one about to
+    /// start. It used to be the event with the most overlap, so a long
+    /// block could hide the meeting inside it.
     func currentEvent(at date: Date = .now) -> CalendarEventInfo? {
-        let candidates = events(from: date.addingTimeInterval(-6 * 3600), to: date.addingTimeInterval(3600))
-        return CalendarMatching.bestEvent(start: date, end: date.addingTimeInterval(20 * 60), in: candidates)
-            ?? candidates.first { !$0.isAllDay && $0.start <= date.addingTimeInterval(600) && $0.end >= date }
+        currentEvents(at: date).first
     }
 
     private static func info(_ event: EKEvent) -> CalendarEventInfo {

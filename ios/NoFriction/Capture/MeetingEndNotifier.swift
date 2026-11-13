@@ -69,6 +69,12 @@ final class MeetingEndNotifier: NSObject, UNUserNotificationCenterDelegate {
             }
             return
         }
+        // "BIO 101 usually starts about now.": the Record tab, with its card showing
+        if response.notification.request.content.categoryIdentifier == RoutineReminders.category {
+            let notebook = response.notification.request.content.userInfo[RoutineReminders.notebookKey] as? String
+            await MainActor.run { AppRouter.shared.reminderTapped(notebook: notebook) }
+            return
+        }
         guard response.notification.request.content.categoryIdentifier == Self.category else { return }
         await MainActor.run {
             guard let session = MeetingEndNotifier.shared.session else { return }
@@ -81,7 +87,9 @@ final class MeetingEndNotifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     /// In the foreground the in-app banner already shows; don't double up.
+    /// The same for a routine reminder: the Record tab has its Up next card.
     nonisolated func userNotificationCenter(_: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        notification.request.content.categoryIdentifier == Self.category ? [] : [.banner, .sound]
+        let category = notification.request.content.categoryIdentifier
+        return category == Self.category || category == RoutineReminders.category ? [] : [.banner, .sound]
     }
 }

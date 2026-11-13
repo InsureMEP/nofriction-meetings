@@ -79,6 +79,8 @@ struct SyncEngine {
     /// Hash of the recording's notes as they are now (nil = none)
     static func notesHash(_ m: Meeting) -> String? { notesItem(m, modified: 0).map(hash) }
 
+    /// A mark, or a typed note (kind `note`, its whole text): the same item.
+    /// A version that doesn't know a kind skips it (docs/SYNC.md).
     func markItem(_ k: MomentMarker, in m: Meeting, modified: Int64) -> SyncItem {
         .mark(MarkItem(id: SyncIDs.wire(k.id), rec: SyncIDs.wire(m.id), at: SyncIDs.ms(k.at), kind: k.kind,
                        note: k.note, created: SyncIDs.ms(k.createdAt), modified: modified))
@@ -355,6 +357,13 @@ struct SyncEngine {
                 return changed
             case "mark":
                 guard let id = SyncIDs.uuid(g.id), let k = try? context.fetch(FetchDescriptor<MomentMarker>(predicate: #Predicate { $0.id == id })).first else { return false }
+                // A typed note (kind `note`) also leaves the notes' "What you
+                // wrote" section here, as it left the Mac's own copy
+                if k.isTypedNote, let m = k.meeting {
+                    let notesBefore = Self.notesHash(m)
+                    TypedNoteStore.removeFromNotes(k, in: m)
+                    keepNotesInStep(m, before: notesBefore, state: &state)
+                }
                 context.delete(k); return true
             case "ref":
                 guard let id = SyncIDs.uuid(g.id), let r = try? context.fetch(FetchDescriptor<MeetingReference>(predicate: #Predicate { $0.id == id })).first else { return false }
@@ -370,6 +379,7 @@ struct SyncEngine {
             case "notes":
                 guard let m = meeting(g.id), m.aiNotes != nil else { return false }
                 m.aiNotes = nil; m.aiNotesAt = nil; m.aiNotesStale = false
+                NotebookItems.pruneDone(m, context: context)
                 return true
             default: return false
             }
@@ -426,6 +436,8 @@ struct SyncEngine {
             m.aiNotes = n.md
             m.aiNotesAt = SyncIDs.date(n.made)
             m.aiNotesStale = n.stale
+            // Done marks on the notebook page belong to the items of the old notes
+            NotebookItems.pruneDone(m, context: context)
             if let mine = notesItem(m, modified: 0) { state.setHash("notes", n.rec, Self.hash(mine)) }
             return true
 
@@ -440,6 +452,12 @@ struct SyncEngine {
                 x.meeting = m
                 return x
             }()
+            // A typed note edited on the Mac: the bullet that quotes it follows, as it did there
+            if existing != nil, marker.isTypedNote, kind == .note, let text = MomentMarker.clean(k.note, kind: .note), text != marker.note {
+                let notesBefore = Self.notesHash(m)
+                TypedNoteStore.followInNotes(marker, newText: text)
+                keepNotesInStep(m, before: notesBefore, state: &state)
+            }
             marker.at = SyncIDs.date(k.at)
             marker.setKind(kind)
             marker.setNote(k.note)

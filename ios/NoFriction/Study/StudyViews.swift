@@ -7,6 +7,9 @@ extension MarkerKind {
         case .important: Theme.accent
         case .question: Color(red: 96 / 255, green: 165 / 255, blue: 250 / 255)
         case .test: Color(red: 52 / 255, green: 211 / 255, blue: 153 / 255)
+        // The user's own line: neutral. Yellow is for actions and the ★ mark,
+        // so a typed note can never be mistaken for ★ Important
+        case .note: Color.white.opacity(0.55)
         }
     }
 }
@@ -29,7 +32,7 @@ struct MarkControl: View {
         VStack(spacing: 8) {
             if let last, last.modelContext != nil {
                 HStack(spacing: 6) {
-                    ForEach(MarkerKind.allCases, id: \.self) { k in
+                    ForEach(MarkerKind.markKinds, id: \.self) { k in
                         Button {
                             last.setKind(k)
                             try? last.modelContext?.save()
@@ -118,13 +121,14 @@ struct MarkersSection: View {
     @State private var noteDraft = ""
 
     var body: some View {
-        let all = meeting.orderedMarkers
+        // The three marks; what the user typed is under Notes ("What you wrote")
+        let all = meeting.marks
         let shown = all.filter { filter == nil || $0.markerKind == filter }
         SectionBlock(title: "Marks") {
             VStack(alignment: .leading, spacing: 8) {
                 Picker("Show", selection: $filter) {
                     Text("All \(all.count)").tag(MarkerKind?.none)
-                    ForEach(MarkerKind.allCases, id: \.self) { k in
+                    ForEach(MarkerKind.markKinds, id: \.self) { k in
                         Text("\(k.symbol) \(all.filter { $0.markerKind == k }.count)").tag(MarkerKind?.some(k))
                     }
                 }
@@ -148,7 +152,7 @@ struct MarkersSection: View {
                             .foregroundStyle(m.note == nil ? .secondary : .primary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         Menu {
-                            ForEach(MarkerKind.allCases, id: \.self) { k in
+                            ForEach(MarkerKind.markKinds, id: \.self) { k in
                                 Button(k.label(for: meeting.kind), systemImage: k.systemImage) { m.setKind(k); try? context.save() }
                             }
                             Button(m.note == nil ? "Add note" : "Edit note", systemImage: "note.text") {
@@ -195,6 +199,157 @@ struct MarkerInlineRow: View {
         .padding(.horizontal, 8)
         .background(marker.markerKind.color.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: - Recording: what the user typed
+
+/// A typed note in the transcript at its time: the user's own line, shown
+/// in full, in the transcript's own layout (time on the left) so it reads
+/// as a line of the page, not as a chip. Neutral on purpose (secondary
+/// fill, primary text, a neutral rule): the accent is for actions and the
+/// ★ mark, and a typed note must never look like ★ Important.
+struct TypedNoteRow: View {
+    let text: String
+    let time: Date
+    /// Time column grows with Dynamic Type, like the transcript's
+    @ScaledMetric(relativeTo: .caption2) private var timeWidth: CGFloat = 52
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 14) {
+            Text(time.formatted(date: .omitted, time: .shortened))
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.tertiary)
+                .frame(width: timeWidth, alignment: .trailing)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: MarkerKind.note.systemImage)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text(text)
+                    .font(.body.weight(.medium))
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 1.5).fill(Color.white.opacity(0.3)).frame(width: 3).padding(.vertical, 6)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Your note: \(text)")
+        .accessibilityValue(time.formatted(date: .omitted, time: .shortened))
+        .accessibilityIdentifier("typed-note")
+    }
+}
+
+/// **What you wrote**, at the top of a recording's Notes: each line the user
+/// typed with its time (tap to see that moment in the transcript) and, once
+/// notes are made, what was being said then. The lines are the user's own
+/// and are shown whether or not there are AI notes; each can be edited or
+/// deleted, the same way as a mark's note.
+struct WhatYouWroteBlock: View {
+    let meeting: Meeting
+    /// The notes' "What you wrote" section, when the notes have one
+    let parsed: WhatYouWrote.Parsed?
+    let onJump: (Date) -> Void
+    @Environment(\.modelContext) private var context
+    @State private var editing: MomentMarker?
+    @State private var noteDraft = ""
+    /// A note about to be deleted: it is the user's own words, so it asks first
+    @State private var deleting: MomentMarker?
+
+    var body: some View {
+        let typed = meeting.typedNotes
+        // The notes' section merged with the typed notes held here, by line:
+        // every typed note has its row, a bullet that quotes one is its
+        // detail, and a bullet no note matches stays visible (never twice)
+        let merged = WhatYouWrote.merge(parsed?.bullets ?? [], typed: typed.compactMap(\.note))
+        VStack(alignment: .leading, spacing: 10) {
+            Text(WhatYouWrote.title)
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
+            ForEach(Array(typed.enumerated()), id: \.element.id) { i, m in
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Button { onJump(m.at) } label: {
+                        Text(m.offset(in: meeting).clock)
+                            .font(.footnote.monospacedDigit())
+                            .underline(color: Color.white.opacity(0.25))
+                            .foregroundStyle(.secondary)
+                            .frame(minWidth: 40, minHeight: 32, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Your note at \(m.offset(in: meeting).clock)")
+                    .accessibilityHint("Shows this moment in the transcript")
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(m.note ?? "")
+                            .font(.callout.weight(.semibold))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        if merged.details.indices.contains(i), !merged.details[i].isEmpty {
+                            Text(NotesMarkdown.inline(merged.details[i]))
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    Menu {
+                        Button("Edit note", systemImage: "note.text") {
+                            noteDraft = m.note ?? ""
+                            editing = m
+                        }
+                        Button("Delete note…", systemImage: "trash", role: .destructive) { deleting = m }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .foregroundStyle(.secondary)
+                            .frame(minWidth: 32, minHeight: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .tint(.secondary)
+                    .accessibilityLabel("Note options")
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("what-you-wrote-line")
+            }
+            // A line the notes quote that isn't among the typed notes here (it
+            // hasn't crossed from the other device yet): shown as written
+            ForEach(Array(merged.unmatched.enumerated()), id: \.offset) { _, e in
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(e.line).font(.callout.weight(.semibold))
+                    if !e.detail.isEmpty { Text(NotesMarkdown.inline(e.detail)).font(.callout).foregroundStyle(.secondary) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("what-you-wrote-unmatched")
+            }
+        }
+        .textSelection(.enabled)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("what-you-wrote")
+        .alert("Note", isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
+            TextField("Type a note", text: $noteDraft)
+            Button("Save") {
+                if let editing { TypedNoteStore.edit(editing, text: noteDraft, context: context) }
+                editing = nil
+            }
+            Button("Cancel", role: .cancel) { editing = nil }
+        }
+        // Marks delete at once; a typed note is the user's own words, so its delete is confirmed
+        .confirmationDialog("Delete this note?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                            titleVisibility: .visible, presenting: deleting) { note in
+            Button("Delete note", role: .destructive) {
+                TypedNoteStore.delete(note, context: context)
+                deleting = nil
+            }
+            Button("Cancel", role: .cancel) { deleting = nil }
+        } message: { note in
+            Text("“\(note.note ?? "")” is removed from this recording and its notes. This can't be undone.")
+        }
     }
 }
 
@@ -482,11 +637,15 @@ struct FlashcardsView: View {
 struct QuizView: View {
     let questions: [StudyQuiz.Item]
     let onJump: (Int) -> Void
+    /// A quiz made of several recordings' questions (the notebook's): which
+    /// question is jumping, and its time. Used instead of `onJump` when set.
+    var onJumpQuestion: ((Int, Int) -> Void)?
     @State private var state: QuizRunState
 
-    init(questions: [StudyQuiz.Item], onJump: @escaping (Int) -> Void) {
+    init(questions: [StudyQuiz.Item], onJump: @escaping (Int) -> Void, onJumpQuestion: ((Int, Int) -> Void)? = nil) {
         self.questions = questions
         self.onJump = onJump
+        self.onJumpQuestion = onJumpQuestion
         _state = State(initialValue: QuizRunState(count: questions.count))
     }
 
@@ -530,7 +689,10 @@ struct QuizView: View {
                             .foregroundStyle(picked == q.answer ? .green : .orange)
                         if !q.explanation.isEmpty { Text(q.explanation).font(.subheadline) }
                         if let at = q.atMs {
-                            Button("Jump to this moment (\(StudyParse.clock(at)))") { onJump(at) }.font(.subheadline)
+                            Button("Jump to this moment (\(StudyParse.clock(at)))") {
+                                if let onJumpQuestion { onJumpQuestion(state.pos, at) } else { onJump(at) }
+                            }
+                            .font(.subheadline)
                         }
                     }
                     Button(state.pos + 1 >= questions.count ? "See score" : "Next question") { state.next(in: questions) }

@@ -5,8 +5,9 @@ import Foundation
 /// (lines already filtered at transcription time; filtered text is never
 /// stored, so it can't be fed back), stricken spans as
 /// `[stricken from the record]`, deleted words gone, each line with its time
-/// in the lecture, plus the moment markers. Built on the main actor (SwiftData
-/// models aren't Sendable); the value itself is Sendable.
+/// in the lecture, plus the moment markers and the typed notes (kind `note`,
+/// shown as "✍ Note"). Ids never go in a prompt. Built on the main actor
+/// (SwiftData models aren't Sendable); the value itself is Sendable.
 struct StudyInput: Sendable, Equatable {
     struct Line: Sendable, Equatable { var ms: Int; var text: String }
     struct Mark: Sendable, Equatable { var ms: Int; var kind: MarkerKind; var note: String? }
@@ -31,9 +32,13 @@ struct StudyInput: Sendable, Equatable {
         self.marks = marks
     }
 
-    @MainActor init(meeting m: Meeting) {
+    /// `screenPrefix`: a line heard from what was playing (screen capture)
+    /// says so, as the notes prompt always has ("On screen: …").
+    @MainActor init(meeting m: Meeting, screenPrefix: Bool = false) {
         let ms = { (d: Date) in max(0, Int((d.timeIntervalSince(m.startedAt) * 1000).rounded(.down))) }
-        lines = m.orderedSegments.map { Line(ms: ms($0.start), text: RedactionText.plain($0.text)) }
+        lines = m.orderedSegments.map {
+            Line(ms: ms($0.start), text: (screenPrefix && $0.isFromScreen ? ScreenSpeaker.prefix : "") + RedactionText.plain($0.text))
+        }
         marks = m.orderedMarkers.map { Mark(ms: ms($0.at), kind: $0.markerKind, note: $0.note) }
         title = m.title
         recordingKind = m.kind
@@ -61,13 +66,30 @@ struct StudyInput: Sendable, Equatable {
         lines.contains { let t = $0.text.trimmingCharacters(in: .whitespacesAndNewlines); return !t.isEmpty && t != RedactionText.placeholder }
     }
 
-    func marksBlock(from: Int = .min, to: Int = .max) -> String {
-        let out = marks.filter { $0.ms >= from && $0.ms <= to }.map { m -> String in
+    /// The typed notes ("Type a note"), in time order
+    var typed: [Mark] {
+        marks.filter { $0.kind == .note && !($0.note ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
+    /// `[m:ss] ✎ On the test: note`, one per line; a typed note reads
+    /// `[m:ss] ✍ Note: text` (clipped to a mark's 280 characters, so the
+    /// block stays as small as it was before notes could be typed).
+    /// `typedNotes: false` leaves the typed notes out (the notes prompt lists
+    /// them on their own, numbered).
+    func marksBlock(from: Int = .min, to: Int = .max, typedNotes: Bool = true) -> String {
+        let out = marks.filter { $0.ms >= from && $0.ms <= to && (typedNotes || $0.kind.isMark) }.map { m -> String in
             var s = "[\(StudyParse.clock(m.ms))] \(m.kind.symbol) \(m.kind.label(for: recordingKind))"
-            if let n = m.note?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty { s += ": \(n)" }
+            if let n = m.note?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty {
+                s += ": \(Self.clip(n, to: MomentMarker.maxNoteLength))"
+            }
             return s
         }
         return out.isEmpty ? "(none)" : out.joined(separator: "\n")
+    }
+
+    /// At most `max` characters, cut with "…"
+    static func clip(_ text: String, to max: Int) -> String {
+        text.count > max ? String(text.prefix(Swift.max(1, max - 1))) + "…" : text
     }
 
     /// SHA-256 of the transcript exactly as the prompt shows it.
@@ -293,32 +315,37 @@ extension MeetingAI {
         }
     }
 
-    /// Make the requested parts. Returns, per part, the validated JSON or a
-    /// message saying why it couldn't be made (asked twice). AI access
-    /// errors throw and stop the run.
-    static func studyGuide(_ input: StudyInput, kinds: [StudyKind] = StudyKind.allCases, contextTokens: Int,
-                           complete: Complete, progress: @Sendable (StudyProgress) async -> Void = { _ in }) async throws
-        -> [(StudyKind, Result<String, StudyPartFailure>)] {
-        guard input.hasTranscript else { throw StudyFailure.noTranscript }
-        var total = kinds.count
-        var done = 0
+    /// What the map step is doing, for a progress line
+    enum CondenseStep: Equatable, Sendable {
+        /// A round is about to read this many parts
+        case round(parts: Int)
+        case reading(part: Int, of: Int)
+        /// One part was read
+        case read
+    }
 
-        // Fit: condense chunk by chunk until the material fits the smallest budget
-        let fixed = studyUserMessage(input, condensed: true, body: "")
-        let finalBudget = kinds.map { bodyBudget(contextTokens: contextTokens, maxTokens: studyMaxTokens($0, contextTokens: contextTokens), fixed: studySystem($0, for: input.recordingKind) + fixed) }.min() ?? 600
+    /// The map step, shared by the review guide and the notes: when the
+    /// transcript doesn't fit `budget` characters beside the prompt and the
+    /// answer, it is condensed part by part into time-stamped notes (up to
+    /// three rounds), so nothing is cut off the end or out of the middle.
+    /// Returns the lines to write from, and whether they are condensed.
+    /// AI access errors throw and stop the run; an unusable answer is asked
+    /// for once more, then the run fails (`StudyFailure.condense`).
+    static func condense(_ input: StudyInput, toFit budget: Int, contextTokens: Int, complete: Complete,
+                         step: (CondenseStep) async -> Void = { _ in }) async throws -> (lines: [String], condensed: Bool) {
         var lines = input.transcriptLines
         var condensed = false
         for round in 0..<3 {
-            if lines.reduce(0, { $0 + $1.count + 1 }) <= finalBudget { break }
+            if lines.reduce(0, { $0 + $1.count + 1 }) <= budget { break }
             let cmax = condenseMaxTokens(contextTokens: contextTokens)
             let chunkBudget = bodyBudget(contextTokens: contextTokens, maxTokens: cmax,
                                          fixed: condenseSystem(for: input.recordingKind) + condenseMessage(input, chunk: "", part: 99, parts: 99) + input.marksBlock())
             let chunks = chunkLines(lines, budget: chunkBudget)
             if round > 0 && chunks.count <= 1 && condensed { break }
-            total += chunks.count
+            await step(.round(parts: chunks.count))
             var notes: [String] = []
             for (i, chunk) in chunks.enumerated() {
-                await progress(StudyProgress(done: done, total: total, label: "Reading the \(StudyWords(input.recordingKind).source) (\(i + 1) of \(chunks.count))…"))
+                await step(.reading(part: i + 1, of: chunks.count))
                 let msgs = [ChatMessage(role: "system", content: condenseSystem(for: input.recordingKind)),
                             ChatMessage(role: "user", content: condenseMessage(input, chunk: chunk, part: i + 1, parts: chunks.count))]
                 var got: [String]?
@@ -332,10 +359,35 @@ extension MeetingAI {
                 }
                 guard let got else { throw StudyFailure.condense(part: i + 1, of: chunks.count) }
                 notes += got
-                done += 1
+                await step(.read)
             }
             lines = notes
             condensed = true
+        }
+        return (lines, condensed)
+    }
+
+    /// Make the requested parts. Returns, per part, the validated JSON or a
+    /// message saying why it couldn't be made (asked twice). AI access
+    /// errors throw and stop the run.
+    static func studyGuide(_ input: StudyInput, kinds: [StudyKind] = StudyKind.allCases, contextTokens: Int,
+                           complete: Complete, progress: @Sendable (StudyProgress) async -> Void = { _ in }) async throws
+        -> [(StudyKind, Result<String, StudyPartFailure>)] {
+        guard input.hasTranscript else { throw StudyFailure.noTranscript }
+        var total = kinds.count
+        var done = 0
+
+        // Fit: condense chunk by chunk until the material fits the smallest budget
+        let fixed = studyUserMessage(input, condensed: true, body: "")
+        let finalBudget = kinds.map { bodyBudget(contextTokens: contextTokens, maxTokens: studyMaxTokens($0, contextTokens: contextTokens), fixed: studySystem($0, for: input.recordingKind) + fixed) }.min() ?? 600
+        let source = StudyWords(input.recordingKind).source
+        let (lines, condensed) = try await condense(input, toFit: finalBudget, contextTokens: contextTokens, complete: complete) { step in
+            switch step {
+            case .round(let parts): total += parts
+            case .reading(let part, let parts):
+                await progress(StudyProgress(done: done, total: total, label: "Reading the \(source) (\(part) of \(parts))…"))
+            case .read: done += 1
+            }
         }
 
         let user = studyUserMessage(input, condensed: condensed, body: lines.joined(separator: "\n"))
