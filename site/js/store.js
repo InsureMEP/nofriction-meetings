@@ -4,8 +4,9 @@
 // The HTML defaults to the not-live state, so the page is correct with JS off.
 const STORE = {
   live: true,
-  // The Mac App Store listing goes live separately; until then its badges stay hidden.
-  macLive: false,
+  // The Mac App Store listing is live (Mac 3.9.0 was the first Mac release).
+  // Set this to false to hide the Mac badges again.
+  macLive: true,
   ios: "https://apps.apple.com/us/app/nofriction-record-your-life/id6818838861",
   mac: "https://apps.apple.com/us/app/nofriction-record-your-life/id6818838861?mt=12",
   testflight: "https://testflight.apple.com/join/4JnJD3Fk"
