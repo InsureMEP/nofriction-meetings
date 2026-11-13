@@ -437,6 +437,19 @@ UI in `src/components/redaction/Redaction.tsx`.
   from backups; a backup holding a different version of that line that still
   has the words is deleted.
 - **Comments.** `meeting_comments` are never rewritten, for Delete or Strike.
+- **Read the screens.** What the AI read from a screen is a `text_snapshots`
+  row on that screen's state id (`source = 'screen_reading'`,
+  `screen_reading.rs`), like a browser address captured on screen. Step 4
+  of the checklist already removes a screen's text snapshots whatever their
+  source, by screen and by time, in the live database and in backups, so a
+  screen's Delete or Strike removes its reading with no code of its own
+  (`redaction::tests::what_the_ai_read_from_a_screen_goes_with_the_screen`).
+  A reading is saved only if its screen still exists, with the same
+  picture, when the AI's answer arrives. Readings are deliberately not
+  given to Make notes or Fill in the blanks: notes would then quote a
+  screen, and a screen's purge doesn't clean notes. Don't feed them to any
+  AI prompt without first making the screen purge clean what was made from
+  them.
 - **Fill in the blanks.** What it wrote (`meeting_notes.filled` on the Mac;
   the `## What you missed` and `## More detail` sections of `aiNotes` on
   iPhone) paraphrases the recording, so word matching can't clean it: any

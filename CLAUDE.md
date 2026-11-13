@@ -188,13 +188,26 @@ these rules apply.
     wait until no recording is running (`meeting_notes::run::after_stop`;
     iPhone `AutoNotes`, which checks before every request); only the
     user's own **Make notes** may run during another recording.
-  - **A picture reaches an AI only on a click that says so.** No feature
-    sends an image today (audited 2026-11-13): captions and picture picks
-    send text about each picture. The policy guard lists every file
-    allowed to build an image message; add to that list on purpose, with
-    the click that leads there. `vlm_scheduler.rs` (a timer that sent
-    queued screenshots) is retired; don't start it, queue screens for it
-    or bring back a timer that calls the AI.
+  - **A picture reaches an AI only on a click that says so.** One feature
+    sends images: **Read the screens** (`screen_reading.rs`; FADELL_V2.md
+    §12). Its confirmation shows the count, the destination and each
+    screen; the count is passed back and `read_screens` refuses a
+    different one. At most 12 a click, one picture per request, never by
+    itself, never on a timer, never for the recording that is running.
+    Captions and picture picks still send text about a picture, never the
+    picture. The policy guard lists every file allowed to build an image
+    message; add to that list on purpose, with the click that leads there.
+    `vlm_scheduler.rs` (a timer that sent queued screenshots) is retired;
+    don't start it or queue screens for it.
+  - **What was read from a screen is a text snapshot on that screen**
+    (`source = 'screen_reading'`), so the screen's purge is its purge
+    (docs/REDACTION.md: no purge filters `text_snapshots` by source).
+    Don't give readings to Make notes, Fill in the blanks or any other AI
+    prompt until a screen's purge also cleans what was made from them.
+    The prompts are a library (`screen_prompts.rs`): one entry per kind
+    of screen, the kind decided on the device from the app and window,
+    and rules every prompt shares (only what is visible, never a person's
+    appearance, `skip` for private or empty screens).
   - **Nothing automatic asks the AI while a recording runs.** Work nobody
     clicked for (automatic notes, the topics that follow notes) goes
     through `study::BackgroundCompleter`, which waits for the recording

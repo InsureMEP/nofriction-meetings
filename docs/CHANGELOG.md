@@ -17,6 +17,15 @@ docs/design/FADELL_V2.md), on the Mac and on iPhone and iPad. An entry
 marked (Mac) or (iPhone) is on that platform only.
 
 ### Added
+- **Read the screens (Mac).** In a recording's Notes, **Read the screens…**
+  sends up to 12 of the recording's screens to your AI and keeps what it
+  reads from each (a slide's title and points, a document's statements, a
+  formula) as text under **On the screens**, with the time it was shown.
+  A confirmation first says how many screens go and where, and lists them;
+  nothing is sent unless you press its button. The screens at your marks
+  and typed notes go first. It needs a model that can read images
+  (Settings → AI → Screens) and is part of noFriction Pro. Deleting or
+  striking a screen removes what was read from it.
 - **Fill in the blanks.** One button in a recording's Notes. It reads the
   whole recording again beside the notes you have and adds **What you
   missed** (things that were said and aren't in the notes, each with the
@@ -142,8 +151,9 @@ On the Mac, unless marked.
   topics that follow notes had no check, and automatic notes for a long
   recording only checked before their first request. Each request now
   waits for the recording to stop.
-- The consent dialog said it sends "selected screenshots". No feature sends
-  a picture; it now says so.
+- The consent dialog said it sends "selected screenshots" when no feature
+  sent a picture. It now says a screen is sent only when you press **Read
+  the screens**, which shows how many first.
 - **Make notes doesn't send text that is about to be deleted.** A run
   started inside a Delete's five-second undo window read the transcript as
   it still was. It now waits to be asked again (Mac and iPhone).

@@ -634,3 +634,63 @@ looked at. The two devices filling in and syncing with each other is
 covered by unit tests on each side, not by a run between a real iPhone and
 Mac.
 
+---
+
+## 12. Read the screens, and the prompt library (Mac, 2026-11-13)
+
+The owner, during the release: "you need to make a prompt library for
+reviewing the images. how many images are you sending? Are they all the
+time?" The answer then was none: no feature sent a picture, and a retired
+background analyzer that could have was removed the same day. This is the
+feature that does, built so those questions always have an exact answer.
+
+In a recording's Notes, **On the screens** has **Read the screens…**. A
+confirmation says how many screens will go and to which host, and lists
+each with its time, its kind and its app. Its button says the number
+again. Each screen is then sent as one picture and what the AI read from
+it is kept as text, with its time.
+
+**Rules**
+
+- **How many: the number on the button, at most 12.** The count the user
+  confirmed is passed back, and the Mac refuses to send a different one.
+- **Which: the ones that matter.** The screen showing at each mark and
+  typed note, then the rest spread evenly over the recording. A screen is
+  read once; noFriction's own window never.
+- **When: only on that click.** Never by itself, never on a timer, never
+  on a key phrase, never while that recording is running.
+- **What goes: one picture per request**, a copy made smaller (1568 px on
+  its long edge), with the prompt for its kind and up to 420 characters of
+  what was being said then. Nothing else.
+- **Where: the user's image model.** The gates of every AI call apply (Pro
+  in the Mac App Store build, consent for a public endpoint). Apple's
+  on-device model can't read images, so nothing is sent with it.
+- **The prompt library** (`screen_prompts.rs`). One entry per kind of
+  screen: slide, whiteboard, document, code, table, chart, web page, call,
+  and anything else. The kind is decided on the device from the app and
+  window the screen came from; no request is made to classify it. Every
+  prompt shares the same rules (only what is visible, exact copies of
+  formulas and numbers, never a person's appearance or name, `skip` for a
+  private or empty screen) and the same JSON answer, so one parser reads
+  them all. A call is read for what is shared, never for who is in it.
+- **What is kept is the screen's.** A reading is a text snapshot on the
+  screen's own id, so deleting or striking the screen removes it through
+  the purge that already exists. It is saved only if the screen still
+  exists, with the same picture, when the answer arrives.
+- **Not given to other AI features.** Make notes and Fill in the blanks
+  don't read it: notes would then quote a screen, and a screen's purge
+  doesn't clean notes.
+
+**Not on iPhone or iPad.** Its AI client only sends text.
+
+**Verified.** Unit tests: the library (one prompt per kind, the kind from
+app and window, the shared rules), the choice of screens, the parser, one
+click sending the number shown and refusing another, a reading dropped
+when its screen is deleted or its picture replaced meanwhile, a refusal
+stopping the run, and a screen's Delete and Strike removing its reading.
+The screen in the film harness: the confirmation, progress, the list.
+
+**Not verified.** No picture was sent to a real model: what a model reads
+from a real slide, whether it honours `skip` on a private screen, and what
+twelve requests cost are untested. Not run in the real app.
+

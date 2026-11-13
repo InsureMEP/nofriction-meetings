@@ -508,6 +508,38 @@ the same consent dialog when the endpoint is a public one.
 
 AI can be wrong. Check names, numbers and dates before you send anything.
 
+### Read the screens (Mac)
+
+If a recording has screens (slides, a document, a whiteboard that was on
+your Mac's screen), **Notes** has **On the screens**. Press **Read the
+screens…** and a confirmation shows:
+
+- how many screens will be sent, and to which address;
+- each one, with its time, what kind of screen it is and the app;
+- how many screens the recording has, and how many were read before.
+
+Press **Send 12 screens** (the button says the number) and each screen goes
+to your AI as one picture, made smaller, with what was being said then.
+What the AI reads from it is kept as text under **On the screens**: a
+slide's title and points, a document's statements, the terms it defines,
+and wording kept exactly (a formula, a few lines of code). Click a time to
+see that screen in Rewind.
+
+- **Nothing is sent by itself.** A screen leaves your Mac only when you
+  press that button, and only the screens the confirmation listed.
+- **At most 12 a time.** The screens showing when you marked a moment or
+  typed a note go first; the rest are spread over the recording. Press
+  **Read the screens…** again for more. A screen is read once.
+- **It needs a model that can read images** (Settings → AI → Screens).
+  Apple's on-device model can't read pictures, so nothing is sent with it.
+- **Private screens.** The AI is told to keep nothing from a screen that
+  shows passwords, messages, email or banking, and never to describe or
+  name people. It still receives the picture, so don't send a recording's
+  screens to an AI you wouldn't show them to.
+- Deleting or striking a screen removes what was read from it. What was
+  read is not used by Make notes or Fill in the blanks.
+- Part of noFriction Pro. Check what it wrote against the screen.
+
 ### Fill in the blanks
 
 In a recording's **Notes**, once notes exist, **Fill in the blanks** reads
