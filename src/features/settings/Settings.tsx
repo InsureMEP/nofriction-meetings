@@ -275,7 +275,12 @@ function RecordingSettings({ showToast }: { showToast: (text: string, error?: bo
                         aria-checked={remind}
                         aria-label="Remind me when something starts"
                         tabIndex={0}
-                        onKeyDown={(e) => (e.key === " " || e.key === "Enter") && saveStarting(REMIND_SETTING, !remind, setRemind)}
+                        onKeyDown={(e) => {
+                            if (e.key === " " || e.key === "Enter") {
+                                e.preventDefault();
+                                void saveStarting(REMIND_SETTING, !remind, setRemind);
+                            }
+                        }}
                     >
                         <div className="toggle-knob" />
                     </div>
@@ -294,7 +299,12 @@ function RecordingSettings({ showToast }: { showToast: (text: string, error?: bo
                         aria-checked={autoStart}
                         aria-label="Record by itself"
                         tabIndex={0}
-                        onKeyDown={(e) => (e.key === " " || e.key === "Enter") && saveStarting(AUTO_START_SETTING, !autoStart, setAutoStart)}
+                        onKeyDown={(e) => {
+                            if (e.key === " " || e.key === "Enter") {
+                                e.preventDefault();
+                                void saveStarting(AUTO_START_SETTING, !autoStart, setAutoStart);
+                            }
+                        }}
                     >
                         <div className="toggle-knob" />
                     </div>
@@ -316,8 +326,14 @@ function RecordingSettings({ showToast }: { showToast: (text: string, error?: bo
                         onClick={() => saveAutoStop(!autoStop)}
                         role="switch"
                         aria-checked={autoStop}
+                        aria-label="Stop when it's over"
                         tabIndex={0}
-                        onKeyDown={(e) => (e.key === " " || e.key === "Enter") && saveAutoStop(!autoStop)}
+                        onKeyDown={(e) => {
+                            if (e.key === " " || e.key === "Enter") {
+                                e.preventDefault();
+                                void saveAutoStop(!autoStop);
+                            }
+                        }}
                     >
                         <div className="toggle-knob" />
                     </div>

@@ -94,8 +94,9 @@ export function LiveTranscriptView({ transcripts, isRecording, onStartRecording,
         lastNotes.current = noteCount;
         if (typed) followRef.current = true;
         if (!el || !followRef.current) return;
+        const calm = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
         requestAnimationFrame(() => {
-            el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+            el.scrollTo({ top: el.scrollHeight, behavior: calm ? "auto" : "smooth" });
         });
     }, [transcripts, noteCount]);
 
