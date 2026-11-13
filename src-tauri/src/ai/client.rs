@@ -652,6 +652,28 @@ pub async fn complete(kind: Kind, msgs: Vec<Msg>, opts: Opts) -> Result<String, 
     run(&target, msgs, opts).await
 }
 
+/// One completion that goes only where the caller was told it would. The
+/// target is resolved once: `allowed` sees that target's base URL and model
+/// before anything is sent, and the request then uses the same target, so
+/// the check and the send can never see two different settings.
+/// `Ok(None)`: `allowed` said no and nothing was sent.
+///
+/// Read the screens uses it: a picture goes to the host and model its
+/// confirmation named, or not at all (screen_reading.rs).
+pub async fn complete_if(
+    kind: Kind,
+    msgs: Vec<Msg>,
+    opts: Opts,
+    allowed: impl FnOnce(&str, &str) -> bool,
+) -> Result<Option<String>, AiError> {
+    crate::entitlement::require_pro().await?;
+    let target = resolve(kind)?;
+    if !allowed(&target.base_url, &target.model) {
+        return Ok(None);
+    }
+    run(&target, msgs, opts).await.map(Some)
+}
+
 /// Apple Foundation Models: system messages become the session
 /// instructions; the rest is flattened into one prompt (the on-device model
 /// has a 4K context, already fitted by `run`).

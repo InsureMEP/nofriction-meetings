@@ -34,9 +34,24 @@ pub struct ActivityContext {
     pub entities: Option<serde_json::Value>,
 }
 
-/// Load, downscale and JPEG-encode an image; returns (mime, base64).
+/// Load an image the way a viewer shows it: a photo from the iPhone keeps
+/// its rotation in EXIF, and a decoder that ignores it gives the picture
+/// lying on its side.
+fn open_upright(path: &str) -> image::ImageResult<image::DynamicImage> {
+    use image::ImageDecoder;
+    let mut decoder = image::ImageReader::open(path)?.with_guessed_format()?.into_decoder()?;
+    // No orientation, or one that can't be read: the picture as stored
+    let orientation = decoder.orientation().unwrap_or(image::metadata::Orientation::NoTransforms);
+    let mut img = image::DynamicImage::from_decoder(decoder)?;
+    img.apply_orientation(orientation);
+    Ok(img)
+}
+
+/// Load, turn upright, downscale when larger than `MAX_IMAGE_EDGE` and
+/// JPEG-encode an image; returns (mime, base64). What comes out is always a
+/// new encoding: no EXIF or other metadata of the file is in it.
 pub fn encode_image_for_upload(path: &str) -> Result<(String, String), String> {
-    let img = image::open(path).map_err(|e| format!("Failed to read image: {}", e))?;
+    let img = open_upright(path).map_err(|e| format!("Failed to read image: {}", e))?;
     let img = if img.width().max(img.height()) > MAX_IMAGE_EDGE {
         img.resize(MAX_IMAGE_EDGE, MAX_IMAGE_EDGE, image::imageops::FilterType::Triangle)
     } else {
@@ -154,5 +169,66 @@ mod tests {
         let bytes = base64::engine::general_purpose::STANDARD.decode(b64).unwrap();
         let img = image::load_from_memory(&bytes).unwrap();
         assert_eq!(img.width(), 1568);
+    }
+}
+
+#[cfg(test)]
+mod upright_tests {
+    use super::*;
+    use base64::Engine;
+
+    /// A JPEG of `w`×`h` whose left half is white and right half black,
+    /// with an EXIF block that says how to turn it (1 = as stored,
+    /// 6 = a quarter turn clockwise, the way a portrait iPhone photo is saved).
+    fn jpeg_with_orientation(dir: &std::path::Path, w: u32, h: u32, orientation: u8) -> String {
+        let img = image::RgbImage::from_fn(w, h, |x, _| if x < w / 2 { image::Rgb([255, 255, 255]) } else { image::Rgb([0, 0, 0]) });
+        let mut plain = std::io::Cursor::new(Vec::new());
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut plain, 95).encode_image(&img).unwrap();
+        let plain = plain.into_inner();
+        // APP1 "Exif": a little-endian TIFF with one IFD entry, tag 0x0112
+        let mut tiff: Vec<u8> = vec![b'I', b'I', 42, 0, 8, 0, 0, 0, 1, 0];
+        tiff.extend_from_slice(&[0x12, 0x01, 3, 0, 1, 0, 0, 0, orientation, 0, 0, 0]);
+        tiff.extend_from_slice(&[0, 0, 0, 0]);
+        let mut app1: Vec<u8> = b"Exif\0\0".to_vec();
+        app1.extend_from_slice(&tiff);
+        let len = (app1.len() + 2) as u16;
+        let mut out = plain[..2].to_vec(); // SOI
+        out.extend_from_slice(&[0xFF, 0xE1]);
+        out.extend_from_slice(&len.to_be_bytes());
+        out.extend_from_slice(&app1);
+        out.extend_from_slice(&plain[2..]);
+        let path = dir.join(format!("o{orientation}.jpg"));
+        std::fs::write(&path, out).unwrap();
+        path.to_string_lossy().to_string()
+    }
+
+    fn decoded(path: &str) -> image::RgbImage {
+        let (mime, b64) = encode_image_for_upload(path).unwrap();
+        assert_eq!(mime, "image/jpeg");
+        let bytes = base64::engine::general_purpose::STANDARD.decode(b64).unwrap();
+        // What leaves is a new encoding: the file's EXIF block is not in it
+        assert!(!bytes.windows(4).any(|w| w == b"Exif"), "no EXIF in what is sent");
+        image::load_from_memory(&bytes).unwrap().to_rgb8()
+    }
+
+    #[test]
+    fn a_photo_is_sent_the_way_it_is_shown() {
+        let dir = std::env::temp_dir().join(format!("nf-upright-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // Stored as it is shown: unchanged, white on the left
+        let flat = decoded(&jpeg_with_orientation(&dir, 80, 40, 1));
+        assert_eq!(flat.dimensions(), (80, 40));
+        assert!(flat.get_pixel(10, 20).0[0] > 200 && flat.get_pixel(70, 20).0[0] < 60);
+        // Stored on its side with "turn a quarter clockwise": sent upright.
+        // The stored left half (white) becomes the top.
+        let turned = decoded(&jpeg_with_orientation(&dir, 80, 40, 6));
+        assert_eq!(turned.dimensions(), (40, 80), "a portrait photo goes as a portrait");
+        assert!(turned.get_pixel(20, 10).0[0] > 200, "white on top");
+        assert!(turned.get_pixel(20, 70).0[0] < 60, "black at the bottom");
+        // A large picture is made smaller; its shape is kept
+        let big = decoded(&jpeg_with_orientation(&dir, 3200, 1600, 1));
+        assert_eq!(big.dimensions(), (MAX_IMAGE_EDGE, MAX_IMAGE_EDGE / 2));
+        assert!(encode_image_for_upload(&dir.join("missing.jpg").to_string_lossy()).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

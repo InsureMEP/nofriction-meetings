@@ -551,7 +551,7 @@ const DEMO_SCREENS: Record<string, DemoScreen[]> = {
     "m-bio-membrane": [
         { state_id: "scr-1", ms: 4 * 60_000, kind: "Slide", app_name: "Keynote", text: "Slide: The fluid mosaic model\n- The membrane is a phospholipid bilayer with proteins moving in it.\n- Cholesterol sits between the tails and steadies it.\nTerms:\n- Amphipathic: having a water-loving and a water-fearing end" },
         { state_id: "scr-2", ms: 16 * 60_000 + 5_000, kind: "Slide", app_name: "Keynote", text: "Slide: Four parts of the membrane\n- Phospholipids\n- Proteins\n- Cholesterol\n- Carbohydrate chains" },
-        { state_id: "scr-3", ms: 24 * 60_000, kind: "Web page", app_name: "Safari", text: "" },
+        { state_id: "scr-3", ms: 24 * 60_000, kind: "Screen", app_name: null, text: "" },
         { state_id: "scr-mail", ms: 30 * 60_000, kind: "Screen", app_name: "Mail", text: "", private: true },
         { state_id: "scr-4", ms: 38 * 60_000 + 50_000, kind: "Slide", app_name: "Keynote", text: "Slide: The sodium-potassium pump\n- Three sodium ions out, two potassium ions in, one ATP used.\nExact wording: 3 Na+ out / 2 K+ in / 1 ATP" },
         { state_id: "scr-5", ms: 47 * 60_000 + 40_000, kind: "Photo", app_name: null, text: "Whiteboard: Week 7\n- Quiz on membranes next Wednesday.\n- Read chapter 7, sections 1 to 3." },
@@ -588,7 +588,14 @@ function screenPlan(id: string) {
     const send = unread.slice(0, 12);
     const running = screenRuns.has(id);
     return {
-        send: send.map(({ state_id, ms, kind, app_name, text }) => ({ state_id, ms, kind, app_name, image_path: demoPicture(kind, text) })),
+        send: send.map(({ state_id, ms, kind, app_name, text }) => ({
+            state_id,
+            ms,
+            kind,
+            app_name,
+            image_path: demoPicture(kind, text),
+            whole_display: kind === "Screen" && !app_name,
+        })),
         total: readable.length,
         already: readable.length - unread.length,
         more: unread.length - send.length,
@@ -615,7 +622,7 @@ interface ScreensConfirmed {
 
 /** Like the app: exactly the confirmed ids, to the confirmed destination. */
 function readScreens(id: string, confirmed: ScreensConfirmed) {
-    const none = { read: 0, skipped: 0, gone: 0, failed: 0, stopped: null as string | null, cancelled: false };
+    const none = { read: 0, skipped: 0, gone: 0, failed: 0, stopped: null as string | null, stopped_at_ms: null as number | null, cancelled: false };
     const ids = [...new Set(confirmed?.state_ids ?? [])];
     if (ids.length === 0) return Promise.reject("No screens were chosen.");
     if (ids.length > 12) return Promise.reject("That is more screens than one click sends. Check the list again.");
@@ -635,6 +642,7 @@ function readScreens(id: string, confirmed: ScreensConfirmed) {
             if (i >= ids.length || run.stop) {
                 out.cancelled = run.stop && i < ids.length;
                 screenRuns.delete(id);
+                emitEvent("screens_progress", { meetingId: id, finished: true });
                 resolve(out);
                 return;
             }
@@ -652,6 +660,10 @@ function readScreens(id: string, confirmed: ScreensConfirmed) {
         };
         step(0);
     });
+}
+
+function forgetScreenReading(id: string, stateId: string): boolean {
+    return screensRead.get(id)?.delete(stateId) ?? false;
 }
 
 function stopScreenReading(id: string): boolean {
@@ -1185,6 +1197,8 @@ function handle(cmd: string, args: Args): unknown {
             return readScreens(a.meetingId, a.confirmed);
         case "stop_screen_reading":
             return stopScreenReading(a.meetingId);
+        case "forget_screen_reading":
+            return forgetScreenReading(a.meetingId, a.stateId);
         case "generate_meeting_report":
         case "fill_in_notes":
         case "draft_followup_email":

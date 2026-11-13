@@ -2,8 +2,18 @@
 // sends pictures of the user's screens to their AI. This file holds what
 // the confirmation and the list say; the component is ScreenReadings.tsx.
 
-/** `{meetingId, done, total}` while screens are being read */
+/**
+ * `{meetingId, done, total}` while screens are being read, then
+ * `{meetingId, finished: true}` once, however the run ended.
+ */
 export const SCREENS_PROGRESS_EVENT = "screens_progress";
+
+export interface ScreensProgress {
+    meetingId: string;
+    done?: number;
+    total?: number;
+    finished?: boolean;
+}
 
 /** One picture a click would send */
 export interface PlanItem {
@@ -14,6 +24,8 @@ export interface PlanItem {
     app_name: string | null;
     /** The picture's file, shown in the confirmation */
     image_path: string;
+    /** A capture of a whole display: it shows everything that was on it */
+    whole_display: boolean;
 }
 
 /** What Read the screens would do right now (looking sends nothing) */
@@ -53,8 +65,21 @@ export interface ReadSummary {
     failed: number;
     /** Why the run ended early (an AI error or a sentence); null when it didn't */
     stopped: string | null;
+    /** The time of the screen it stopped at, when it stopped at one */
+    stopped_at_ms: number | null;
     /** The user stopped it */
     cancelled: boolean;
+}
+
+/**
+ * The error is the app's own "needs consent" or "needs Pro" answer, not text
+ * from an endpoint that happens to contain those words: the backend's gate
+ * errors start with the marker. Only these may lead to asking and calling
+ * again, because calling again sends a picture again.
+ */
+export function isOwnGateError(e: unknown): boolean {
+    const s = e instanceof Error ? e.message : String(e);
+    return s.startsWith("CONSENT_REQUIRED:") || s.startsWith("PRO_REQUIRED");
 }
 
 /** What the confirmation's button passes back: exactly what the user saw. */
@@ -99,6 +124,30 @@ export function confirmScope(plan: ScreenPlan): string {
     if (plan.more > 0) parts.push(`${plan.more} more can be read after these: the ones at your marks and notes go first.`);
     if (plan.left_out > 0) parts.push(leftOutLine(plan.left_out));
     return parts.join(" ");
+}
+
+/** Where a picture came from, for its tile: the app, or what it is. */
+export function pictureSource(item: PlanItem): string | null {
+    if (item.app_name) return item.app_name;
+    if (item.whole_display) return "Whole display";
+    return null;
+}
+
+/**
+ * Said when the list has pictures noFriction can't judge by their app: a
+ * whole display shows everything that was on it, and a photo anything.
+ */
+export function lookFirstLine(plan: ScreenPlan): string | null {
+    const displays = plan.send.filter((s) => s.whole_display).length;
+    const photos = plan.send.filter((s) => s.kind === "Photo").length;
+    if (displays === 0 && photos === 0) return null;
+    const what =
+        displays > 0 && photos > 0
+            ? "A whole display shows everything that was on it, and a photo can show anything"
+            : displays > 0
+              ? "A whole display shows everything that was on it, not one app"
+              : "A photo can show anything";
+    return `${what}. Open each picture and untick any you wouldn't show your AI.`;
 }
 
 /** Pictures that are never sent, and why. */

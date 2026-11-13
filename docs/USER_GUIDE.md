@@ -539,19 +539,28 @@ few lines of code). Click a time to see that screen in Rewind.
   been sent.
 - **It needs a model that can read images** (Settings → AI → Screens).
   Apple's on-device model can't read pictures, so nothing is sent with it.
-  If the AI refuses or fails, it stops after that one picture, and the
-  pictures it didn't answer about can be sent again.
-- **Private screens are never sent.** A window of Mail, Messages or
-  another mail or chat app, a password app, a terminal, a private or
-  incognito browser window, a tab on a sign-in page or a bank, a file that
-  holds keys, and noFriction's own window are left out on your Mac; they
-  aren't in the list. This works from the app and window a screen was
-  captured from. If you record your whole display, noFriction doesn't know
-  which app was showing, so look at the pictures in the confirmation and
-  untick any you wouldn't show your AI.
+  If your AI can't be reached, or rejects the very first picture, it stops
+  there. If it has already read some and rejects one, that one is left
+  unread and it goes on; a second rejection in a row stops it. Pictures it
+  didn't answer about stay unread and can be sent again.
+- **Look at the pictures before you send them.** Click a picture in the
+  confirmation to see it large, exactly as it would be sent, and untick
+  any you wouldn't show your AI.
+- **Screens noFriction recognises as private are never in the list.**
+  It keeps a list of mail, chat and password apps, terminals, and words in
+  a browser tab's title (private or incognito browsing, mail, a sign-in
+  page, a bank), and leaves out files that hold keys and its own window.
+  An app or site that isn't on its list is not recognised.
+  - If you recorded one window, it goes by that window.
+  - If you recorded your whole display, it goes by the app that was in
+    front at that moment. Something private that was only visible behind
+    another window is not recognised, and neither is anything in a photo.
+    Those pictures are marked **Whole display** or **Photo**.
 - The AI is also told to keep nothing from a picture that shows passwords,
   messages, email or banking, never to describe or name people, and never
   to read a call's chat. It still receives the picture.
+- **Remove** beside a reading deletes what was read from that screen. The
+  screen can then be read again.
 - Deleting or striking a screen removes what was read from it. Nothing can
   be read while a Delete is still in its undo time. What was read is not
   used by Make notes, Fill in the blanks, Links, Chat or the Obsidian

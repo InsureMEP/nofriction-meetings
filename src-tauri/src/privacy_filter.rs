@@ -232,6 +232,15 @@ pub fn should_skip_capture() -> bool {
     false
 }
 
+/// The app and title of the window in front right now, for a capture of a
+/// whole display (which has no app of its own). Kept beside the screen so a
+/// private one can be left out of Read the screens (screen_prompts.rs
+/// `never_sent`). None when the window server can't say; the title is empty
+/// without Screen Recording permission.
+pub fn front_window() -> Option<(String, String)> {
+    on_screen_windows()?.into_iter().next()
+}
+
 /// A stored window title says private or incognito browsing
 /// (screen_prompts.rs `never_sent`: such a screen is never sent to an AI).
 pub fn is_private_title(title: &str) -> bool {

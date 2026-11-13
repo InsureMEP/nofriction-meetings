@@ -24,12 +24,19 @@ marked (Mac) or (iPhone) is on that platform only.
   it was shown. A confirmation first shows every picture that would go,
   each with a tick box, and names where they go; only the ticked ones are
   sent, only there, and only when you press its button. Each picture goes
-  with a fixed instruction and nothing else from the recording. Screens
-  that look private (mail, messages, passwords, a terminal, private
-  browsing) are never offered. The screens at your marks and typed notes
-  go first. **Stop** ends it before the next picture. It needs a model
-  that can read images (Settings → AI → Screens) and is part of noFriction
-  Pro. Deleting or striking a screen removes what was read from it.
+  with a fixed instruction and nothing else from the recording. Click a
+  picture to see it large before you send it. Screens noFriction
+  recognises as private (a known mail, chat or password app, a terminal,
+  private browsing) are never offered; when you record your whole display
+  it goes by the app that was in front, so look at those pictures first.
+  The screens at your marks and typed notes go first. **Stop** ends it
+  before the next picture, and **Remove** deletes what was read from a
+  screen. It needs a model that can read images (Settings → AI → Screens)
+  and is part of noFriction Pro. Deleting or striking a screen removes
+  what was read from it.
+- Settings → AI now says where pictures go apart from where text goes
+  (they can differ: Apple on-device for text, another model for Read the
+  screens).
 - The prompt library for pictures: one instruction per kind (slide,
   whiteboard, document, code, table, chart, web page, call, photo),
   chosen on your Mac from the app the screen came from.

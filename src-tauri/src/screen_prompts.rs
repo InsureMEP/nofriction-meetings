@@ -206,36 +206,78 @@ fn has_ext(title: &str, ext: &str) -> bool {
 
 const BROWSERS: &[&str] = &["safari", "chrome", "chromium", "firefox", "arc", "brave", "edge", "opera", "vivaldi", "duckduckgo", "orion"];
 
+// Apps that show one kind of thing: the app decides the kind.
+const SLIDE_APPS: &[&str] = &["keynote", "powerpoint"];
+const WHITEBOARD_APPS: &[&str] = &["miro", "figjam", "freeform", "excalidraw", "whiteboard"];
+const CALL_APPS: &[&str] = &["zoom", "teams", "meet", "facetime", "webex"];
+const CODE_APPS: &[&str] = &["xcode", "visual studio code", "code", "intellij", "pycharm", "webstorm", "rustrover", "cursor", "zed"];
+const TABLE_APPS: &[&str] = &["excel", "numbers", "airtable"];
+const DOCUMENT_APPS: &[&str] = &["word", "pages", "preview", "acrobat", "notion", "obsidian", "notes", "textedit", "books"];
+
+/// The app's kind, when it is one this library knows.
+fn app_kind(app: &str) -> Option<ScreenKind> {
+    [
+        (SLIDE_APPS, ScreenKind::Slide),
+        (WHITEBOARD_APPS, ScreenKind::Whiteboard),
+        (CALL_APPS, ScreenKind::Call),
+        (CODE_APPS, ScreenKind::Code),
+        (TABLE_APPS, ScreenKind::Table),
+        (DOCUMENT_APPS, ScreenKind::Document),
+    ]
+    .into_iter()
+    .find(|(names, _)| is_app(app, names))
+    .map(|(_, kind)| kind)
+}
+
 /// Apps whose windows are never sent: mail, messages, passwords, money,
-/// and terminals (which show commands, keys and tokens).
+/// and terminals (which show commands, keys and tokens). Whole words of
+/// the app's name, lower case. Apple's own apps are listed under the
+/// names macOS gives them in other languages too.
 const PRIVATE_APPS: &[&str] = &[
-    "mail", "outlook", "spark", "airmail", "mimestream", "superhuman", "thunderbird",
-    "messages", "whatsapp", "signal", "telegram", "messenger", "slack", "discord", "wechat", "line",
-    "passwords", "keychain access", "wallet", "health",
-    "terminal", "iterm", "iterm2", "warp", "kitty", "alacritty", "ghostty", "hyper", "wezterm",
+    // Mail
+    "mail", "outlook", "spark", "airmail", "mimestream", "superhuman", "thunderbird", "fastmail", "hey", "proton mail",
+    // Messages and chat
+    "messages", "whatsapp", "signal", "telegram", "messenger", "slack", "discord", "wechat", "line", "skype",
+    "google chat", "element",
+    "nachrichten", "mensajes", "messaggi", "berichten", "meddelanden", "mensagens", "メッセージ", "信息",
+    // Passwords and money
+    "passwords", "keychain access", "wallet", "health", "enpass", "nordpass", "proton pass", "strongbox", "keeper",
+    "roboform",
+    "passwörter", "contraseñas", "mots de passe", "wachtwoorden", "senhas", "パスワード", "密码",
+    // Terminals
+    "terminal", "iterm", "iterm2", "warp", "kitty", "alacritty", "ghostty", "hyper", "wezterm", "tabby", "termius",
 ];
 
-/// Window titles (whole words) that say the same about a browser tab or a
-/// document.
+/// Window titles (whole words) that say the same about a browser tab, or
+/// about a window of an app this library doesn't know.
 const PRIVATE_TITLE_WORDS: &[&str] = &[
-    "gmail", "inbox", "outlook", "proton mail", "protonmail", "whatsapp", "messenger", "telegram",
+    "gmail", "inbox", "mail", "webmail", "outlook", "proton mail", "protonmail", "fastmail",
+    "whatsapp", "messenger", "telegram", "messages", "slack", "discord", "chat",
     "password", "passwords", "1password", "bitwarden", "lastpass", "dashlane",
     "sign in", "log in", "login", "two factor", "verification code",
     "bank", "banking", "paypal", "venmo", "tax return", "payslip", "pay stub",
     "private key", "api key", "api keys", "secrets", "credentials", "id rsa", "id ed25519",
 ];
 
-/// Files that hold keys or secrets.
+/// Files that hold keys or secrets, whatever app shows them.
 const PRIVATE_EXTENSIONS: &[&str] = &[".pem", ".p8", ".p12", ".pfx", ".keychain", ".env", ".kdbx", ".ovpn"];
 
 /// This screen is never sent to an AI, whatever the user presses. Decided
 /// on the device from the app and window it was captured from, before the
 /// user is shown what would go. It errs toward leaving a screen out.
 ///
-/// A screen captured as a whole display has no app and no window title, so
-/// nothing here can recognise it: the confirmation shows every picture and
-/// lets the user leave any out, and the shared rules tell the AI to skip
-/// private content.
+/// For a capture of one window, `app_name` and `window_title` are that
+/// window's. For a capture of a whole display they are the app and title
+/// of the window that was in front (screen_reading.rs passes them): a
+/// display with Mail in front is left out, but a private window that was
+/// only visible behind another can't be recognised. The confirmation shows
+/// every picture and lets the user leave any out, and the shared rules
+/// tell the AI to skip private content.
+///
+/// A window's title is trusted to say what it shows only for a browser tab
+/// or an app this library doesn't know: "Password hashing — Lecture 4" in
+/// Keynote is a slide, in a browser it is left out. A file that holds keys
+/// is left out in any app.
 pub fn never_sent(app_name: Option<&str>, window_title: Option<&str>) -> bool {
     let app_raw = app_name.unwrap_or("").trim();
     let title_raw = window_title.unwrap_or("").trim();
@@ -243,20 +285,22 @@ pub fn never_sent(app_name: Option<&str>, window_title: Option<&str>) -> bool {
     if app_raw.eq_ignore_ascii_case("noFriction") {
         return true;
     }
-    // Password managers, and private or incognito browser windows
-    if crate::privacy_filter::is_blocked_app(app_raw) || crate::privacy_filter::is_private_title(title_raw) {
+    // Password managers and Terminal (the capture filter's own list)
+    if crate::privacy_filter::is_blocked_app(app_raw) {
         return true;
     }
     let app = words(&app_raw.to_lowercase());
     let title = title_raw.to_lowercase();
-    if is_app(&app, PRIVATE_APPS) || is_app(&words(&title), PRIVATE_TITLE_WORDS) {
-        return true;
-    }
-    if PRIVATE_EXTENSIONS.iter().any(|e| has_ext(&title, e)) {
+    if is_app(&app, PRIVATE_APPS) || PRIVATE_EXTENSIONS.iter().any(|e| has_ext(&title, e)) {
         return true;
     }
     // "server.key" is a private key unless Keynote is showing it
-    has_ext(&title, ".key") && !is_app(&app, &["keynote"])
+    if has_ext(&title, ".key") && !is_app(&app, &["keynote"]) {
+        return true;
+    }
+    // Private browsing, and tabs on mail, messages, sign-in pages and banks
+    let title_says = app_kind(&app).is_none();
+    title_says && (crate::privacy_filter::is_private_title(title_raw) || is_app(&words(&title), PRIVATE_TITLE_WORDS))
 }
 
 /// What kind of screen this is, from the app and window it came from.
@@ -268,23 +312,8 @@ pub fn never_sent(app_name: Option<&str>, window_title: Option<&str>) -> bool {
 pub fn kind_for(app_name: Option<&str>, window_title: Option<&str>) -> ScreenKind {
     let app = words(&app_name.unwrap_or("").trim().to_lowercase());
     let title = window_title.unwrap_or("").trim().to_lowercase();
-    if is_app(&app, &["keynote", "powerpoint"]) {
-        return ScreenKind::Slide;
-    }
-    if is_app(&app, &["miro", "figjam", "freeform", "excalidraw", "whiteboard"]) {
-        return ScreenKind::Whiteboard;
-    }
-    if is_app(&app, &["zoom", "teams", "meet", "facetime", "webex"]) {
-        return ScreenKind::Call;
-    }
-    if is_app(&app, &["xcode", "visual studio code", "code", "intellij", "pycharm", "webstorm", "rustrover", "cursor", "zed"]) {
-        return ScreenKind::Code;
-    }
-    if is_app(&app, &["excel", "numbers", "airtable"]) {
-        return ScreenKind::Table;
-    }
-    if is_app(&app, &["word", "pages", "preview", "acrobat", "notion", "obsidian", "notes", "textedit", "books"]) {
-        return ScreenKind::Document;
+    if let Some(kind) = app_kind(&app) {
+        return kind;
     }
     // A browser tab, or a window of an app this library doesn't know
     if has(&title, &["google slides", "- slides", "powerpoint"]) || has_ext(&title, ".pptx") {
@@ -324,6 +353,16 @@ Answer with JSON only, in this shape:\n\
 {\"skip\": false, \"kind\": \"slide\", \"title\": \"the title, or null\", \"points\": [\"one statement from the screen\"], \
 \"terms\": [{\"term\": \"a term the screen defines\", \"meaning\": \"its meaning as the screen gives it\"}], \
 \"text\": \"wording that must be kept exactly (a formula, a few lines of code), or null\"}";
+
+/// The example values in the answer shape above. A model that hands one
+/// back did not read the picture (screen_reading.rs `parse`).
+pub const ANSWER_PLACEHOLDERS: &[&str] = &[
+    "the title, or null",
+    "one statement from the screen",
+    "a term the screen defines",
+    "its meaning as the screen gives it",
+    "wording that must be kept exactly (a formula, a few lines of code), or null",
+];
 
 /// The whole prompt sent with one picture. It is fixed text chosen by the
 /// kind of screen and the type of recording: nothing from the recording
@@ -425,6 +464,21 @@ mod tests {
             (Some("Google Chrome"), Some("Inbox (3) - someone@example.com - Gmail")),
             (Some("Safari"), Some("Sign in — Example")),
             (Some("Arc"), Some("First Bank — Accounts")),
+            // More mail, chat, password and terminal apps, by name
+            (Some("Skype"), None),
+            (Some("Fastmail"), None),
+            (Some("Proton Pass"), None),
+            (Some("Termius"), None),
+            // Apple's apps under their names in other languages
+            (Some("Nachrichten"), None),
+            (Some("Passwörter"), None),
+            // A browser tab on chat or web mail
+            (Some("Google Chrome"), Some("general - Acme - Slack")),
+            (Some("Safari"), Some("Yahoo Mail")),
+            (Some("Arc"), Some("Messages for web")),
+            (Some("Safari"), Some("Password hashing — Lecture 4")),
+            // An app this library doesn't know: its title is all there is
+            (Some("Some Viewer"), Some("Inbox — 3 unread")),
             // Files that hold keys, in any app
             (Some("Visual Studio Code"), Some("server.key")),
             (Some("TextEdit"), Some("deploy.pem")),
@@ -441,8 +495,17 @@ mod tests {
             (Some("Preview"), Some("handout.pdf")),
             (Some("Xcode"), Some("panel.rs")),
             (Some("zoom.us"), Some("Zoom Meeting")),
+            // An app that shows one kind of thing is trusted over its title:
+            // a lecture about passwords or banks is still a lecture
+            (Some("Keynote"), Some("Private equity.key")),
+            (Some("Keynote"), Some("Password hashing — Lecture 4")),
+            (Some("Preview"), Some("World Bank report.pdf")),
+            (Some("Microsoft PowerPoint"), Some("Login flow redesign")),
+            (Some("Xcode"), Some("LoginViewController.swift")),
             // Whole words only: not every title with "bank" or "line" in it
             (Some("Preview"), Some("Riverbank ecology.pdf")),
+            (Some("Safari"), Some("Riverbank ecology")),
+            (Some("ChatGPT"), None),
             (Some("Safari"), Some("Timeline of the cell - Wikipedia")),
             (Some("Safari"), Some("Environment — Wikipedia")),
             // A whole display can't be recognised here
@@ -474,6 +537,13 @@ mod tests {
         // The prompt is the same for every recording of a type: nothing of
         // the recording is in it
         assert_eq!(prompt_for(ScreenKind::Slide, RecordingKind::Meeting), prompt_for(ScreenKind::Slide, RecordingKind::Meeting));
+    }
+
+    #[test]
+    fn the_placeholders_are_the_ones_in_the_answer_shape() {
+        for p in ANSWER_PLACEHOLDERS {
+            assert!(SHARED_RULES.contains(&format!("\"{}\"", p)), "{p}");
+        }
     }
 
     #[test]

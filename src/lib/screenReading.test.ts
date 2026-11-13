@@ -8,18 +8,32 @@ import {
     confirmScope,
     confirmTitle,
     confirmedFor,
+    isOwnGateError,
     leftOutLine,
+    lookFirstLine,
     nothingLeft,
+    pictureSource,
     readingParts,
     summaryLine,
     tickedIds,
     trapTab,
+    type PlanItem,
     type ReadSummary,
     type ScreenPlan,
 } from "./screenReading.ts";
 
+const item = (over: Partial<PlanItem>): PlanItem => ({
+    state_id: "s0",
+    ms: 0,
+    kind: "Slide",
+    app_name: "Keynote",
+    image_path: "/frames/s0.png",
+    whole_display: false,
+    ...over,
+});
+
 const plan = (over: Partial<ScreenPlan>): ScreenPlan => ({
-    send: Array.from({ length: 12 }, (_, i) => ({ state_id: `s${i}`, ms: i * 60_000, kind: "Slide", app_name: "Keynote", image_path: `/frames/s${i}.png` })),
+    send: Array.from({ length: 12 }, (_, i) => item({ state_id: `s${i}`, ms: i * 60_000 })),
     total: 40,
     already: 0,
     more: 28,
@@ -32,7 +46,16 @@ const plan = (over: Partial<ScreenPlan>): ScreenPlan => ({
     ...over,
 });
 
-const summary = (over: Partial<ReadSummary>): ReadSummary => ({ read: 0, skipped: 0, gone: 0, failed: 0, stopped: null, cancelled: false, ...over });
+const summary = (over: Partial<ReadSummary>): ReadSummary => ({
+    read: 0,
+    skipped: 0,
+    gone: 0,
+    failed: 0,
+    stopped: null,
+    stopped_at_ms: null,
+    cancelled: false,
+    ...over,
+});
 
 test("the confirmation says how many pictures go, and where", () => {
     assert.equal(confirmTitle(12, plan({})), "Send 12 pictures to api.example.com?");
@@ -120,4 +143,30 @@ test("Tab stays inside the confirmation", () => {
     assert.equal(trapTab(controls, null, false), "tick-1");
     assert.equal(trapTab(controls, "a button behind", true), "send");
     assert.equal(trapTab([], null, false), null);
+});
+
+test("a whole display and a photo are named, and the user is asked to look first", () => {
+    assert.equal(pictureSource(item({})), "Keynote");
+    assert.equal(pictureSource(item({ app_name: null, whole_display: true, kind: "Screen" })), "Whole display");
+    assert.equal(pictureSource(item({ app_name: null, kind: "Photo" })), null);
+    // Only windows of known apps: nothing more to say
+    assert.equal(lookFirstLine(plan({})), null);
+    const display = item({ state_id: "d", app_name: null, whole_display: true, kind: "Screen" });
+    const photo = item({ state_id: "p", app_name: null, kind: "Photo" });
+    assert.equal(
+        lookFirstLine(plan({ send: [item({}), display] })),
+        "A whole display shows everything that was on it, not one app. Open each picture and untick any you wouldn't show your AI.",
+    );
+    assert.equal(lookFirstLine(plan({ send: [photo] })), "A photo can show anything. Open each picture and untick any you wouldn't show your AI.");
+    assert.match(lookFirstLine(plan({ send: [display, photo] })) ?? "", /^A whole display shows everything that was on it, and a photo can show anything\./);
+});
+
+test("only the app's own ask-first answers are retried, never an endpoint's words", () => {
+    assert.equal(isOwnGateError("CONSENT_REQUIRED:custom"), true);
+    assert.equal(isOwnGateError("PRO_REQUIRED: AI notes, summaries, chat and briefings are part of noFriction Pro."), true);
+    assert.equal(isOwnGateError(new Error("CONSENT_REQUIRED:custom")), true);
+    // An endpoint's error body that contains the words is an ordinary error
+    assert.equal(isOwnGateError("AI_ERROR: HTTP 400: please retry, CONSENT_REQUIRED:x"), false);
+    assert.equal(isOwnGateError("HTTP 402 PRO_REQUIRED"), false);
+    assert.equal(isOwnGateError("AI_UNREACHABLE: timed out"), false);
 });

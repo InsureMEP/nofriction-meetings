@@ -601,6 +601,10 @@ impl DatabaseManager {
         .await;
         // Which display/window a state came from (multi-source capture)
         ensure_columns(&mut conn, "screen_states", &[("source_key", "TEXT")]).await?;
+        // Whole-display captures: the app and window that were in front
+        // (privacy_filter::front_window). On the screen's own row, so every
+        // screen purge removes them with the screen (docs/REDACTION.md).
+        ensure_columns(&mut conn, "screen_states", &[("front_app", "TEXT"), ("front_title", "TEXT")]).await?;
 
         // ═══════════════════════════════════════════════════════════════════════
         // Phase 2: Stateful Screen Ingest - Episodes & Text Snapshots
@@ -1897,6 +1901,17 @@ impl DatabaseManager {
         .execute(&self.pool)
         .await?;
 
+        Ok(())
+    }
+
+    /// A whole-display capture: which app and window were in front
+    pub async fn set_screen_state_front(&self, state_id: &str, app: &str, title: &str) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE screen_states SET front_app = ?, front_title = ? WHERE state_id = ?")
+            .bind(app)
+            .bind(title)
+            .bind(state_id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 

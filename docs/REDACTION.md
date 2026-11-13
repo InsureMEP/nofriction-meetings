@@ -463,6 +463,12 @@ UI in `src/components/redaction/Redaction.tsx`.
     purge filters by `source` stands.
   - The Delete preview counts a reading apart ("What your AI read from
     it").
+  - **What was in front of a whole-display capture** (`screen_states.front_app`
+    and `front_title`, an app name and a window title) is on the screen's
+    own row, so it goes with the row in every screen purge, in the live
+    database and in backups. It is never sent anywhere and never synced.
+  - **Remove** in Notes (`screen_reading::forget`) deletes one screen's
+    reading row and nothing else; the screen is then unread.
   - Readings are deliberately not given to Make notes or Fill in the
     blanks: notes would then quote a screen, and a screen's purge doesn't
     clean notes. Don't feed them to any AI prompt without first making the

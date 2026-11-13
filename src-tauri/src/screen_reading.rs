@@ -11,7 +11,10 @@
 //     ticked: the confirmation passes back their ids and the destination it
 //     named, and `read_screens` sends those ids and nothing else. It never
 //     works the list out again. If the destination is no longer the one
-//     named, nothing (more) is sent.
+//     named, nothing (more) is sent: the request itself is made only on a
+//     target that was resolved and compared in the same step
+//     (`ai::complete_vision_if`), so no change of settings can slip between
+//     the check and the send.
 //   - Never by itself, never on a timer, never while that recording is
 //     still running, never while a Delete is in its undo window.
 //   - Few, and the ones that matter: the screens showing when the user
@@ -19,7 +22,11 @@
 //     `MAX_SCREENS` a click. A screen is read once.
 //   - Private screens are never offered (`screen_prompts::never_sent`):
 //     mail, messages, password apps, terminals, private browsing, key files
-//     and noFriction's own window. That is decided on the Mac.
+//     and noFriction's own window. That is decided on the Mac, from the
+//     window a screen was captured from, or for a whole-display capture
+//     from the window that was in front of it. A private window that was
+//     only visible behind another can't be recognised: the confirmation
+//     shows every picture whole, and the user can leave any out.
 //   - The gates of every AI call apply (Pro in the Mac App Store build,
 //     consent for a public endpoint), and the model must read images:
 //     Apple's on-device model can't, so nothing is sent with it.
@@ -38,7 +45,8 @@
 //   - A screen counts as read only when the AI answered about it: a reading,
 //     or a plain "nothing to keep". An endpoint error stops the run and
 //     leaves the screen unread; an answer that can't be used leaves it
-//     unread too.
+//     unread too. What was read can be removed again (`forget`), and the
+//     screen is then unread.
 //   - The answer is untrusted: parsed tolerantly, capped, and never logged.
 
 use crate::ai::{AiError, Kind};
@@ -65,6 +73,8 @@ pub const TOO_MANY: &str = "That is more screens than one click sends. Check the
 pub const DESTINATION_CHANGED: &str =
     "Your AI settings changed since you looked, so nothing more was sent. Check the list again.";
 pub const ALREADY_RUNNING: &str = "This recording's screens are already being read.";
+pub const DELETE_WAITING: &str =
+    "Something in this recording is being deleted. Try again when its undo time has passed.";
 pub const NEEDS_IMAGE_MODEL: &str =
     "Reading a screen needs a model that can read images. Choose one under Settings → AI → Screens.";
 pub const APPLE_CANT: &str =
@@ -82,6 +92,11 @@ pub struct Screen {
     pub keyframe_path: String,
     /// A photo taken with the iPhone, not a capture of a screen
     pub photo: bool,
+    /// A capture of a whole display: everything that was on it
+    pub whole_display: bool,
+    /// Whole-display captures: the app and title of the window in front
+    pub front_app: Option<String>,
+    pub front_title: Option<String>,
 }
 
 impl Screen {
@@ -94,9 +109,19 @@ impl Screen {
         }
     }
 
-    /// Never sent, whatever the user presses
+    /// Never sent, whatever the user presses. A capture of one window is
+    /// judged by that window; a capture of a whole display by the window
+    /// that was in front of it.
     pub fn private(&self) -> bool {
-        !self.photo && screen_prompts::never_sent(self.app_name.as_deref(), self.window_title.as_deref())
+        if self.photo {
+            return false;
+        }
+        if screen_prompts::never_sent(self.app_name.as_deref(), self.window_title.as_deref()) {
+            return true;
+        }
+        self.app_name.is_none()
+            && self.front_app.is_some()
+            && screen_prompts::never_sent(self.front_app.as_deref(), self.front_title.as_deref())
     }
 
     fn has_picture(&self) -> bool {
@@ -218,6 +243,16 @@ pub fn parse(raw: &str, expected: ScreenKind) -> Result<Option<Reading>, String>
     if title.is_none() && points.is_empty() && terms.is_empty() && text.is_none() {
         return Ok(None);
     }
+    // A model that never saw the picture tends to hand back the example in
+    // the instructions. That is not a reading of anything.
+    let echoed = |t: &str| screen_prompts::ANSWER_PLACEHOLDERS.iter().any(|e| t.trim().eq_ignore_ascii_case(e));
+    if title.as_deref().is_some_and(echoed)
+        || text.as_deref().is_some_and(echoed)
+        || points.iter().any(|p| echoed(p))
+        || terms.iter().any(|(t, m)| echoed(t) || echoed(m))
+    {
+        return Err("The answer repeated the instructions instead of reading the picture".into());
+    }
     let kind = if expected.ai_decides() {
         o.get("kind").and_then(|k| k.as_str()).and_then(ScreenKind::from_answer).unwrap_or(expected)
     } else {
@@ -270,7 +305,8 @@ async fn pictures(pool: &Pool<Sqlite>, meeting_id: &str, only: Option<&str>) -> 
         .map_err(err("Couldn't read the recording"))?;
     let Some(started) = started.as_deref().and_then(parse_ts) else { return Ok(Vec::new()) };
     let rows = sqlx::query(
-        "SELECT state_id, start_ts, end_ts, app_name, window_title, keyframe_path, state_type FROM screen_states \
+        "SELECT state_id, start_ts, end_ts, app_name, window_title, keyframe_path, state_type, source_key, front_app, front_title \
+         FROM screen_states \
          WHERE meeting_id = ?1 AND keyframe_path IS NOT NULL AND keyframe_path != '' AND (?2 IS NULL OR state_id = ?2) \
          ORDER BY start_ts ASC, state_id ASC",
     )
@@ -298,6 +334,9 @@ async fn pictures(pool: &Pool<Sqlite>, meeting_id: &str, only: Option<&str>) -> 
                 window_title: r.get("window_title"),
                 keyframe_path: path,
                 photo: r.get::<Option<String>, _>("state_type").as_deref() == Some("photo"),
+                whole_display: r.get::<Option<String>, _>("source_key").is_some_and(|k| k.starts_with("display:")),
+                front_app: r.get("front_app"),
+                front_title: r.get("front_title"),
             })
         })
         .collect())
@@ -342,6 +381,8 @@ pub struct PlanItem {
     pub app_name: Option<String>,
     /// The picture's file, so the confirmation can show it
     pub image_path: String,
+    /// A capture of a whole display: it shows everything that was on it
+    pub whole_display: bool,
 }
 
 /// What Read the screens would do right now. Nothing is sent to make it.
@@ -420,6 +461,7 @@ pub async fn plan(pool: &Pool<Sqlite>, meeting_id: &str) -> Result<Plan, String>
                 kind: s.kind().label(),
                 app_name: s.app_name.clone(),
                 image_path: s.keyframe_path.clone(),
+                whole_display: s.whole_display,
             }
         })
         .collect();
@@ -432,7 +474,7 @@ pub async fn plan(pool: &Pool<Sqlite>, meeting_id: &str) -> Result<Plan, String>
     let blocked = if send.is_empty() && total > 0 {
         Some(NOTHING_TO_READ.to_string())
     } else if delete_waiting(pool, meeting_id).await? {
-        Some(crate::study::PENDING_EDIT.to_string())
+        Some(DELETE_WAITING.to_string())
     } else {
         dest.blocked
     };
@@ -541,9 +583,23 @@ pub struct Confirmed {
 #[async_trait::async_trait]
 trait Reader: Send + Sync {
     /// Where a picture would go right now: (host, model). None when no
-    /// picture can be sent.
+    /// picture can be sent. For stopping early; `read` is what enforces it.
     fn destination(&self) -> Option<(String, String)>;
-    async fn read(&self, image_path: &str, prompt: &str) -> Result<String, AiError>;
+    /// Send one picture to `named` (host, model) and nowhere else. The
+    /// destination is compared on the very target the request is made
+    /// with; if it isn't `named`, nothing is sent (`ReadError::Changed`).
+    async fn read(&self, image_path: &str, prompt: &str, named: &(String, String)) -> Result<String, ReadError>;
+}
+
+/// Why one picture wasn't read.
+#[derive(Debug, Clone)]
+enum ReadError {
+    /// The AI settings no longer name the confirmed destination. Nothing was sent.
+    Changed,
+    /// The picture couldn't be prepared on this Mac. Nothing was sent.
+    Picture,
+    /// The request was made and the endpoint refused or failed
+    Ai(AiError),
 }
 
 /// How one click went.
@@ -562,6 +618,9 @@ pub struct Summary {
     /// Why the run ended before the last screen, as the AI error or a
     /// sentence; None when it reached the end
     pub stopped: Option<String>,
+    /// The time (from the start of the recording) of the screen it stopped
+    /// at, so the user can leave that one out and go on
+    pub stopped_at_ms: Option<i64>,
     /// The user stopped it
     pub cancelled: bool,
 }
@@ -625,9 +684,13 @@ async fn read_screens(
             .flatten()
             .as_deref(),
     );
-    let named = Some((confirmed.destination.clone(), confirmed.model.clone()));
+    let named = (confirmed.destination.clone(), confirmed.model.clone());
     let mut summary = Summary::default();
+    // Requests made to the endpoint so far, and how many of them it answered
     let mut requests = 0usize;
+    let mut answered = 0usize;
+    // The last request failed in a way that may be that picture's own problem
+    let mut doubtful = false;
     for (n, id) in ids.iter().enumerate() {
         progress(n, ids.len());
         if cancel.load(Ordering::SeqCst) {
@@ -635,10 +698,10 @@ async fn read_screens(
             break;
         }
         // Why nothing (more) is sent, when something stands in the way
-        let refusal = if reader.destination() != named {
+        let refusal = if reader.destination().as_ref() != Some(&named) {
             Some(DESTINATION_CHANGED)
         } else if delete_waiting(pool, meeting_id).await? {
-            Some(crate::study::PENDING_EDIT)
+            Some(DELETE_WAITING)
         } else {
             None
         };
@@ -655,25 +718,55 @@ async fn read_screens(
         };
         let kind = screen.kind();
         let prompt = screen_prompts::prompt_for(kind, recording);
-        requests += 1;
-        match reader.read(&screen.keyframe_path, &prompt).await {
-            Ok(raw) => match parse(&raw, kind) {
-                // The AI answered: a reading, or nothing to keep
-                Ok(reading) => {
-                    let text = reading.as_ref().map(to_text).unwrap_or_default();
-                    if !store(pool, &screen, &text).await? {
-                        summary.gone += 1;
-                    } else if text.is_empty() {
-                        summary.skipped += 1;
-                    } else {
-                        summary.read += 1;
-                    }
+        let result = match reader.read(&screen.keyframe_path, &prompt, &named).await {
+            // Nothing was sent for this picture: it stays unread, the run goes on
+            Err(ReadError::Picture) => {
+                summary.failed += 1;
+                continue;
+            }
+            // The settings changed between the check above and the send:
+            // the send didn't happen
+            Err(ReadError::Changed) => {
+                if requests == 0 {
+                    return Err(DESTINATION_CHANGED.into());
                 }
-                // Not in the form asked for: unread, and it can be sent again
-                Err(_) => summary.failed += 1,
-            },
+                summary.stopped = Some(DESTINATION_CHANGED.into());
+                break;
+            }
+            Ok(raw) => Ok(raw),
+            Err(ReadError::Ai(e)) => Err(e),
+        };
+        requests += 1;
+        match result {
+            Ok(raw) => {
+                answered += 1;
+                doubtful = false;
+                match parse(&raw, kind) {
+                    // The AI answered: a reading, or nothing to keep
+                    Ok(reading) => {
+                        let text = reading.as_ref().map(to_text).unwrap_or_default();
+                        if !store(pool, &screen, &text).await? {
+                            summary.gone += 1;
+                        } else if text.is_empty() {
+                            summary.skipped += 1;
+                        } else {
+                            summary.read += 1;
+                        }
+                    }
+                    // Not in the form asked for: unread, and it can be sent again
+                    Err(_) => summary.failed += 1,
+                }
+            }
             // Cut off: this screen's problem, not the endpoint's
             Err(AiError::Truncated) => summary.failed += 1,
+            // The endpoint has read other pictures in this run and rejects
+            // this one (too large for it, filtered, an empty answer): most
+            // likely the picture. It stays unread and the run goes on, once:
+            // a second rejection in a row ends the run.
+            Err(AiError::Other(_)) if answered > 0 && !doubtful => {
+                summary.failed += 1;
+                doubtful = true;
+            }
             // The endpoint refused or failed: the next picture would meet the
             // same, so none is sent. This screen stays unread.
             Err(e) => {
@@ -681,12 +774,29 @@ async fn read_screens(
                     return Err(e.to_string());
                 }
                 summary.stopped = Some(e.to_string());
+                summary.stopped_at_ms = Some(screen.ms);
                 break;
             }
         }
     }
     progress(ids.len(), ids.len());
     Ok(summary)
+}
+
+/// Remove what was read from one screen. The screen is then unread and can
+/// be sent again. For a reading that is wrong, or that a model made up.
+pub async fn forget(pool: &Pool<Sqlite>, meeting_id: &str, state_id: &str) -> Result<bool, String> {
+    let done = sqlx::query(
+        "DELETE FROM text_snapshots WHERE source = ?1 AND state_id = ?2 \
+         AND state_id IN (SELECT state_id FROM screen_states WHERE meeting_id = ?3)",
+    )
+    .bind(SOURCE)
+    .bind(state_id)
+    .bind(meeting_id)
+    .execute(pool)
+    .await
+    .map_err(err("Couldn't remove what was read"))?;
+    Ok(done.rows_affected() > 0)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -703,7 +813,8 @@ pub mod commands {
     use std::sync::Arc;
     use tauri::{AppHandle, Emitter, State};
 
-    /// `{meetingId, done, total}` while screens are being read.
+    /// `{meetingId, done, total}` while screens are being read, then
+    /// `{meetingId, finished: true}` once, however the run ended.
     pub const PROGRESS_EVENT: &str = "screens_progress";
 
     /// Recordings whose screens are being read (one run each), with the
@@ -732,18 +843,24 @@ pub mod commands {
             Some((d.host?, d.model?))
         }
 
-        async fn read(&self, image_path: &str, prompt: &str) -> Result<String, AiError> {
+        async fn read(&self, image_path: &str, prompt: &str, named: &(String, String)) -> Result<String, ReadError> {
             let path = image_path.to_string();
-            // Long edge at most 1568 px, JPEG: what leaves is a copy, never the file
+            // Turned upright, at most 1568 px on its long edge, JPEG: what
+            // leaves is a new encoding, never the file
             let (mime, b64) = tokio::task::spawn_blocking(move || crate::vlm_client::encode_image_for_upload(&path))
                 .await
-                .map_err(|e| AiError::Other(format!("Couldn't prepare the picture: {}", e)))?
-                .map_err(AiError::Other)?;
-            crate::ai::complete_vision(
+                .map_err(|_| ReadError::Picture)?
+                .map_err(|_| ReadError::Picture)?;
+            // Resolved, compared and sent on one target: only to `named`
+            let (host, model) = named;
+            crate::ai::complete_vision_if(
                 vec![Msg::user_with_image(prompt.to_string(), &mime, b64)],
                 Opts { max_tokens: READ_MAX_TOKENS, temperature: Some(0.1) },
+                |base_url, to_model| host_of(base_url).as_deref() == Some(host.as_str()) && to_model == model,
             )
             .await
+            .map_err(ReadError::Ai)?
+            .ok_or(ReadError::Changed)
         }
     }
 
@@ -797,7 +914,20 @@ pub mod commands {
                 let _ = app.emit(PROGRESS_EVENT, serde_json::json!({ "meetingId": id, "done": done, "total": total }));
             }
         };
-        super::read_screens(&Live, state.database.pool(), &meeting_id, &confirmed, &cancel, &emit).await
+        let outcome = super::read_screens(&Live, state.database.pool(), &meeting_id, &confirmed, &cancel, &emit).await;
+        // However it ended: a view that didn't start this run (the user left
+        // and came back) learns here that it is over
+        let _ = app.emit(PROGRESS_EVENT, serde_json::json!({ "meetingId": meeting_id, "finished": true }));
+        outcome
+    }
+
+    /// Remove what was read from one screen, so it can be read again.
+    #[tauri::command(rename_all = "camelCase")]
+    pub async fn forget_screen_reading(state: State<'_, AppState>, meeting_id: String, state_id: String) -> Result<bool, String> {
+        if RUNNING.lock().contains_key(&meeting_id) {
+            return Err(ALREADY_RUNNING.into());
+        }
+        forget(state.database.pool(), &meeting_id, &state_id).await
     }
 
     /// Stop reading this recording's screens. The request under way
@@ -836,6 +966,9 @@ mod tests {
             window_title: None,
             keyframe_path: format!("/tmp/{id}.png"),
             photo: false,
+            whole_display: false,
+            front_app: None,
+            front_title: None,
         }
     }
 
@@ -951,6 +1084,12 @@ mod tests {
         stop: Mutex<Option<Arc<AtomicBool>>>,
         /// The destination after the first request
         then_dest: Mutex<Option<Option<(String, String)>>>,
+        /// (n, destination): once n pictures have been sent, the destination
+        /// changes after the run's own check and before the next send (the
+        /// user edits the settings at that moment)
+        switch_at_send: Mutex<Option<(usize, Option<(String, String)>)>>,
+        /// The next picture can't be prepared on this Mac
+        unreadable_file: Mutex<bool>,
     }
 
     impl Mock {
@@ -962,6 +1101,8 @@ mod tests {
                 meanwhile: Mutex::new(None),
                 stop: Mutex::new(None),
                 then_dest: Mutex::new(None),
+                switch_at_send: Mutex::new(None),
+                unreadable_file: Mutex::new(false),
             }
         }
 
@@ -976,7 +1117,20 @@ mod tests {
             self.dest.lock().clone()
         }
 
-        async fn read(&self, image_path: &str, prompt: &str) -> Result<String, AiError> {
+        async fn read(&self, image_path: &str, prompt: &str, named: &(String, String)) -> Result<String, ReadError> {
+            if std::mem::take(&mut *self.unreadable_file.lock()) {
+                return Err(ReadError::Picture);
+            }
+            let due = self.switch_at_send.lock().as_ref().is_some_and(|(n, _)| *n == self.sent.lock().len());
+            if due {
+                if let Some((_, next)) = self.switch_at_send.lock().take() {
+                    *self.dest.lock() = next;
+                }
+            }
+            // Like the live sender: the request is made only on the named target
+            if self.dest.lock().as_ref() != Some(named) {
+                return Err(ReadError::Changed);
+            }
             self.sent.lock().push((image_path.to_string(), prompt.to_string()));
             let meanwhile = self.meanwhile.lock().take();
             if let Some((db, sql)) = meanwhile {
@@ -989,11 +1143,8 @@ mod tests {
                 *self.dest.lock() = next;
             }
             let mut a = self.answers.lock();
-            if a.len() > 1 {
-                a.remove(0)
-            } else {
-                a[0].clone()
-            }
+            let answer = if a.len() > 1 { a.remove(0) } else { a[0].clone() };
+            answer.map_err(ReadError::Ai)
         }
     }
 
@@ -1230,9 +1381,9 @@ mod tests {
                     VALUES ('d1', 'm1', 'screen', 'delete', '2026-11-13T00:00:00Z', 1, '{\"Screens\":{\"ids\":[\"s1\"]}}')";
         sqlx::query(wait).execute(pool).await.unwrap();
         let p = plan(pool, "m1").await.unwrap();
-        assert_eq!(p.blocked.as_deref(), Some(crate::study::PENDING_EDIT));
+        assert_eq!(p.blocked.as_deref(), Some(DELETE_WAITING));
         let m = Mock::new(vec![Ok(SLIDE)]);
-        assert_eq!(run(&m, &f, &["s0", "s1", "s2"]).await.unwrap_err(), crate::study::PENDING_EDIT);
+        assert_eq!(run(&m, &f, &["s0", "s1", "s2"]).await.unwrap_err(), DELETE_WAITING);
         assert!(m.sent.lock().is_empty());
         sqlx::query("DELETE FROM redactions").execute(pool).await.unwrap();
 
@@ -1241,7 +1392,7 @@ mod tests {
         let m = Mock::new(vec![Ok(SLIDE)]);
         *m.meanwhile.lock() = Some((f.db.clone(), wait.into()));
         let s = run(&m, &f, &["s0", "s1", "s2"]).await.unwrap();
-        assert_eq!(s, Summary { gone: 1, stopped: Some(crate::study::PENDING_EDIT.into()), ..Default::default() });
+        assert_eq!(s, Summary { gone: 1, stopped: Some(DELETE_WAITING.into()), ..Default::default() });
         assert_eq!(m.sent_files(), vec!["s0.png"]);
         assert!(looked(&f).await.is_empty());
     }
@@ -1290,6 +1441,119 @@ mod tests {
         // Everything that may be read has been: the private ones don't keep the button alive
         let after = plan(pool, "m1").await.unwrap();
         assert_eq!((after.send.len(), after.already, after.total, after.more, after.left_out), (0, 2, 2, 0, 2));
+    }
+
+    #[tokio::test]
+    async fn settings_changed_between_the_check_and_the_send_send_nothing() {
+        // The run's own check passes, then the settings change before the
+        // request is made: the request isn't made
+        let f = fx(3).await;
+        let m = Mock::new(vec![Ok(SLIDE)]);
+        *m.switch_at_send.lock() = Some((0, Some(("elsewhere.example.net".into(), MODEL.into()))));
+        assert_eq!(run(&m, &f, &["s0", "s1", "s2"]).await.unwrap_err(), DESTINATION_CHANGED);
+        assert!(m.sent.lock().is_empty());
+        assert!(looked(&f).await.is_empty());
+
+        // The same for the second picture of a run: the first is kept, the
+        // second isn't sent, and the run ends there
+        let m = Mock::new(vec![Ok(SLIDE)]);
+        *m.switch_at_send.lock() = Some((1, Some((HOST.into(), "another-model".into()))));
+        let s = run(&m, &f, &["s0", "s1", "s2"]).await.unwrap();
+        assert_eq!(s, Summary { read: 1, stopped: Some(DESTINATION_CHANGED.into()), ..Default::default() });
+        assert_eq!(m.sent_files(), vec!["s0.png"]);
+        assert_eq!(looked(&f).await, vec!["s0"]);
+    }
+
+    #[tokio::test]
+    async fn one_bad_picture_doesnt_end_the_run_but_a_failing_endpoint_does() {
+        // A picture that can't be prepared on this Mac: nothing is sent for
+        // it, it stays unread, and the others are read
+        let f = fx(3).await;
+        let m = Mock::new(vec![Ok(SLIDE)]);
+        *m.unreadable_file.lock() = true;
+        let s = run(&m, &f, &["s0", "s1", "s2"]).await.unwrap();
+        assert_eq!(s, Summary { read: 2, failed: 1, ..Default::default() });
+        assert_eq!(m.sent_files(), vec!["s1.png", "s2.png"]);
+        assert_eq!(looked(&f).await, vec!["s1", "s2"]);
+
+        // The endpoint read a picture, then rejects one: that one stays
+        // unread and the run goes on
+        let f = fx(4).await;
+        let reject = || Err(AiError::Other("HTTP 400: image rejected".into()));
+        let m = Mock::new(vec![Ok(SLIDE), reject(), Ok(SLIDE), Ok(SLIDE)]);
+        let s = run(&m, &f, &["s0", "s1", "s2", "s3"]).await.unwrap();
+        assert_eq!(s, Summary { read: 3, failed: 1, ..Default::default() });
+        assert_eq!(looked(&f).await, vec!["s0", "s2", "s3"]);
+
+        // Two rejections in a row: it is the endpoint. The run ends and says where
+        let f = fx(4).await;
+        let m = Mock::new(vec![Ok(SLIDE), reject(), reject(), Ok(SLIDE)]);
+        let s = run(&m, &f, &["s0", "s1", "s2", "s3"]).await.unwrap();
+        assert_eq!((s.read, s.failed), (1, 1));
+        assert!(s.stopped.as_deref().is_some_and(|w| w.contains("image rejected")), "{:?}", s.stopped);
+        assert_eq!(s.stopped_at_ms, Some(120_000), "the screen it stopped at");
+        assert_eq!(m.sent.lock().len(), 3, "the fourth picture isn't sent");
+        assert_eq!(looked(&f).await, vec!["s0"]);
+    }
+
+    #[tokio::test]
+    async fn an_echo_of_the_instructions_is_not_a_reading_and_a_reading_can_be_removed() {
+        let f = fx(2).await;
+        let pool = f.db.pool();
+        // A model that never saw the picture hands back the example
+        let echo = r#"{"skip": false, "kind": "slide", "title": "the title, or null", "points": ["one statement from the screen"]}"#;
+        let s = run(&Mock::new(vec![Ok(echo), Ok(SLIDE)]), &f, &["s0", "s1"]).await.unwrap();
+        assert_eq!(s, Summary { read: 1, failed: 1, ..Default::default() });
+        assert_eq!(looked(&f).await, vec!["s1"], "the echoed one stays unread");
+
+        // What was read can be removed; the screen is then offered again
+        assert!(!forget(pool, "m2", "s1").await.unwrap(), "not through another recording");
+        assert_eq!(looked(&f).await, vec!["s1"]);
+        assert!(forget(pool, "m1", "s1").await.unwrap());
+        assert!(!forget(pool, "m1", "s1").await.unwrap());
+        assert!(readings(pool, "m1").await.unwrap().is_empty());
+        let ids: Vec<String> = plan(pool, "m1").await.unwrap().send.into_iter().map(|i| i.state_id).collect();
+        assert_eq!(ids, vec!["s0", "s1"]);
+        // Only readings are removed that way, never text captured from the screen
+        sqlx::query(
+            "INSERT INTO text_snapshots (snapshot_id, state_id, meeting_id, ts, text, text_hash, source, word_count) \
+             SELECT 'ocr1', state_id, meeting_id, start_ts, 'captured text', 'h', 'ocr', 2 FROM screen_states WHERE state_id = 's0'",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        assert!(!forget(pool, "m1", "s0").await.unwrap());
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM text_snapshots WHERE snapshot_id = 'ocr1'").fetch_one(pool).await.unwrap();
+        assert_eq!(n, 1);
+    }
+
+    #[tokio::test]
+    async fn a_whole_display_is_judged_by_what_was_in_front() {
+        let f = fx(4).await;
+        let pool = f.db.pool();
+        // All four were captures of the whole display (no app of their own)
+        sqlx::query("UPDATE screen_states SET app_name = NULL, window_title = 'Built-in Retina Display', source_key = 'display:1'")
+            .execute(pool)
+            .await
+            .unwrap();
+        // In front: Keynote, Mail, a private browser window, and (an older capture) nothing recorded
+        for (id, app, title) in [("s0", "Keynote", "Lecture 7"), ("s1", "Mail", "Inbox"), ("s2", "Safari", "Private Browsing")] {
+            f.db.set_screen_state_front(id, app, title).await.unwrap();
+        }
+        let p = plan(pool, "m1").await.unwrap();
+        let offered: Vec<(&str, &str, bool)> = p.send.iter().map(|i| (i.state_id.as_str(), i.kind, i.whole_display)).collect();
+        // A whole display gets the prompt that lets the AI say what it is
+        assert_eq!(offered, vec![("s0", "Screen", true), ("s3", "Screen", true)]);
+        assert_eq!((p.total, p.left_out), (2, 2));
+        // Named anyway by a caller: still not sent
+        let m = Mock::new(vec![Ok(SLIDE)]);
+        let s = run(&m, &f, &["s0", "s1", "s2", "s3"]).await.unwrap();
+        assert_eq!(s, Summary { read: 2, gone: 2, ..Default::default() });
+        assert_eq!(m.sent_files(), vec!["s0.png", "s3.png"]);
+        // What was in front is never in what is sent
+        for (_, prompt) in m.sent.lock().iter() {
+            assert!(!prompt.contains("Keynote") && !prompt.contains("Lecture 7") && !prompt.contains("Built-in"));
+        }
     }
 
     #[tokio::test]

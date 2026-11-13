@@ -2,9 +2,9 @@
 // the one button that sends them (src-tauri/src/screen_reading.rs).
 //
 // A picture leaves this Mac only from here, and only after the confirmation
-// below, which shows every picture that would go and names where. The ids
-// left ticked and that destination are passed back, and the Mac sends those
-// ids to that destination and nothing else.
+// below, which shows every picture that would go, whole, and names where.
+// The ids left ticked and that destination are passed back, and the Mac
+// sends those ids to that destination and nothing else.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
@@ -19,13 +19,18 @@ import {
     confirmScope,
     confirmTitle,
     confirmedFor,
+    isOwnGateError,
+    lookFirstLine,
     nothingLeft,
+    pictureSource,
     readingParts,
     summaryLine,
     tickedIds,
     trapTab,
+    type PlanItem,
     type ReadSummary,
     type ScreenPlan,
+    type ScreensProgress,
     type StoredReading,
 } from "../lib/screenReading";
 import "./ScreenReadings.css";
@@ -46,6 +51,8 @@ function failure(e: unknown): string {
 
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
 
+const describe = (s: PlanItem) => `${s.kind} at ${clock(s.ms)}${pictureSource(s) ? `, ${pictureSource(s)}` : ""}`;
+
 interface Props {
     meetingId: string;
     /** Open Rewind at a moment (when the screen was shown) */
@@ -59,6 +66,8 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
     const [confirming, setConfirming] = useState(false);
     /** The pictures left ticked in the confirmation */
     const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
+    /** The picture being looked at large, inside the confirmation */
+    const [zoomed, setZoomed] = useState<PlanItem | null>(null);
     const [running, setRunning] = useState<{ done: number; total: number } | null>(null);
     const [stopping, setStopping] = useState(false);
     const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
@@ -68,6 +77,12 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
     const dialog = useRef<HTMLDivElement>(null);
     /** This view started the run under way (its result comes back to `send`) */
     const mine = useRef(false);
+    /** The recording this view shows now: a result for another one is dropped */
+    const showing = useRef(meetingId);
+    showing.current = meetingId;
+    /** The confirmation is open: what it lists must not change under it */
+    const open = useRef(false);
+    open.current = confirming;
 
     // Only the latest read is shown
     const request = useRef(0);
@@ -84,6 +99,7 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
             setLoadError(false);
             // A run started before this view opened: show it, with its Stop
             if (p.running && !mine.current) setRunning((cur) => cur ?? { done: 0, total: 0 });
+            if (!p.running && !mine.current) setRunning(null);
             return p;
         } catch {
             if (id === request.current) {
@@ -101,6 +117,7 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
         setLoadError(false);
         setConfirming(false);
         setTicked(new Set());
+        setZoomed(null);
         setRunning(null);
         setStopping(false);
         setMessage(null);
@@ -110,17 +127,20 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
     useEffect(() => {
         let off: (() => void) | null = null;
         let disposed = false;
-        listen<{ meetingId: string; done: number; total: number }>(SCREENS_PROGRESS_EVENT, (e) => {
+        listen<ScreensProgress>(SCREENS_PROGRESS_EVENT, (e) => {
             if (e.payload.meetingId !== meetingId) return;
-            const { done, total } = e.payload;
-            if (done >= total && !mine.current) {
-                // A run this view didn't start has finished
-                setRunning(null);
-                setStopping(false);
-                void load();
-            } else {
-                setRunning((r) => (r ? { done, total } : r));
+            if (e.payload.finished) {
+                // However the run ended. The view that started it gets its
+                // result from the call; any other view reloads here.
+                if (!mine.current) {
+                    setRunning(null);
+                    setStopping(false);
+                    if (!open.current) void load();
+                }
+                return;
             }
+            const { done = 0, total = 0 } = e.payload;
+            setRunning((r) => (r ? { done, total } : r));
         }).then((fn) => (disposed ? fn() : (off = fn)));
         return () => {
             disposed = true;
@@ -132,13 +152,16 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
     // the keyboard back to its button
     const close = useCallback(() => {
         setConfirming(false);
+        setZoomed(null);
         opener.current?.focus({ preventScroll: true });
     }, []);
     useEffect(() => {
         if (!confirming) return;
         const onKey = (e: KeyboardEvent) => {
             if (e.key === "Escape") {
-                close();
+                // From one picture back to all of them, then out
+                if (zoomed) setZoomed(null);
+                else close();
                 return;
             }
             if (e.key !== "Tab" || !dialog.current) return;
@@ -152,7 +175,7 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, [confirming, close]);
+    }, [confirming, close, zoomed]);
 
     if (loadError) {
         return (
@@ -170,13 +193,14 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
     // A recording without screens has nothing to read
     if (!plan || plan.total + plan.left_out === 0) return null;
 
-    const open = async () => {
+    const ask = async () => {
         setMessage(null);
-        // What would go is worked out at the moment of asking, and the dialog
-        // shows exactly that: it doesn't change while it is open
+        // What would go is worked out at the moment of asking. The dialog
+        // then shows exactly that list until it is closed.
         const fresh = await load();
         if (!fresh) return;
         setTicked(new Set(fresh.send.map((s) => s.state_id)));
+        setZoomed(null);
         setConfirming(true);
     };
 
@@ -190,39 +214,71 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
     const send = async () => {
         const confirmed = confirmedFor(plan, ticked);
         if (!confirmed) return;
+        const forMeeting = meetingId;
         setConfirming(false);
+        setZoomed(null);
         mine.current = true;
         setStopping(false);
         setRunning({ done: 0, total: confirmed.state_ids.length });
+        let outcome: { text: string; error: boolean };
         try {
             // If Pro or consent is asked for, nothing has been sent yet; the
-            // same confirmation is then passed again. A run that already sent
-            // a picture comes back as a result, never as a retry.
-            const summary = await withAiConsent(() => invoke<ReadSummary>("read_screens", { meetingId, confirmed }), "notes");
-            const text = summary.stopped ? `${summaryLine(summary)} It stopped there: ${failure(summary.stopped)}` : summaryLine(summary);
-            setMessage({ text, error: summary.stopped !== null });
+            // same confirmation is then passed again. Only the app's own
+            // "ask first" answer is retried, never an endpoint's error. A run
+            // that already sent a picture comes back as a result, not a retry.
+            const summary = await withAiConsent(
+                () => invoke<ReadSummary>("read_screens", { meetingId: forMeeting, confirmed }),
+                "notes",
+                isOwnGateError,
+            );
+            const where = summary.stopped_at_ms !== null ? ` at ${clock(summary.stopped_at_ms)}` : "";
+            outcome = summary.stopped
+                ? { text: `${summaryLine(summary)} It stopped${where}: ${failure(summary.stopped)}`, error: true }
+                : { text: summaryLine(summary), error: false };
         } catch (e) {
-            setMessage({ text: failure(e), error: true });
-        } finally {
-            mine.current = false;
-            setRunning(null);
-            setStopping(false);
-            await load();
+            outcome = { text: failure(e), error: true };
         }
+        // The user moved to another recording meanwhile: this isn't its news
+        if (showing.current !== forMeeting) return;
+        mine.current = false;
+        setMessage(outcome);
+        setRunning(null);
+        setStopping(false);
+        await load();
     };
 
     const stop = async () => {
         setStopping(true);
+        let stopped = false;
         try {
-            await invoke<boolean>("stop_screen_reading", { meetingId });
+            stopped = await invoke<boolean>("stop_screen_reading", { meetingId });
         } catch {
+            // Falls through: nothing was stopped
+        }
+        if (!stopped && !mine.current) {
+            // There was no run to stop (it had already ended)
+            setStopping(false);
+            setRunning(null);
+            await load();
+        } else if (!stopped) {
             setStopping(false);
         }
+    };
+
+    const forget = async (stateId: string) => {
+        setMessage(null);
+        try {
+            await invoke<boolean>("forget_screen_reading", { meetingId, stateId });
+        } catch (e) {
+            setMessage({ text: failure(e), error: true });
+        }
+        await load();
     };
 
     const done = nothingLeft(plan);
     const proNote = proSuffix(caps?.pro_gating, isPro);
     const count = tickedIds(plan, ticked).length;
+    const lookFirst = lookFirstLine(plan);
 
     return (
         <section className="mn-section sr" aria-label="On the screens">
@@ -255,6 +311,16 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
                                     <p className="sr__title">
                                         <span className="sr__kind">{p.kind}</span>
                                         {p.title && <strong>{p.title}</strong>}
+                                        <button
+                                            type="button"
+                                            className="sr__forget"
+                                            onClick={() => void forget(r.state_id)}
+                                            disabled={running !== null}
+                                            title="Remove what was read. The screen can then be read again."
+                                            aria-label={`Remove what was read at ${clock(r.ms)}`}
+                                        >
+                                            Remove
+                                        </button>
                                     </p>
                                     {p.points.length > 0 && (
                                         <ul>
@@ -299,7 +365,7 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
                 !done &&
                 plan.total > 0 && (
                     <div className="mn-actions">
-                        <button ref={opener} className="mn-btn" onClick={open}>
+                        <button ref={opener} className="mn-btn" onClick={ask}>
                             {`Read the screens…${proNote}`}
                         </button>
                     </div>
@@ -315,37 +381,58 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
                         <div className="modal-body">
                             {plan.blocked ? (
                                 <p className="sr-confirm__copy">{plan.blocked}</p>
+                            ) : zoomed ? (
+                                <div className="sr-zoom">
+                                    <img src={convertFileSrc(zoomed.image_path)} alt={`The ${describe(zoomed)}, as it would be sent`} />
+                                    <div className="sr-zoom__bar">
+                                        <label className="sr-pick__line">
+                                            <input type="checkbox" checked={ticked.has(zoomed.state_id)} onChange={() => toggle(zoomed.state_id)} />
+                                            <span>Send this picture</span>
+                                        </label>
+                                        <span className="sr-confirm__app">{describe(zoomed)}</span>
+                                        <button type="button" className="btn-secondary" onClick={() => setZoomed(null)} autoFocus>
+                                            All pictures
+                                        </button>
+                                    </div>
+                                </div>
                             ) : (
                                 <>
                                     <p className="sr-confirm__copy">
-                                        These are the pictures that would go, made smaller.{" "}
+                                        These are the pictures that would go.{" "}
                                         {plan.model ? <strong style={{ overflowWrap: "anywhere" }}>{plan.model}</strong> : "Your AI"} reads each
-                                        one, and noFriction keeps what it says as text beside the screen. Untick any you don't want sent.
+                                        one, and noFriction keeps what it says as text beside the screen. Click a picture to see it large;
+                                        untick any you don't want sent.
                                     </p>
                                     <ul className="sr-confirm__grid" aria-label="The pictures that will be sent">
                                         {plan.send.map((s) => {
                                             const on = ticked.has(s.state_id);
-                                            const what = `${s.kind} at ${clock(s.ms)}${s.app_name ? `, ${s.app_name}` : ""}`;
+                                            const source = pictureSource(s);
                                             return (
                                                 <li key={s.state_id} className={on ? "sr-pick" : "sr-pick is-off"}>
-                                                    <label>
+                                                    <button
+                                                        type="button"
+                                                        className="sr-pick__view"
+                                                        onClick={() => setZoomed(s)}
+                                                        aria-label={`Look at the ${describe(s)}`}
+                                                    >
                                                         <img src={convertFileSrc(s.image_path)} alt="" loading="lazy" />
-                                                        <span className="sr-pick__line">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={on}
-                                                                onChange={() => toggle(s.state_id)}
-                                                                aria-label={`Send the ${what}`}
-                                                            />
-                                                            <span className="sr-confirm__time">{clock(s.ms)}</span>
-                                                            <span>{s.kind}</span>
-                                                        </span>
-                                                        {s.app_name && <span className="sr-confirm__app">{s.app_name}</span>}
+                                                    </button>
+                                                    <label className="sr-pick__line">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={on}
+                                                            onChange={() => toggle(s.state_id)}
+                                                            aria-label={`Send the ${describe(s)}`}
+                                                        />
+                                                        <span className="sr-confirm__time">{clock(s.ms)}</span>
+                                                        <span>{s.kind}</span>
                                                     </label>
+                                                    {source && <span className="sr-confirm__app">{source}</span>}
                                                 </li>
                                             );
                                         })}
                                     </ul>
+                                    {lookFirst && <p className="sr-confirm__copy sr-confirm__look">{lookFirst}</p>}
                                     <p className="sr-confirm__copy">{confirmScope(plan)}</p>
                                     <p className="sr-confirm__copy">
                                         Only the ticked pictures are sent, each with a fixed instruction and nothing else from the recording,
@@ -355,7 +442,7 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
                                 </>
                             )}
                             <div className="ai-consent-actions">
-                                <button className="btn-secondary" onClick={close} autoFocus>
+                                <button className="btn-secondary" onClick={close} autoFocus={!zoomed}>
                                     {plan.blocked ? "Close" : "Cancel"}
                                 </button>
                                 {!plan.blocked && (

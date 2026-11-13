@@ -112,7 +112,7 @@ export function AiConsentModal() {
                         {destination && destination.name !== "Custom (OpenAI-compatible)" ? ` (${destination.name})` : ""}.
                         If you allow it, noFriction sends the transcripts, your marks and typed notes, titles,
                         attendee names and email/company details needed for AI features directly to this endpoint,
-                        using your optional API key. A picture of a screen is sent only when you press Read the screens, which shows each one first.
+                        using your optional API key. A picture (a screen, or a photo) is sent only when you press Read the screens, which shows each one first.
                         Its operator's privacy policy and terms apply.
                         This is optional. You can use Apple on-device or a local endpoint instead.
                         noFriction offers no hosted models and receives none of this content.

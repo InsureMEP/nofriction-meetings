@@ -661,12 +661,25 @@ next picture.
 - **Which: the ones that matter.** The screen showing at each mark and
   typed note, then the rest spread evenly over the recording. A screen is
   read once. A photo from the iPhone is offered too, labelled Photo.
-- **Never the private ones.** `screen_prompts::never_sent` leaves a screen
-  out on the Mac, before the list is shown: mail and message apps,
-  password apps and keychains, terminals, private or incognito browsing, a
-  tab on mail, a sign-in page or a bank, a file that holds keys, and
-  noFriction's own window. It errs toward leaving out. The model is never
+- **Never the ones it recognises as private.** `screen_prompts::never_sent`
+  leaves a screen out on the Mac, before the list is shown: mail and
+  message apps, password apps and keychains, terminals, private or
+  incognito browsing, a tab on mail, a sign-in page or a bank, a file that
+  holds keys, and noFriction's own window. It is a list of names and
+  words, so an app that isn't on it isn't recognised. The model is never
   relied on for this.
+  - A capture of one window is judged by that window. An app that shows
+    one kind of thing is trusted over its title ("Password hashing —
+    Lecture 4" in Keynote is a slide); a title decides only for a browser
+    tab or an unknown app.
+  - A capture of a whole display, which is the default, has no app. The
+    capture records which app and window were in front
+    (`screen_states.front_app`, `front_title`; never sent), and the display
+    is left out when that one is private. Something private that was only
+    visible behind another window is not recognised.
+  - So the confirmation shows every picture whole (never cropped), each
+    can be opened large, whole displays and photos are named as such, and
+    a line asks the user to look at them first.
 - **When: only on that click.** Never by itself, never on a timer, never
   on a key phrase, never while that recording is running, never while a
   Delete is in its undo window (checked before every picture, and again
@@ -676,18 +689,27 @@ next picture.
   nothing from the recording is in it, no transcript, title, app or
   window name. A reading can therefore only repeat what its own picture
   shows, and the screen's purge is the whole of its purge.
-- **Where: the destination the confirmation named.** The host and model
-  are checked before every picture; if the AI settings changed, nothing
-  (more) is sent. The gates of every AI call apply (Pro in the Mac App
+- **Where: the destination the confirmation named.** Each request is made
+  with `ai::complete_vision_if`: the endpoint is resolved once, its host
+  (with port) and model are compared to the confirmed ones, and the
+  request goes out on that same resolved target. A change of settings,
+  even between the check and the send, sends nothing (more). The gates of every AI call apply (Pro in the Mac App
   Store build, consent for a public endpoint). Apple's on-device model
   can't read images, so nothing is sent with it.
 - **Errors.** A screen counts as read only when the AI answered about it
-  (a reading, or a plain "nothing to keep"). If the endpoint refuses or
-  fails, the run stops after that one request and the screen stays
-  unread. An answer that is cut off or not in the form asked for leaves
-  its screen unread and the run goes on. If Pro or consent is asked for,
-  nothing has been sent yet and the same confirmation is passed again; a
-  run that has sent a picture is never repeated by itself.
+  (a reading, or a plain "nothing to keep"). An answer that is cut off,
+  not in the form asked for, or only repeats the example in the
+  instructions leaves its screen unread and the run goes on; so does a
+  picture that can't be prepared on the Mac (nothing is sent for it). If
+  the endpoint refuses or fails before it has read anything, the run stops
+  after that one request. Once it has read a picture, one rejection is
+  taken as that picture's problem and skipped; a second in a row stops the
+  run, and the message says at which screen. If Pro or consent is asked
+  for, nothing has been sent yet and the same confirmation is passed
+  again; only the app's own answer starts that, never words in an
+  endpoint's error, and a run that has sent a picture is never repeated by
+  itself. **Remove** deletes what was read from a screen, which is then
+  unread.
 - **The prompt library** (`screen_prompts.rs`). One entry per kind:
   slide, whiteboard, document, code, table, chart, web page, call, photo,
   and anything else. The kind is decided on the device; no request is
@@ -737,19 +759,50 @@ twelve defects; none was in the purge of a removed screen. Fixed:
 | No way to stop | Stop |
 | Tab left the dialog; the button stayed after everything readable was read; a failed load hid the section; the consent dialog focused Allow | Tab is kept in the dialog; the counts come from the Mac; a failed load says so; consent focuses Not now |
 
+**Second review (2026-11-13).** A second independent review of those fixes
+found no way to send an unconfirmed picture, and one high, four medium and
+eight low defects. Fixed:
+
+| Found | Now |
+|---|---|
+| The destination was checked on one snapshot of the settings and the picture sent on another: a change in between sent one picture elsewhere | Resolved, compared and sent on one target (`ai::complete_vision_if`) |
+| The confirmation's tiles cropped the picture, with no way to enlarge it | Shown whole; click to see it large |
+| With whole-display capture (the default) nothing could be recognised as private | The capture records what was in front; the display is left out when that is private; the rest is said plainly and shown |
+| Portrait iPhone photos were sent on their side | Turned upright from EXIF before the new encoding |
+| A failed run left a re-entered view saying "Reading…" for good | The command always announces its end; Stop on nothing clears it |
+| Settings said nothing leaves the Mac with Apple for text and a remote model for pictures | The line names text and pictures apart |
+| One picture the endpoint rejects ended every run at the same place | One rejection is skipped once the endpoint has read a picture; the message names the screen |
+| A model that never saw the picture could leave its echo of the instructions for good | An echo isn't a reading; Remove deletes a reading |
+| Title words excluded slides in Keynote ("Private equity", "Password hashing") | Titles decide only for a browser or an unknown app |
+| Apps and tabs missing from the private list | More names, including Apple's apps in other languages; chat and mail words for tabs |
+| The guard missed a second caller in the UI, aliases, and new readers of screen text | Checked |
+| Docs promised more than the code | Reworded to what the lists do |
+| A consent retry could be started by words in an endpoint's error | Only the app's own answer starts it |
+
 **Verified.** Unit tests: the library (one prompt per kind, the kind from
 app and window, the shared rules in every prompt, the prompt carrying
-nothing from the recording), what is left out as private, the choice of
-screens, the parser, only the confirmed ids going whatever changed since,
-only to the confirmed destination, an endpoint error stopping the run with
-nothing marked read, an unusable answer leaving its screen unread, a
-waiting Delete blocking the plan, the run and the save, Stop, photos, a
-reading dropped when its screen is deleted or its picture replaced
-meanwhile, a screen's Delete and Strike removing its reading, and Links
-not reading it. The screen in the film harness: the confirmation with its
-pictures and tick boxes, progress, Stop, the list.
+nothing from the recording), what is left out as private and what is not,
+a whole display judged by what was in front, the choice of screens, the
+parser (skips, echoes, caps), only the confirmed ids going whatever
+changed since, only to the confirmed destination (before, during and at
+the send), an endpoint error stopping the run with nothing marked read,
+one bad picture not ending a run, an unusable answer leaving its screen
+unread, a waiting Delete blocking the plan, the run and the save, Stop,
+photos (and a rotated one sent upright with no metadata), removing a
+reading, a reading dropped when its screen is deleted or its picture
+replaced meanwhile, a screen's Delete and Strike removing its reading,
+Links, chat search and the timeline not reading it, and the Settings
+line. The screen in the film harness: the confirmation with whole
+pictures, the large view, tick boxes, progress, Stop, the list, Remove.
 
 **Not verified.** No picture was sent to a real model: what a model reads
 from a real slide, whether it honours `skip` on a private screen, and what
-twelve requests cost are untested. Not run in the real app.
+twelve requests cost are untested. Not run in the real app, so these were
+never seen working there: the pictures in the confirmation (they use the
+app's asset scope, as the capture bar's do), what macOS reports as the
+window in front during a real recording (with several displays it may be
+on another display than the one captured; the display is then judged by
+it all the same, which errs toward leaving out), and whether a private
+Safari window says so in its title. The website's privacy page doesn't
+mention pictures yet; it must before a build with this feature ships.
 

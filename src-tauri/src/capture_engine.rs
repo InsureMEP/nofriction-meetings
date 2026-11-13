@@ -35,6 +35,11 @@ pub struct CapturedFrame {
     pub label: String,
     /// Owning app for window captures
     pub app_name: Option<String>,
+    /// Whole-display captures: the app and title of the window that was in
+    /// front when the picture was taken. Never shown and never sent; it lets
+    /// Read the screens leave out a display that had Mail, a password app
+    /// or a terminal in front.
+    pub front: Option<(String, String)>,
 }
 
 /// Something the user chose to capture: a whole display or a single window.
@@ -804,6 +809,10 @@ impl CaptureEngine {
                         missing_logged.remove(&target.key());
                         let num = frame_number.fetch_add(1, Ordering::SeqCst);
                         frame_count.fetch_add(1, Ordering::SeqCst);
+                        let front = match target {
+                            CaptureTarget::Display { .. } => crate::privacy_filter::front_window(),
+                            CaptureTarget::Window { .. } => None,
+                        };
                         let frame = CapturedFrame {
                             timestamp,
                             image: Arc::new(image),
@@ -812,6 +821,7 @@ impl CaptureEngine {
                             source: target.key(),
                             label,
                             app_name,
+                            front,
                         };
                         if let Some(callback) = frame_callback.read().as_ref() {
                             callback(frame);
