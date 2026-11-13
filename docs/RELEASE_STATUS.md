@@ -1,22 +1,24 @@
 # Release status and agent coordination
 
 Read this before starting work. Several agents work in this repo at once.
-Last updated 2026-10-23 by the release/distribution session. Update it when you change any of the facts below.
+Last updated 2026-11-13 by the release/distribution session. Update it when you change any of the facts below.
 
-## In the stores now (updated 2026-10-23)
+## In the stores now (updated 2026-11-13)
 
 | What | Version (build) | State | Notes |
 |---|---|---|---|
 | App Store, iPhone/iPad (+ Watch) | 1.0.1 (10) | **Released 2026-10-14** (Ready for Sale) | First public release |
 | App Store, iPhone | 1.0.2 (11) | **Released** (Ready for Sale) | Search jumps to the line; new iPhone preview video |
 | App Store, iPhone | 1.1.0 (12) | **Released 2026-10-23** (Ready for Sale) | Export… (#81), one-step AI connect with Sign in with OpenRouter (#82), new description and promo text (#85) |
-| Mac App Store | 3.9.0 (48) | **Waiting for review** (submitted 2026-10-25, submission b7690923), releases automatically. First Mac release | Make lesson, Export…, one-step AI connect, ⌘E, and the Stoichiometry course inside the app (#92). Same version record as 3.8.0: Casey had 3.8.0 (46) withdrawn on 2026-10-25 after three days in review, because its Lessons tab opened empty |
+| Mac App Store | 3.9.0 (48) | **Released** (Ready for Sale). First Mac release | Make lesson, Export…, one-step AI connect, ⌘E, and the Stoichiometry course inside the app (#92). The website's Mac App Store badge is on (`macLive: true`, #101) |
+| App Store Connect drafts ("v2") | iPhone/iPad 2.0.0 (14) · Mac 4.0.0 (49) | **Prepare for Submission. Not submitted.** Builds attached, store text in place | Waiting for the device pass under "Owner to-dos". Screenshots and previews are still the 1.1.0 / 3.9.0 ones |
 | Subscriptions (Pro Monthly/Yearly) | — | **Approved** | |
 | TestFlight external (https://testflight.apple.com/join/4JnJD3Fk) | iOS 10, 11 · Mac 43, 44, 45 | In beta testing | |
+| TestFlight internal | iOS 2.0.0 (14) · Mac 4.0.0 (49) | Uploaded 2026-11-13, available to internal testers | The v2 builds. "What to Test" is set on the iPhone build |
 
-Website: App Store badges go live when the public listing URL resolves (PR #72);
-the Mac badge stays hidden (`macLive: false` in `site/js/store.js`) until Mac
-is approved.
+Website: App Store badges go live when the public listing URL resolves (PR #72).
+The Mac badge has been on since Mac 3.9.0 was released (`macLive: true` in
+`site/js/store.js`, #101).
 
 ## Version plan
 
@@ -27,7 +29,7 @@ is approved.
 | iOS 1.1.0 | Export… and one-step AI connect (#81, #82). **Released 2026-10-23** | release session |
 | Mac 3.9.0 | Make lesson (#87), Export…, one-step AI connect, File → Export Recording… (⌘E) | release session |
 | iOS 1.2.0 | Lessons on iPhone (not started) | unassigned |
-| Mac 4.0.0 / iOS 2.0.0 ("v2") | Hands-free start (Up next, reminders, opt-in Record by itself), typed notes the AI finishes, notes that read the whole recording, the notebook's page. Plan: `docs/design/FADELL_V2.md` (iPhone differences and what wasn't verified: §9). **Mac (#97) and iPhone/iPad merged to main, not built or submitted**: versions, store text and screenshots are still 3.9.0 / 1.1.0. The Mac migration rebuilds `meeting_markers` once (tested against a 3.9.0 table); the iPhone adds one model (`NotebookItemDone`) with no schema version. Before a build: run both on real devices (the calendar source, a reminder arriving, the Start Recording shortcut and the Apple model were never run), and re-check the film-footage UI tests (skipped without their environment), since Stop now opens the recording and the demo data has more recordings. The App Store screenshot test and the strike test had been failing on main (the transcript row's identifier replaced the strike bar's); both pass again. **Added 2026-11-13 (owner decisions):** the Mac's typeface is the system face (#99), and the quick-note panel (⌃⌥⌘N opens the note field over another app; FADELL_V2 §10). The panel's window was checked with `cargo run --example quick_note_panel`, never in the real app: on the Mac pass, press ⌃⌥⌘N over a full-screen app, on a second display and with noFriction hidden (⌘H), type with an input method, confirm the line appears in the live transcript, and look at a recording's screens to see the panel isn't in them. Store text doesn't mention the panel yet | v2 session (2026-11-12/13); distribution as usual |
+| Mac 4.0.0 / iOS 2.0.0 ("v2") | Hands-free start (Up next, reminders, opt-in Record by itself), typed notes the AI finishes, notes that read the whole recording, the notebook's page (#97 Mac, #98 iPhone/iPad); the system typeface (#99); the quick-note panel, ⌃⌥⌘N over any app (#100, Mac); **Fill in the blanks** (#103 Mac, #105 iPhone/iPad); nothing automatic asks the AI while a recording runs, and no picture is sent by any feature (#102). Plan and what wasn't verified: `docs/design/FADELL_V2.md` (§9 iPhone, §10 the panel, §11 Fill in the blanks). **Built and uploaded 2026-11-13: iPhone/iPad 2.0.0 (14) and Mac 4.0.0 (49), attached to their App Store versions with the store text from `docs/APP_STORE_LISTING.md`. Not submitted for review**: that waits for the device pass under "Owner to-dos". What has run in the real Mac app (a sandboxed local build with an empty data folder): the migration, both shortcuts registering, the panel's notice over another app, a mark from the shortcut, a recording with transcription. What has not: a typed note saved from the app or the panel, Stop opening Notes with What you wrote, Fill in the blanks with a real AI, anything on a real iPhone, iPad or Watch. The Mac migration rebuilds `meeting_markers` once (tested against a 3.9.0 table); the iPhone adds one model (`NotebookItemDone`) with no schema version. Screenshots and previews are not updated for v2. **Not in these builds: Read the screens** (#104, the prompt library for pictures), which is still in review on its branch | v2 session (2026-11-12/13); distribution as usual |
 
 ## Rules for every agent
 
@@ -58,6 +60,38 @@ is approved.
 
 ## Owner to-dos (Casey)
 
+- **The v2 device pass, before 2.0.0 and 4.0.0 are submitted.** On the iPhone,
+  open TestFlight (https://beta.itunes.apple.com/v1/app/6818838861) and install
+  noFriction 2.0.0 (14). On the Mac, install 4.0.0 (49) from the TestFlight app
+  when no recording is running. Then:
+  1. iPhone: type a note while recording (the field under the transcript), press
+     Stop. Notes should open with **What you wrote**.
+  2. iPhone: with a calendar event starting in the next 15 minutes, the Record
+     tab offers it in one tap (**Up next**). Say "Start Recording" to Siri or
+     use the Action button.
+  3. iPhone: a notebook's page (Recordings, a Notebook chip, Open): tick an
+     item, press Review everything.
+  4. iPhone and Mac, with Pro and your AI set up: in a recording's Notes press
+     **Fill in the blanks**. It adds **What you missed** with times and **More
+     detail**. For a Class, anything from a textbook is marked as not said.
+     Delete a transcript line afterwards: the added sections go.
+  5. Mac: while recording, press ⌃⌥⌘N over another app, a full-screen app and
+     with noFriction hidden (⌘H). Type a line, press Return. The line is in the
+     live transcript and under **What you wrote** after Stop. The panel is not
+     in the recording's screens.
+  6. Apple Watch: record on the watch; it arrives on the iPhone and is
+     transcribed there.
+  7. iPhone ↔ Mac sync still works on the same Wi-Fi (Pro).
+  Tell the release session what failed, or "submit": it then submits both for
+  review (https://appstoreconnect.apple.com/apps/6818838861/distribution/ios/version/inflight
+  and https://appstoreconnect.apple.com/apps/6818838861/distribution/macos/version/inflight).
+- **The Mac installer certificate expires 2026-12-27** ("3rd Party Mac Developer
+  Installer", the one that signs the Mac App Store package; seen while building
+  49). After that date `scripts/release-mas.sh` can't package a Mac build.
+  Create a new **Mac Installer Distribution** certificate at
+  https://developer.apple.com/account/resources/certificates/add and install it
+  in the login keychain (`docs/APPLE_SETUP.md`). Apple Distribution is good
+  until 2027-09-22 and Developer ID Application until 2030-12-28.
 - Test on real devices via TestFlight: screen capture, iPhone↔Mac sync, and the
   Watch.
 - Sign in to GoDaddy in the gstack browser so the release session can revoke

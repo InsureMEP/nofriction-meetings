@@ -9,9 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-The v2 work (plan and reasons: docs/design/FADELL_V2.md), on the Mac and on
-iPhone and iPad. An entry marked (Mac) or (iPhone) is on that platform
-only.
+## [Mac 4.0.0 (49) · iPhone and iPad 2.0.0 (14)] - 2026-11-13
+
+Built and uploaded to TestFlight on 2026-11-13; not yet submitted for
+review (docs/RELEASE_STATUS.md). The v2 work (plan and reasons:
+docs/design/FADELL_V2.md), on the Mac and on iPhone and iPad. An entry
+marked (Mac) or (iPhone) is on that platform only.
 
 ### Added
 - **Fill in the blanks.** One button in a recording's Notes. It reads the
