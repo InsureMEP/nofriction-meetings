@@ -550,7 +550,10 @@ few lines of code). Click a time to see that screen in Rewind.
   It keeps a list of mail, chat and password apps, terminals, and words in
   a browser tab's title (private or incognito browsing, mail, a sign-in
   page, a bank), and leaves out files that hold keys and its own window.
-  An app or site that isn't on its list is not recognised.
+  An app or site that isn't on its list is not recognised. A private
+  browser window is recognised only when its title says so (Chrome, Edge
+  and Firefox say Incognito, InPrivate or Private Browsing; Safari
+  doesn't mark private windows in their titles).
   - If you recorded one window, it goes by that window.
   - If you recorded your whole display, it goes by the app that was in
     front at that moment. Something private that was only visible behind

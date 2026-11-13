@@ -203,7 +203,8 @@ these rules apply.
     is in its undo window. The prompt is fixed text: no transcript, title,
     app or window name goes with a picture. Private screens are never
     offered (`screen_prompts::never_sent`: mail, messages, password apps,
-    terminals, private browsing, key files, noFriction's own window);
+    terminals, private browsing when the title says so (Safari's doesn't),
+    key files, noFriction's own window);
     that is decided on the Mac, not left to the model. It works from the
     window a screen was captured from; a whole-display capture is judged
     by the window that was in front (`screen_states.front_app` /

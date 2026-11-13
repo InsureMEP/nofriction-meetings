@@ -666,8 +666,9 @@ next picture.
   message apps, password apps and keychains, terminals, private or
   incognito browsing, a tab on mail, a sign-in page or a bank, a file that
   holds keys, and noFriction's own window. It is a list of names and
-  words, so an app that isn't on it isn't recognised. The model is never
-  relied on for this.
+  words, so an app that isn't on it isn't recognised, and a private
+  browser window is recognised only when its title says so (Safari's
+  don't). The model is never relied on for this.
   - A capture of one window is judged by that window. An app that shows
     one kind of thing is trusted over its title ("Password hashing —
     Lecture 4" in Keynote is a slide); a title decides only for a browser

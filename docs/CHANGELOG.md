@@ -22,7 +22,8 @@ On `main`, not in a build yet.
   with a fixed instruction and nothing else from the recording. Click a
   picture to see it large before you send it. Screens noFriction
   recognises as private (a known mail, chat or password app, a terminal,
-  private browsing) are never offered; when you record your whole display
+  a browser window whose title says it is private) are never offered;
+  when you record your whole display
   it goes by the app that was in front, so look at those pictures first.
   The screens at your marks and typed notes go first. **Stop** ends it
   before the next picture, and **Remove** deletes what was read from a
