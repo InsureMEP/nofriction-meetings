@@ -1,14 +1,51 @@
-// noFriction Meetings - Meeting Notes Generator
-// AI-powered meeting analysis and notes generation
+//! Notes for one recording (docs/TIMED_RECORDING_AND_NOTEBOOKS.md "Notes by
+//! type", docs/design/FADELL_V2.md §6 "Notes generation").
+//!
+//! - **The whole recording.** The prompt gets the entire stored transcript,
+//!   each line with its time. A transcript that doesn't fit beside the
+//!   prompt and the answer is first condensed in parts (the study guide's
+//!   map step, `study::condense_to_budget`); nothing is cut off the end.
+//! - **Built on what the user did while listening.** The marks (★ ? ✎) and
+//!   the notes they typed are listed with their times, and the model is
+//!   asked to cover those first and to write, for each typed note, what was
+//!   being said then (`your_notes`, stored as `note_details`).
+//! - **One shape for every type.** Meeting, lecture and personal notes keep
+//!   the same JSON (`summary`, `key_topics`, `decisions`, `action_items`,
+//!   `participants`); the type only picks the prompt (recording_kind.rs).
+//! - **AI.** Every request goes through `ai::complete_text` (the study
+//!   module's `Completer`), so consent and, in the Mac App Store build, the
+//!   Pro check apply unchanged.
+//! - **Untrusted output.** The answer is parsed tolerantly and cleaned; an
+//!   unusable answer is asked for once more. Notes made from a transcript
+//!   that was edited meanwhile are not saved. Transcript text and model
+//!   output are never logged, and never put in an error message.
 
-use crate::ai_client::AIClient;
 use crate::database::DatabaseManager;
+use crate::study::prompt::{self, StudyInput};
+use crate::study::{Completer, GenError, Progress};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use sqlx::sqlite::SqliteConnection;
+use sqlx::{Pool, Row, Sqlite};
 use std::sync::Arc;
 use uuid::Uuid;
 
+pub const NO_TRANSCRIPT: &str = "This recording has no transcript to make notes from.";
+pub const TRANSCRIPT_CHANGED: &str =
+    "The transcript was edited while the notes were being made, so they weren't saved. Make notes again.";
+pub const STILL_RECORDING: &str = "Stop the recording to make notes from it.";
+pub const UNUSABLE: &str =
+    "Couldn't make the notes: the AI's answer wasn't usable (asked twice). Try again, or choose a larger model in Settings → AI.";
+
+/// Answer budget for the notes JSON, scaled down for small context windows.
+pub const NOTES_MAX_TOKENS: u32 = crate::ai_client::REPORT_MAX_TOKENS;
+/// Typed notes listed in the prompt (the rest still steer the condensing).
+const MAX_PROMPT_NOTES: usize = 40;
+/// A typed note as the prompt shows it.
+const PROMPT_NOTE_CHARS: usize = 240;
+
 /// Generated meeting notes structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct GeneratedNotes {
     pub summary: String,
     pub key_topics: Vec<String>,
@@ -17,14 +54,14 @@ pub struct GeneratedNotes {
     pub participants: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Decision {
     pub text: String,
     pub made_by: Option<String>,
     pub context: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct ActionItem {
     pub task: String,
     pub assignee: Option<String>,
@@ -32,187 +69,580 @@ pub struct ActionItem {
     pub priority: Option<String>,
 }
 
-/// Meeting Notes Generator
-pub struct MeetingNotesGenerator {
-    ai_client: AIClient,
+/// What was being said when the user typed a note, written by the AI.
+/// Stored in `meeting_notes.note_details` as a JSON list.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct NoteDetail {
+    pub marker_id: String,
+    pub detail: String,
 }
 
-impl MeetingNotesGenerator {
-    pub fn new(ai_client: AIClient) -> Self {
-        Self { ai_client }
-    }
+/// A note the user typed while listening.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypedNote {
+    pub marker_id: String,
+    pub ms: i64,
+    pub text: String,
+}
 
-    /// Generate notes from meeting transcripts
-    pub async fn generate_notes(
-        &self,
-        meeting_id: &str,
-        database: &Arc<DatabaseManager>,
-    ) -> Result<GeneratedNotes, String> {
-        // Get all transcripts for the meeting
-        let transcripts = database
-            .get_transcripts(meeting_id)
+/// Everything the notes prompt is built from.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct NotesInput {
+    /// Title, type, notebook, the transcript (speaker-prefixed when a line
+    /// has one) and every marker, typed notes included: the condensing step
+    /// keeps what was said near all of them.
+    pub study: StudyInput,
+    pub typed: Vec<TypedNote>,
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Schema (runs inside DatabaseManager::run_migrations on its one connection)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// `meeting_notes` is created in database.rs; this adds `note_details`.
+/// It is AI output: redaction rewrites it with the other notes columns
+/// (`redaction::AI_TABLES`).
+pub async fn ensure_schema(conn: &mut SqliteConnection) -> Result<(), sqlx::Error> {
+    crate::database::ensure_columns(conn, "meeting_notes", &[("note_details", "TEXT")]).await?;
+    Ok(())
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Input
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn err<E: std::fmt::Display>(ctx: &'static str) -> impl Fn(E) -> String {
+    move |e| format!("{}: {}", ctx, e)
+}
+
+pub async fn load_input(pool: &Pool<Sqlite>, meeting_id: &str) -> Result<NotesInput, String> {
+    let mut conn = pool.acquire().await.map_err(err("Database busy"))?;
+    load_input_conn(&mut conn, meeting_id).await
+}
+
+pub async fn load_input_conn(conn: &mut SqliteConnection, meeting_id: &str) -> Result<NotesInput, String> {
+    // Title, type, notebook, lines with times, markers (study.rs)
+    let mut study = crate::study::load_input_conn(conn, meeting_id).await?;
+    // Notes keep who spoke, when the transcript knows
+    let speakers: Vec<Option<String>> =
+        sqlx::query("SELECT speaker FROM transcripts WHERE meeting_id = ? ORDER BY timestamp ASC, id ASC")
+            .bind(meeting_id)
+            .fetch_all(&mut *conn)
             .await
-            .map_err(|e| format!("Failed to get transcripts: {}", e))?;
-
-        if transcripts.is_empty() {
-            return Err("No transcripts found for this meeting".to_string());
+            .map_err(err("Couldn't read the transcript"))?
+            .iter()
+            .map(|r| r.get::<Option<String>, _>("speaker"))
+            .collect();
+    if speakers.len() == study.lines.len() {
+        for (line, speaker) in study.lines.iter_mut().zip(speakers) {
+            let Some(sp) = speaker.as_deref().map(str::trim).filter(|s| !s.is_empty()) else { continue };
+            if !line.text.trim().is_empty() {
+                line.text = format!("{}: {}", sp, line.text);
+            }
         }
-
-        // Combine transcripts into a single text block
-        let full_transcript = transcript_for_prompt(&transcripts);
-
-        // Generate notes using AI, in the recording type's style (meeting,
-        // lecture or personal notes; recording_kind.rs)
-        let (kind, notebook) = database.get_kind_and_notebook(meeting_id).await.unwrap_or_default();
-        let (prompt, label) = crate::recording_kind::report_prompt(
-            kind,
-            notebook.as_deref(),
-            crate::settings::DEFAULT_REPORT_PROMPT,
-            "default",
-        );
-        let notes = self.analyze_transcript(&full_transcript, Some(&prompt)).await?;
-
-        // Save to database
-        let notes_id = Uuid::new_v4().to_string();
-        let key_topics_json = serde_json::to_string(&notes.key_topics).unwrap_or_default();
-        let decisions_json = serde_json::to_string(&notes.decisions).unwrap_or_default();
-        let action_items_json = serde_json::to_string(&notes.action_items).unwrap_or_default();
-        let participants_json = serde_json::to_string(&notes.participants).unwrap_or_default();
-
-        database
-            .save_meeting_notes(
-                &notes_id,
-                meeting_id,
-                Some(&notes.summary),
-                Some(&key_topics_json),
-                Some(&decisions_json),
-                Some(&action_items_json),
-                Some(&participants_json),
-                Some(label),
-            )
-            .await
-            .map_err(|e| format!("Failed to save notes: {}", e))?;
-
-        // Topics follow the notes (docs/TOPICS_AND_CHAT.md), in the background
-        crate::topics::find_after_notes(database.clone(), meeting_id.to_string());
-        Ok(notes)
     }
+    let rows = sqlx::query(
+        "SELECT k.id, k.ts, k.note, m.started_at FROM meeting_markers k JOIN meetings m ON m.id = k.meeting_id \
+         WHERE k.meeting_id = ? AND k.kind = 'note' ORDER BY k.ts ASC, k.created_at ASC",
+    )
+    .bind(meeting_id)
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(err("Couldn't read the notes you typed"))?;
+    let parse = |s: String| chrono::DateTime::parse_from_rfc3339(&s).ok().map(|d| d.with_timezone(&chrono::Utc));
+    let typed = rows
+        .iter()
+        .filter_map(|r| {
+            let text: String = r.get::<Option<String>, _>("note").unwrap_or_default();
+            let text = text.trim().to_string();
+            if text.is_empty() {
+                return None;
+            }
+            let ms = match (parse(r.get("ts")), parse(r.get("started_at"))) {
+                (Some(t), Some(s)) => (t - s).num_milliseconds().max(0),
+                _ => 0,
+            };
+            Some(TypedNote { marker_id: r.get("id"), ms, text })
+        })
+        .collect();
+    Ok(NotesInput { study, typed })
+}
 
-    /// Analyze transcript and extract structured notes
-    async fn analyze_transcript(
-        &self,
-        transcript: &str,
-        custom_prompt: Option<&str>,
-    ) -> Result<GeneratedNotes, String> {
-        let base_prompt = custom_prompt.unwrap_or(crate::settings::DEFAULT_REPORT_PROMPT);
-        let prompt = format!(
-            "{}\n\nTRANSCRIPT:\n{}\n\nJSON RESPONSE:",
-            base_prompt,
-            transcript.chars().take(8000).collect::<String>()
+// ═══════════════════════════════════════════════════════════════════════════
+// Prompt (pure)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Answer budget for a model with this context window.
+pub fn max_tokens(context_tokens: usize) -> u32 {
+    NOTES_MAX_TOKENS.min((context_tokens * 3 / 10).max(256) as u32)
+}
+
+/// How the transcript is laid out. Added to every type's prompt.
+const READING_RULES: &str = "Each line of the transcript starts with its time in the recording as [m:ss]. \
+Text shown as [stricken from the record] was removed by the user: never guess at or mention what it said.";
+
+/// Added when the user marked moments or typed notes.
+fn weave_rules(marks: bool, typed: bool) -> String {
+    let mut s = String::new();
+    if marks {
+        s.push_str(
+            "The user marked moments while listening (MARKS, with their times). What was said at those moments \
+matters most to them: make sure the notes cover it.\n",
         );
+    }
+    if typed {
+        s.push_str(
+            "The user also typed their own notes while listening (TYPED NOTES, numbered, with the time each was \
+typed). Build the notes around them: cover what each one is about. Add one more field to the JSON:\n\
+\"your_notes\": [{\"n\": 1, \"detail\": \"one or two sentences saying what was being said when note 1 was typed\"}]\n\
+with one entry per typed note, in order. Use only what the transcript says around that time; never repeat the \
+note itself, and if nothing relevant was said use an empty string.\n",
+        );
+    }
+    s
+}
 
-        let response = self
-            .ai_client
-            .complete(&prompt)
-            .await
-            .map_err(|e| format!("AI analysis failed: {}", e))?;
+fn marks_block(input: &NotesInput) -> String {
+    input
+        .study
+        .marks
+        .iter()
+        .filter(|m| !crate::markers::is_note(&m.kind))
+        .map(|m| {
+            let mut s = format!(
+                "[{}] {} {}",
+                prompt::clock(m.ms),
+                crate::markers::symbol(&m.kind),
+                crate::markers::label(&m.kind, input.study.kind)
+            );
+            if let Some(n) = m.note.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
+                s.push_str(&format!(": {}", n));
+            }
+            s
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
-        // Try to extract JSON from the response (may be wrapped in markdown code blocks)
-        let json_str = extract_json_from_response(&response);
+/// The typed notes the prompt lists, in order (`n` is the position, from 1).
+pub fn prompt_notes(input: &NotesInput) -> &[TypedNote] {
+    &input.typed[..input.typed.len().min(MAX_PROMPT_NOTES)]
+}
 
-        // Parse JSON response
-        let notes: GeneratedNotes = serde_json::from_str(&json_str).map_err(|e| {
+fn typed_block(input: &NotesInput) -> String {
+    prompt_notes(input)
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let text: String = n.text.chars().take(PROMPT_NOTE_CHARS).collect();
+            format!("{}. [{}] {}", i + 1, prompt::clock(n.ms), text)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The one user message: the type's prompt, the rules, the header, the
+/// marks and typed notes, then the material (the transcript, or notes
+/// condensed from it). Marker ids never appear.
+pub fn build_prompt(base_prompt: &str, input: &NotesInput, condensed: bool, body: &str) -> String {
+    let marks = marks_block(input);
+    let typed = typed_block(input);
+    let mut s = format!("{}\n\n{}\n", base_prompt.trim_end(), READING_RULES);
+    s.push_str(&weave_rules(!marks.is_empty(), !typed.is_empty()));
+    s.push('\n');
+    s.push_str(&prompt::header(&input.study));
+    if !marks.is_empty() {
+        s.push_str(&format!("\nMARKS:\n{}\n", marks));
+    }
+    if !typed.is_empty() {
+        s.push_str(&format!("\nTYPED NOTES:\n{}\n", typed));
+    }
+    let material = if condensed { "NOTES (condensed from the whole transcript, with times)" } else { "TRANSCRIPT" };
+    s.push_str(&format!("\n{}:\n{}\n\nJSON RESPONSE:", material, body));
+    s
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Parsing the answer (untrusted)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const MAX_ITEMS: usize = 40;
+const MAX_TEXT: usize = 600;
+const MAX_SUMMARY: usize = 2_000;
+const MAX_DETAIL: usize = 600;
+
+fn text(v: Option<&Value>, max: usize) -> Option<String> {
+    crate::study::parse::clean_text(v?, max)
+}
+
+fn items<'a>(o: &'a serde_json::Map<String, Value>, key: &str) -> Vec<&'a Value> {
+    match o.get(key) {
+        Some(Value::Array(a)) => a.iter().take(MAX_ITEMS).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The notes and the per-note details (as `(n, detail)`, n from 1) in a
+/// model answer. An answer with no summary and nothing in any list is an
+/// error; anything missing or mis-shaped inside a usable answer is dropped.
+pub fn parse_answer(raw: &str) -> Result<(GeneratedNotes, Vec<(usize, String)>), String> {
+    let v = crate::study::parse::extract_json(raw)?;
+    let o = v.as_object().ok_or("The answer wasn't a JSON object")?;
+    let strings = |key: &str| -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for x in items(o, key) {
+            if let Some(t) = text(Some(x), MAX_TEXT) {
+                if !out.iter().any(|y| y.eq_ignore_ascii_case(&t)) {
+                    out.push(t);
+                }
+            }
+        }
+        out
+    };
+    let decisions = items(o, "decisions")
+        .into_iter()
+        .filter_map(|x| match x {
+            Value::Object(d) => Some(Decision {
+                text: text(d.get("text").or_else(|| d.get("decision")), MAX_TEXT)?,
+                made_by: text(d.get("made_by"), 120),
+                context: text(d.get("context"), MAX_TEXT),
+            }),
+            other => Some(Decision { text: text(Some(other), MAX_TEXT)?, made_by: None, context: None }),
+        })
+        .collect();
+    let action_items = items(o, "action_items")
+        .into_iter()
+        .filter_map(|x| match x {
+            Value::Object(a) => Some(ActionItem {
+                task: text(a.get("task").or_else(|| a.get("text")), MAX_TEXT)?,
+                assignee: text(a.get("assignee").or_else(|| a.get("owner")), 120),
+                due_date: text(a.get("due_date").or_else(|| a.get("due")), 120),
+                priority: text(a.get("priority"), 20).map(|p| p.to_lowercase()),
+            }),
+            other => Some(ActionItem { task: text(Some(other), MAX_TEXT)?, ..Default::default() }),
+        })
+        .collect();
+    let notes = GeneratedNotes {
+        summary: text(o.get("summary"), MAX_SUMMARY).unwrap_or_default(),
+        key_topics: strings("key_topics"),
+        decisions,
+        action_items,
+        participants: strings("participants"),
+    };
+    if notes.summary.is_empty() && notes.key_topics.is_empty() && notes.decisions.is_empty() && notes.action_items.is_empty() {
+        return Err("The answer had no notes in it".into());
+    }
+    let mut details: Vec<(usize, String)> = Vec::new();
+    for (i, x) in items(o, "your_notes").into_iter().enumerate() {
+        let (n, d) = match x {
+            Value::Object(e) => (
+                e.get("n").and_then(|n| n.as_u64().or_else(|| n.as_str()?.trim().parse().ok())).map(|n| n as usize),
+                text(e.get("detail").or_else(|| e.get("text")), MAX_DETAIL),
+            ),
+            // A bare string: the entry for the note at this position
+            other => (Some(i + 1), text(Some(other), MAX_DETAIL)),
+        };
+        if let (Some(n), Some(d)) = (n, d) {
+            if n >= 1 && !details.iter().any(|(m, _)| *m == n) {
+                details.push((n, d));
+            }
+        }
+    }
+    Ok((notes, details))
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Generation
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Write the notes for `input` with the type's `base_prompt`. AI access
+/// errors (consent, Pro, no provider, network) stop at once; an unusable
+/// answer is asked for once more.
+pub async fn write(
+    c: &dyn Completer,
+    input: &NotesInput,
+    base_prompt: &str,
+    progress: &(dyn Fn(Progress) + Send + Sync),
+) -> Result<(GeneratedNotes, Vec<NoteDetail>), GenError> {
+    if !input.study.has_transcript() {
+        return Err(GenError::Failed(NO_TRANSCRIPT.into()));
+    }
+    let ctx = c.context_tokens();
+    let max = max_tokens(ctx);
+    // Everything but the material, to see how much room the material has
+    let fixed = build_prompt(base_prompt, input, true, "");
+    let budget = prompt::body_budget(ctx, max, "", &fixed);
+    let mut total = 1usize;
+    let mut done = 0usize;
+    let (body, condensed) =
+        crate::study::condense_to_budget(c, &input.study, budget, &mut total, &mut done, progress).await?;
+    let user = build_prompt(base_prompt, input, condensed, &body);
+
+    progress(Progress { done, total, label: "Writing the notes…".into() });
+    let mut why = String::new();
+    for attempt in 0..2 {
+        let text = if attempt == 0 {
+            user.clone()
+        } else {
             format!(
-                "Failed to parse AI response: {} - Response: {}",
-                e, response
+                "{}\n\nYour previous answer couldn't be used ({}). Answer again with only the JSON object in the \
+shape described, and nothing else.",
+                user, why
             )
-        })?;
-
-        Ok(notes)
-    }
-
-    /// Generate a quick summary (faster, less detailed)
-    pub async fn generate_quick_summary(&self, transcript: &str) -> Result<String, String> {
-        let prompt = format!(
-            "Summarize this meeting in 2-3 sentences:\n\n{}",
-            transcript.chars().take(4000).collect::<String>()
-        );
-
-        self.ai_client
-            .complete(&prompt)
-            .await
-            .map_err(|e| format!("Summary generation failed: {}", e))
-    }
-
-    /// Extract action items only
-    pub async fn extract_action_items(&self, transcript: &str) -> Result<Vec<ActionItem>, String> {
-        let prompt = format!(
-            r#"Extract action items from this meeting transcript. Return as JSON array:
-[{{"task": "...", "assignee": "...", "priority": "high/medium/low"}}]
-
-TRANSCRIPT:
-{}
-
-JSON ARRAY:"#,
-            transcript.chars().take(6000).collect::<String>()
-        );
-
-        let response = self
-            .ai_client
-            .complete(&prompt)
-            .await
-            .map_err(|e| format!("Action item extraction failed: {}", e))?;
-
-        serde_json::from_str(&response).map_err(|e| format!("Failed to parse action items: {}", e))
-    }
-
-    /// Generate notes with a custom prompt (for configurable reports)
-    pub async fn generate_notes_with_prompt(
-        &self,
-        meeting_id: &str,
-        database: &Arc<DatabaseManager>,
-        custom_prompt: &str,
-    ) -> Result<GeneratedNotes, String> {
-        let transcripts = database
-            .get_transcripts(meeting_id)
-            .await
-            .map_err(|e| format!("Failed to get transcripts: {}", e))?;
-
-        if transcripts.is_empty() {
-            return Err("No transcripts found for this meeting".to_string());
+        };
+        let opts = crate::ai::Opts { max_tokens: max, temperature: Some(if attempt == 0 { 0.3 } else { 0.4 }) };
+        match c.complete(vec![crate::ai::Msg::user(text)], opts).await {
+            Ok(raw) => match parse_answer(&raw) {
+                Ok((notes, details)) => {
+                    let listed = prompt_notes(input);
+                    let details = details
+                        .into_iter()
+                        .filter_map(|(n, detail)| {
+                            Some(NoteDetail { marker_id: listed.get(n.checked_sub(1)?)?.marker_id.clone(), detail })
+                        })
+                        .collect();
+                    progress(Progress { done: total, total, label: "Done".into() });
+                    return Ok((notes, details));
+                }
+                Err(e) => why = e,
+            },
+            Err(e) if crate::study::answer_error(&e) => why = crate::study::short(&e),
+            Err(e) => return Err(GenError::Ai(e)),
         }
+    }
+    log::warn!("Notes: the answer was unusable twice");
+    Err(GenError::Failed(UNUSABLE.into()))
+}
 
-        let full_transcript = transcript_for_prompt(&transcripts);
+/// Make the notes for a recording and save them. `meeting_prompt` and
+/// `meeting_label` are used for a Meeting; a Class and a Personal recording
+/// have their own prompt and label (recording_kind.rs).
+pub async fn generate_and_save(
+    c: &dyn Completer,
+    database: &Arc<DatabaseManager>,
+    meeting_id: &str,
+    meeting_prompt: &str,
+    meeting_label: &str,
+    progress: &(dyn Fn(Progress) + Send + Sync),
+) -> Result<GeneratedNotes, String> {
+    let pool = database.pool();
+    let input = load_input(pool, meeting_id).await?;
+    if !input.study.has_transcript() {
+        return Err(NO_TRANSCRIPT.into());
+    }
+    let fingerprint = input.study.fingerprint();
+    let (prompt_text, label) = crate::recording_kind::report_prompt(
+        input.study.kind,
+        input.study.notebook.as_deref(),
+        meeting_prompt,
+        meeting_label,
+    );
+    let (notes, details) = write(c, &input, &prompt_text, progress).await.map_err(String::from)?;
 
-        // A class gets lecture notes and a personal recording personal
-        // notes instead of the meeting report prompt
-        let (kind, notebook) = database.get_kind_and_notebook(meeting_id).await.unwrap_or_default();
-        let (prompt, label) =
-            crate::recording_kind::report_prompt(kind, notebook.as_deref(), custom_prompt, "auto-report");
-        let notes = self.analyze_transcript(&full_transcript, Some(&prompt)).await?;
+    // Notes made from text that was deleted or stricken meanwhile must
+    // never be written after the purge ran
+    let mut conn = pool.acquire().await.map_err(err("Database busy"))?;
+    if crate::study::has_pending_delete(&mut conn, meeting_id).await?
+        || load_input_conn(&mut conn, meeting_id).await?.study.fingerprint() != fingerprint
+    {
+        return Err(TRANSCRIPT_CHANGED.into());
+    }
+    drop(conn);
 
-        let notes_id = uuid::Uuid::new_v4().to_string();
-        let key_topics_json = serde_json::to_string(&notes.key_topics).unwrap_or_default();
-        let decisions_json = serde_json::to_string(&notes.decisions).unwrap_or_default();
-        let action_items_json = serde_json::to_string(&notes.action_items).unwrap_or_default();
-        let participants_json = serde_json::to_string(&notes.participants).unwrap_or_default();
-
+    let notes_id = Uuid::new_v4().to_string();
+    database
+        .save_meeting_notes(
+            &notes_id,
+            meeting_id,
+            Some(&notes.summary),
+            Some(&to_json(&notes.key_topics)),
+            Some(&to_json(&notes.decisions)),
+            Some(&to_json(&notes.action_items)),
+            Some(&to_json(&notes.participants)),
+            Some(label),
+        )
+        .await
+        .map_err(|e| format!("Failed to save notes: {}", e))?;
+    if !details.is_empty() {
         database
-            .save_meeting_notes(
-                &notes_id,
-                meeting_id,
-                Some(&notes.summary),
-                Some(&key_topics_json),
-                Some(&decisions_json),
-                Some(&action_items_json),
-                Some(&participants_json),
-                Some(label),
-            )
+            .set_meeting_note_details(&notes_id, &to_json(&details))
             .await
             .map_err(|e| format!("Failed to save notes: {}", e))?;
+    }
 
-        crate::topics::find_after_notes(database.clone(), meeting_id.to_string());
-        Ok(notes)
+    // Topics follow the notes (docs/TOPICS_AND_CHAT.md), in the background
+    crate::topics::find_after_notes(database.clone(), meeting_id.to_string());
+    Ok(notes)
+}
+
+/// The notes lists as stored; a list that can't be written is stored empty.
+fn to_json<T: Serialize>(v: &T) -> String {
+    serde_json::to_string(v).unwrap_or_else(|_| "[]".into())
+}
+
+/// A recording gets notes by itself when it stops if it ran six minutes, or
+/// one minute when the user typed a note or marked a moment in it.
+pub fn auto_notes_due(duration_seconds: i64, marks_and_notes: i64) -> bool {
+    duration_seconds >= 360 || (duration_seconds >= 60 && marks_and_notes > 0)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Running it (commands and the automatic run after Stop)
+// ═══════════════════════════════════════════════════════════════════════════
+
+pub mod run {
+    use super::*;
+    use crate::AppState;
+    use once_cell::sync::Lazy;
+    use parking_lot::Mutex;
+    use std::collections::HashMap;
+    use tauri::{AppHandle, Emitter, Manager};
+
+    /// `{meetingId, label, done, total}` while notes are being made.
+    pub const PROGRESS_EVENT: &str = "notes_progress";
+    /// `{meetingId, ok}` when a run ends (the Notes view reloads).
+    pub const DONE_EVENT: &str = "notes_done";
+
+    /// Recordings whose notes are being made, with what the run is doing.
+    static RUNNING: Lazy<Mutex<HashMap<String, String>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+
+    struct RunGuard(String);
+    impl Drop for RunGuard {
+        fn drop(&mut self) {
+            RUNNING.lock().remove(&self.0);
+        }
+    }
+
+    /// What the run for this recording is doing, if one is going.
+    pub fn status(meeting_id: &str) -> Option<String> {
+        RUNNING.lock().get(meeting_id).cloned()
+    }
+
+    fn recording_meeting(state: &AppState) -> Option<String> {
+        if !state.capture_engine.read().is_recording() {
+            return None;
+        }
+        state.state_builder.read().current_meeting_id()
+    }
+
+    /// Make and save the notes, one run per recording at a time, telling
+    /// the window what it is doing.
+    pub async fn make(
+        app: &AppHandle,
+        state: &AppState,
+        meeting_id: &str,
+        meeting_prompt: &str,
+        meeting_label: &str,
+    ) -> Result<GeneratedNotes, String> {
+        if recording_meeting(state).as_deref() == Some(meeting_id) {
+            return Err(STILL_RECORDING.into());
+        }
+        {
+            let mut running = RUNNING.lock();
+            if running.contains_key(meeting_id) {
+                return Err("Notes are already being made for this recording.".into());
+            }
+            running.insert(meeting_id.to_string(), "Making notes…".into());
+        }
+        let _guard = RunGuard(meeting_id.to_string());
+        let emit = {
+            let app = app.clone();
+            let id = meeting_id.to_string();
+            move |p: Progress| {
+                if let Some(l) = RUNNING.lock().get_mut(&id) {
+                    *l = p.label.clone();
+                }
+                let _ = app.emit(
+                    PROGRESS_EVENT,
+                    serde_json::json!({ "meetingId": id, "label": p.label, "done": p.done, "total": p.total }),
+                );
+            }
+        };
+        emit(Progress { done: 0, total: 1, label: "Making notes…".into() });
+        let result = generate_and_save(
+            &crate::study::LiveCompleter,
+            &state.database,
+            meeting_id,
+            meeting_prompt,
+            meeting_label,
+            &emit,
+        )
+        .await;
+        let _ = app.emit(DONE_EVENT, serde_json::json!({ "meetingId": meeting_id, "ok": result.is_ok() }));
+        result
+    }
+
+    /// After Stop: make the notes in the background when automatic notes
+    /// are on, an AI is ready and the recording is worth it
+    /// ([`auto_notes_due`]). Says "Notes are ready" when the window isn't
+    /// in front. Never raises a dialog: a missing AI, consent or Pro just
+    /// means no automatic notes.
+    pub fn after_stop(app: AppHandle, meeting_id: String) {
+        tauri::async_runtime::spawn(async move {
+            let Some(state) = app.try_state::<AppState>() else { return };
+            let settings = match state.settings.get_all().await {
+                Ok(s) => s,
+                Err(e) => {
+                    log::warn!("Automatic notes: couldn't load settings: {}", e);
+                    return;
+                }
+            };
+            if !settings.auto_generate_report || !crate::ai::is_ready(crate::ai::Kind::Text) {
+                return;
+            }
+            let duration = match state.database.get_meeting(&meeting_id).await {
+                Ok(Some(m)) => m.duration_seconds.unwrap_or(0),
+                _ => return,
+            };
+            let marked: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM meeting_markers WHERE meeting_id = ?")
+                .bind(&meeting_id)
+                .fetch_one(state.database.pool())
+                .await
+                .unwrap_or(0);
+            if !auto_notes_due(duration, marked) {
+                log::info!("Automatic notes: skipped ({} s, {} marks or notes)", duration, marked);
+                return;
+            }
+            match make(&app, &state, &meeting_id, &settings.meeting_report_prompt, "auto-report").await {
+                Ok(_) => {
+                    log::info!("Automatic notes: made for {}", meeting_id);
+                    let front = app
+                        .get_webview_window("main")
+                        .map(|w| w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false))
+                        .unwrap_or(false);
+                    if !front && settings.show_notifications {
+                        let title = state
+                            .database
+                            .get_meeting(&meeting_id)
+                            .await
+                            .ok()
+                            .flatten()
+                            .map(|m| m.title)
+                            .unwrap_or_default();
+                        crate::notifications::post(&app, "Notes are ready", &notes_ready_body(&title));
+                    }
+                }
+                // The class of failure only: an error may quote the endpoint, never the transcript
+                Err(e) => log::warn!("Automatic notes: not made ({})", e.chars().take(120).collect::<String>()),
+            }
+        });
+    }
+
+    /// The recording's title (a calendar event or notebook name, never
+    /// transcript text) and what clicking does.
+    pub fn notes_ready_body(title: &str) -> String {
+        let t = title.trim();
+        if t.is_empty() {
+            "Click to read them.".to_string()
+        } else {
+            format!("{}. Click to read them.", t)
+        }
+    }
+
+    /// What the notes run for this recording is doing, or null.
+    #[tauri::command(rename_all = "camelCase")]
+    pub async fn get_notes_status(meeting_id: String) -> Result<Option<String>, String> {
+        Ok(status(&meeting_id))
     }
 }
 
@@ -285,7 +715,6 @@ pub fn parse_followup_email(raw: &str, title: &str) -> (String, String) {
     (subject, body)
 }
 
-/// Extract JSON from an AI response that may contain markdown code blocks
 /// The transcript block sent to the AI. `get_transcripts` already renders
 /// stricken spans as `[stricken from the record]`; render again here so a
 /// caller holding marked rows can never leak a marker id (or skip it).
@@ -301,67 +730,6 @@ pub fn transcript_for_prompt(transcripts: &[crate::database::Transcript]) -> Str
         })
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-fn extract_json_from_response(response: &str) -> String {
-    let trimmed = response.trim();
-
-    // Try to find JSON in markdown code block
-    if let Some(start) = trimmed.find("```json") {
-        let json_start = start + 7;
-        if let Some(end) = trimmed[json_start..].find("```") {
-            return trimmed[json_start..json_start + end].trim().to_string();
-        }
-    }
-
-    // Try backtick code block without language
-    if let Some(start) = trimmed.find("```") {
-        let json_start = start + 3;
-        if let Some(end) = trimmed[json_start..].find("```") {
-            let content = trimmed[json_start..json_start + end].trim();
-            if content.starts_with('{') {
-                return content.to_string();
-            }
-        }
-    }
-
-    // Try to find raw JSON object
-    if let Some(start) = trimmed.find('{') {
-        if let Some(end) = trimmed.rfind('}') {
-            return trimmed[start..=end].to_string();
-        }
-    }
-
-    // Return as-is
-    trimmed.to_string()
-}
-
-/// Cluster transcripts into logical segments based on time gaps and topic similarity
-pub fn cluster_transcripts_by_time(
-    transcripts: &[crate::database::Transcript],
-    gap_threshold_seconds: i64,
-) -> Vec<Vec<usize>> {
-    if transcripts.is_empty() {
-        return vec![];
-    }
-
-    let mut clusters: Vec<Vec<usize>> = vec![vec![0]];
-
-    for i in 1..transcripts.len() {
-        let prev_ts = transcripts[i - 1].timestamp;
-        let curr_ts = transcripts[i].timestamp;
-        let gap = (curr_ts - prev_ts).num_seconds();
-
-        if gap > gap_threshold_seconds {
-            // Start a new cluster
-            clusters.push(vec![i]);
-        } else {
-            // Add to current cluster
-            clusters.last_mut().unwrap().push(i);
-        }
-    }
-
-    clusters
 }
 
 #[cfg(test)]
@@ -390,5 +758,360 @@ mod followup_tests {
         assert!(c.starts_with("Meeting: Weekly\nWhen: Thu 2 Oct 2026 10:00\nAttendees: Ana (Acme), Bo\n"));
         assert!(c.ends_with("[stricken from the record]"));
         assert!(super::FOLLOWUP_EMAIL_SYSTEM.contains("never invent owners or dates"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ai::{AiError, Msg, Opts};
+    use crate::recording_kind::RecordingKind;
+    use crate::study::prompt::{StudyLine, StudyMark};
+    use parking_lot::Mutex;
+    use std::path::PathBuf;
+
+    const GOOD: &str = r#"{"summary": "Membranes and transport.", "key_topics": ["Bilayer", "Pumps"],
+        "decisions": [{"text": "Osmosis: water follows solute", "made_by": null, "context": "a red blood cell"}],
+        "action_items": [{"task": "Quiz on membranes", "assignee": null, "due_date": "Wednesday", "priority": "HIGH"}],
+        "participants": ["Dr. Reyes"],
+        "your_notes": [{"n": 2, "detail": "Two potassium ions come in for each ATP."}, {"n": "1", "detail": "The pump moves three sodium ions out."}, {"n": 99, "detail": "no such note"}]}"#;
+
+    struct Mock {
+        ctx: usize,
+        calls: Mutex<Vec<String>>,
+        /// Answers to give to the notes request, in order (the last repeats)
+        answers: Mutex<Vec<String>>,
+        error: Option<AiError>,
+        /// SQL run once, during the notes request (an edit made meanwhile)
+        edit: Mutex<Option<(Arc<DatabaseManager>, &'static str)>>,
+    }
+
+    impl Mock {
+        fn new(ctx: usize) -> Self {
+            Self { ctx, calls: Mutex::new(Vec::new()), answers: Mutex::new(vec![GOOD.into()]), error: None, edit: Mutex::new(None) }
+        }
+        fn answering(ctx: usize, answers: &[&str]) -> Self {
+            let m = Self::new(ctx);
+            *m.answers.lock() = answers.iter().map(|a| a.to_string()).collect();
+            m
+        }
+        fn requests(&self) -> Vec<String> {
+            self.calls.lock().clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Completer for Mock {
+        async fn complete(&self, msgs: Vec<Msg>, _opts: Opts) -> Result<String, AiError> {
+            let text = msgs.iter().map(|m| m.text()).collect::<Vec<_>>().join("\n");
+            self.calls.lock().push(text.clone());
+            if let Some(e) = &self.error {
+                return Err(e.clone());
+            }
+            if text.starts_with("You condense") {
+                // Keep the first and last line of the chunk, as a condenser would keep its facts
+                let lines: Vec<&str> = text.lines().filter(|l| l.starts_with('[')).collect();
+                let first = lines.first().copied().unwrap_or("[0:00] nothing");
+                let last = lines.last().copied().unwrap_or(first);
+                return Ok(format!("{}\n{}", first, last));
+            }
+            let edit = self.edit.lock().take();
+            if let Some((db, sql)) = edit {
+                sqlx::query(sql).execute(db.pool()).await.unwrap();
+            }
+            let mut a = self.answers.lock();
+            Ok(if a.len() > 1 { a.remove(0) } else { a[0].clone() })
+        }
+        fn context_tokens(&self) -> usize {
+            self.ctx
+        }
+    }
+
+    fn quiet() -> impl Fn(Progress) + Send + Sync {
+        |_p: Progress| {}
+    }
+
+    fn input(lines: &[(i64, &str)], marks: &[(i64, &str, Option<&str>)], typed: &[(i64, &str)]) -> NotesInput {
+        let mut all: Vec<StudyMark> =
+            marks.iter().map(|(ms, k, n)| StudyMark { ms: *ms, kind: k.to_string(), note: n.map(String::from) }).collect();
+        all.extend(typed.iter().map(|(ms, t)| StudyMark { ms: *ms, kind: "note".into(), note: Some(t.to_string()) }));
+        NotesInput {
+            study: StudyInput {
+                title: "Membrane transport".into(),
+                kind: RecordingKind::Class,
+                notebook: Some("BIO 101".into()),
+                duration_ms: lines.iter().map(|l| l.0).max().unwrap_or(0) + 5_000,
+                lines: lines.iter().map(|(ms, t)| StudyLine { ms: *ms, text: t.to_string() }).collect(),
+                marks: all,
+            },
+            typed: typed
+                .iter()
+                .enumerate()
+                .map(|(i, (ms, t))| TypedNote { marker_id: format!("marker-id-{}", i + 1), ms: *ms, text: t.to_string() })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn the_prompt_lists_marks_and_numbered_notes_and_never_an_id() {
+        let i = input(
+            &[(0, "Dr. Reyes: Let's pick up at the membrane."), (61_000, "[stricken from the record]"), (90_000, "The pump moves sodium.")],
+            &[(10_000, "question", None), (90_500, "test", Some("on the exam"))],
+            &[(92_000, "pump 3 na out"), (95_000, "2 k in")],
+        );
+        let p = build_prompt("LECTURE PROMPT", &i, false, &i.study.transcript_lines().join("\n"));
+        assert!(p.starts_with("LECTURE PROMPT\n\nEach line of the transcript starts with its time"), "{}", p);
+        assert!(p.contains("never guess at or mention what it said"));
+        assert!(p.contains("\nMARKS:\n[0:10] ? Question\n[1:30] ✎ On the test: on the exam\n"), "{}", p);
+        assert!(p.contains("\nTYPED NOTES:\n1. [1:32] pump 3 na out\n2. [1:35] 2 k in\n"), "{}", p);
+        assert!(p.contains("\"your_notes\""));
+        assert!(p.contains("Lecture: Membrane transport\nClass: BIO 101\n"));
+        assert!(p.contains("\nTRANSCRIPT:\n[0:00] Dr. Reyes: Let's pick up at the membrane.\n[1:01] [stricken from the record]\n"), "{}", p);
+        assert!(p.ends_with("JSON RESPONSE:"));
+        assert!(!p.contains("marker-id"), "marker ids never go in a prompt");
+        // A typed note is listed once, under TYPED NOTES, not again as a mark
+        assert_eq!(p.matches("pump 3 na out").count(), 1);
+
+        // Nothing marked or typed: no blocks and no extra field asked for
+        let plain = input(&[(0, "Hello.")], &[], &[]);
+        let p = build_prompt("PROMPT", &plain, false, "[0:00] Hello.");
+        assert!(!p.contains("MARKS:") && !p.contains("TYPED NOTES:") && !p.contains("your_notes"), "{}", p);
+        // Condensed material is named as such
+        assert!(build_prompt("PROMPT", &plain, true, "[0:00] hello").contains("NOTES (condensed from the whole transcript, with times):"));
+    }
+
+    #[test]
+    fn answers_are_parsed_tolerantly_and_cleaned() {
+        let (n, d) = parse_answer(&format!("<think>plan</think>Here you go:\n```json\n{}\n```", GOOD)).unwrap();
+        assert_eq!(n.summary, "Membranes and transport.");
+        assert_eq!(n.key_topics, vec!["Bilayer", "Pumps"]);
+        assert_eq!(n.decisions[0].context.as_deref(), Some("a red blood cell"));
+        assert_eq!(n.decisions[0].made_by, None);
+        assert_eq!(
+            (n.action_items[0].task.as_str(), n.action_items[0].due_date.as_deref(), n.action_items[0].priority.as_deref()),
+            ("Quiz on membranes", Some("Wednesday"), Some("high"))
+        );
+        assert_eq!(d.iter().map(|(n, _)| *n).collect::<Vec<_>>(), vec![2, 1, 99]);
+
+        // Small-model shapes: strings where objects were asked for, lists of bare details
+        let (n, d) = parse_answer(
+            r#"{"summary": " A   talk. ", "key_topics": ["- one", "One", 3], "decisions": ["Ship in May"],
+               "action_items": ["Book the room", {"text": "Call Ana", "owner": "Bo", "due": "Friday"}, {"assignee": "nobody"}],
+               "your_notes": ["first detail", "", "third detail"],}"#,
+        )
+        .unwrap();
+        assert_eq!(n.summary, "A talk.");
+        assert_eq!(n.key_topics, vec!["one", "3"], "list markers dropped, duplicates folded");
+        assert_eq!(n.decisions, vec![Decision { text: "Ship in May".into(), made_by: None, context: None }]);
+        assert_eq!(n.action_items.len(), 2, "an item with no task is dropped");
+        assert_eq!((n.action_items[1].assignee.as_deref(), n.action_items[1].due_date.as_deref()), (Some("Bo"), Some("Friday")));
+        assert_eq!(d, vec![(1, "first detail".to_string()), (3, "third detail".to_string())]);
+
+        // Unusable answers are errors, never panics, and never an empty note
+        for bad in ["", "I can't help with that.", "{", "[1, 2]", "null", "{\"summary\": \"\", \"key_topics\": []}", "{\"other\": true}"] {
+            assert!(parse_answer(bad).is_err(), "accepted {:?}", bad);
+        }
+        let deep = "[".repeat(5000);
+        assert!(parse_answer(&deep).is_err());
+        // Counts and lengths are capped
+        let many = serde_json::json!({"summary": "x".repeat(9000), "key_topics": (0..200).map(|i| format!("t{}", i)).collect::<Vec<_>>()});
+        let (n, _) = parse_answer(&many.to_string()).unwrap();
+        assert!(n.summary.chars().count() <= MAX_SUMMARY);
+        assert_eq!(n.key_topics.len(), MAX_ITEMS);
+    }
+
+    #[tokio::test]
+    async fn a_short_recording_is_one_request_with_the_whole_transcript() {
+        let i = input(&[(0, "first line"), (30_000, "middle line"), (60_000, "the very last line")], &[], &[(31_000, "pump"), (32_000, "gradient")]);
+        let m = Mock::new(32_768);
+        let (notes, details) = write(&m, &i, "PROMPT", &quiet()).await.unwrap();
+        let reqs = m.requests();
+        assert_eq!(reqs.len(), 1);
+        assert!(reqs[0].contains("[0:00] first line") && reqs[0].contains("[1:00] the very last line"));
+        assert_eq!(notes.summary, "Membranes and transport.");
+        // Details land on the typed notes they answer; an unknown number is dropped
+        assert_eq!(
+            details,
+            vec![
+                NoteDetail { marker_id: "marker-id-2".into(), detail: "Two potassium ions come in for each ATP.".into() },
+                NoteDetail { marker_id: "marker-id-1".into(), detail: "The pump moves three sodium ions out.".into() },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_long_recording_is_read_to_the_end_in_parts_that_fit() {
+        // About 50 minutes of speech: far more than the 8,000 characters the
+        // notes used to read, and more than a 4K-token model holds
+        let mut lines: Vec<(i64, String)> = (0..600)
+            .map(|n| (n * 5_000, format!("line {} of the lecture, with enough words in it to take up real room in a prompt", n)))
+            .collect();
+        lines.push((600 * 5_000, "THE-LAST-THING-SAID before everyone left".into()));
+        let refs: Vec<(i64, &str)> = lines.iter().map(|(ms, t)| (*ms, t.as_str())).collect();
+        let i = input(&refs, &[(2_999_000, "test", None)], &[(3_000_500, "what was the last thing")]);
+        assert!(i.study.transcript_lines().join("\n").chars().count() > 40_000);
+
+        let ctx = 4_096;
+        let m = Mock::new(ctx);
+        let (notes, details) = write(&m, &i, &crate::recording_kind::lecture_notes_prompt(Some("BIO 101")), &quiet()).await.unwrap();
+        assert_eq!(notes.summary, "Membranes and transport.");
+        assert!(details.is_empty() || details.iter().all(|d| d.marker_id == "marker-id-1"));
+
+        let reqs = m.requests();
+        let condense: Vec<&String> = reqs.iter().filter(|r| r.starts_with("You condense")).collect();
+        assert!(condense.len() > 3, "read in parts ({} requests)", condense.len());
+        // Every request fits the window with the answer's budget beside it
+        let room = ((ctx - max_tokens(ctx) as usize) as f64 * prompt::CHARS_PER_TOKEN) as usize;
+        for r in &reqs {
+            assert!(r.chars().count() <= room, "a request of {} characters doesn't fit {}", r.chars().count(), room);
+        }
+        // The end of the recording was read, and reached the notes request
+        assert!(condense.iter().any(|r| r.contains("THE-LAST-THING-SAID")), "the tail was never sent");
+        let last = reqs.last().unwrap();
+        assert!(last.contains("NOTES (condensed from the whole transcript, with times):"));
+        assert!(last.contains("THE-LAST-THING-SAID"), "the notes request never saw the end");
+        assert!(last.contains("line 0 of the lecture"), "the notes request never saw the start");
+        assert!(last.contains("TYPED NOTES:\n1. [50:00] what was the last thing"));
+    }
+
+    #[tokio::test]
+    async fn a_bad_answer_is_asked_again_and_a_second_one_is_reported_without_quoting_it() {
+        let i = input(&[(0, "cells have organelles")], &[], &[]);
+        let m = Mock::answering(32_768, &["Sure! SECRET-TRANSCRIPT-WORDS but no json", GOOD]);
+        assert!(write(&m, &i, "PROMPT", &quiet()).await.is_ok());
+        assert_eq!(m.requests().len(), 2);
+        assert!(m.requests()[1].contains("Your previous answer couldn't be used"));
+
+        let m = Mock::answering(32_768, &["SECRET-TRANSCRIPT-WORDS, again not json"]);
+        let e = String::from(write(&m, &i, "PROMPT", &quiet()).await.unwrap_err());
+        assert_eq!(e, UNUSABLE);
+        assert!(!e.contains("SECRET"), "the model's words never go in an error");
+        assert_eq!(m.requests().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn access_errors_stop_the_run_and_an_empty_recording_never_calls_the_ai() {
+        let i = input(&[(0, "cells have organelles")], &[], &[]);
+        let mut m = Mock::new(32_768);
+        m.error = Some(AiError::ProRequired);
+        assert!(matches!(write(&m, &i, "PROMPT", &quiet()).await, Err(GenError::Ai(AiError::ProRequired))));
+        assert_eq!(m.requests().len(), 1);
+
+        let empty = input(&[(0, "[stricken from the record]")], &[], &[(1_000, "a note")]);
+        let m = Mock::new(32_768);
+        assert_eq!(String::from(write(&m, &empty, "PROMPT", &quiet()).await.unwrap_err()), NO_TRANSCRIPT);
+        assert!(m.requests().is_empty());
+    }
+
+    #[test]
+    fn automatic_notes_rule() {
+        assert!(auto_notes_due(360, 0), "six minutes is enough on its own");
+        assert!(!auto_notes_due(359, 0));
+        assert!(auto_notes_due(60, 1), "a minute, when the user typed or marked");
+        assert!(!auto_notes_due(59, 5));
+        assert!(!auto_notes_due(0, 0));
+        assert_eq!(run::notes_ready_body("BIO 101 — Nov 12"), "BIO 101 — Nov 12. Click to read them.");
+        assert_eq!(run::notes_ready_body("  "), "Click to read them.");
+        // Small models get a smaller answer budget
+        assert_eq!(max_tokens(128_000), NOTES_MAX_TOKENS);
+        assert!(max_tokens(4_096) < 1_300);
+    }
+
+    // ── With the database ────────────────────────────────────────────────
+
+    struct Fx {
+        db: Arc<DatabaseManager>,
+        dir: PathBuf,
+    }
+
+    impl Drop for Fx {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    async fn fx() -> Fx {
+        let dir = std::env::temp_dir().join(format!("nf-notes-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = DatabaseManager::new(&dir.join("t.db")).await.unwrap();
+        db.run_migrations().await.unwrap();
+        db.create_meeting("m1", "Membrane transport").await.unwrap();
+        db.set_meeting_kind("m1", RecordingKind::Class).await.unwrap();
+        Fx { db: Arc::new(db), dir }
+    }
+
+    async fn start(f: &Fx) -> chrono::DateTime<chrono::Utc> {
+        let s: String = sqlx::query_scalar("SELECT started_at FROM meetings WHERE id = 'm1'").fetch_one(f.db.pool()).await.unwrap();
+        chrono::DateTime::parse_from_rfc3339(&s).unwrap().with_timezone(&chrono::Utc)
+    }
+
+    async fn line(f: &Fx, secs: i64, speaker: Option<&str>, text: &str) {
+        let t = start(f).await + chrono::Duration::seconds(secs);
+        f.db.add_transcript_at("m1", text, speaker, true, 0.9, t).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn notes_are_saved_with_what_was_said_at_each_typed_note() {
+        let f = fx().await;
+        let t0 = start(&f).await;
+        line(&f, 0, Some("Dr. Reyes"), "The sodium potassium pump uses ATP.").await;
+        line(&f, 20, None, "Three sodium out, two potassium in.").await;
+        let pool = f.db.pool();
+        let n1 = crate::markers::add(pool, "m1", t0 + chrono::Duration::seconds(21), Some("note"), Some("pump 3 na out"), false).await.unwrap();
+        let n2 = crate::markers::add(pool, "m1", t0 + chrono::Duration::seconds(25), Some("note"), Some("2 k in"), false).await.unwrap();
+        crate::markers::add(pool, "m1", t0 + chrono::Duration::seconds(22), Some("test"), None, false).await.unwrap();
+
+        let loaded = load_input(pool, "m1").await.unwrap();
+        assert_eq!(loaded.study.transcript_lines()[0], "[0:00] Dr. Reyes: The sodium potassium pump uses ATP.");
+        assert_eq!(loaded.study.transcript_lines()[1], "[0:20] Three sodium out, two potassium in.");
+        assert_eq!(loaded.typed.iter().map(|t| (t.ms, t.text.as_str())).collect::<Vec<_>>(), vec![(21_000, "pump 3 na out"), (25_000, "2 k in")]);
+
+        let m = Mock::new(32_768);
+        let notes = generate_and_save(&m, &f.db, "m1", "MEETING PROMPT", "auto-report", &quiet()).await.unwrap();
+        assert_eq!(notes.key_topics, vec!["Bilayer", "Pumps"]);
+        // A class gets the lecture prompt, whatever the meeting prompt is
+        assert!(m.requests()[0].contains("Write lecture notes"), "{}", &m.requests()[0][..200]);
+        assert!(m.requests()[0].contains("MARKS:\n[0:22] ✎ On the test"));
+
+        let saved = f.db.get_meeting_notes("m1").await.unwrap().unwrap();
+        assert_eq!(saved.model_used.as_deref(), Some("lecture-notes"));
+        assert!((chrono::Utc::now() - saved.generated_at).num_seconds().abs() < 120, "the stored time is read back, not replaced by now");
+        let details: Vec<NoteDetail> = serde_json::from_str(saved.note_details.as_deref().unwrap()).unwrap();
+        assert_eq!(
+            details,
+            vec![
+                NoteDetail { marker_id: n2.id.clone(), detail: "Two potassium ions come in for each ATP.".into() },
+                NoteDetail { marker_id: n1.id.clone(), detail: "The pump moves three sodium ions out.".into() },
+            ]
+        );
+
+        // Striking a distinctive word rewrites the details like the rest of the notes
+        let mut conn = pool.acquire().await.unwrap();
+        crate::redaction::redact_ai_outputs(&mut conn, "m1", "potassium", "[stricken from the record]").await.unwrap();
+        drop(conn);
+        let after = f.db.get_meeting_notes("m1").await.unwrap().unwrap();
+        assert!(after.stale_after_edit);
+        let d = after.note_details.unwrap();
+        assert!(!d.to_lowercase().contains("potassium"), "{}", d);
+        assert!(d.contains("[stricken from the record]"));
+    }
+
+    #[tokio::test]
+    async fn notes_made_from_text_edited_meanwhile_are_not_saved() {
+        let f = fx().await;
+        line(&f, 0, None, "The launch code is tangerine.").await;
+        let m = Mock::new(32_768);
+        // The user removes the word while the AI is writing
+        *m.edit.lock() =
+            Some((f.db.clone(), "UPDATE transcripts SET text = 'The launch code is.' WHERE meeting_id = 'm1'"));
+        let e = generate_and_save(&m, &f.db, "m1", "PROMPT", "default", &quiet()).await.unwrap_err();
+        assert_eq!(e, TRANSCRIPT_CHANGED);
+        assert!(f.db.get_meeting_notes("m1").await.unwrap().is_none());
+
+        // No transcript: nothing is asked
+        let f2 = fx().await;
+        let m = Mock::new(32_768);
+        assert_eq!(generate_and_save(&m, &f2.db, "m1", "PROMPT", "default", &quiet()).await.unwrap_err(), NO_TRANSCRIPT);
+        assert!(m.requests().is_empty());
     }
 }

@@ -866,6 +866,7 @@ pub fn run() {
             // Meeting notes (Recordings → Notes)
             commands::generate_meeting_notes,
             commands::get_meeting_notes,
+            meeting_notes::run::get_notes_status,
             // Editing + "Strike from the record"
             sync::commands::sync_status,
             sync::commands::sync_set_enabled,
@@ -906,6 +907,7 @@ pub fn run() {
             // Moment markers + study guides (docs/STUDY_TOOLS.md)
             markers::commands::mark_moment,
             markers::commands::add_marker,
+            markers::commands::add_note,
             markers::commands::update_marker,
             markers::commands::delete_marker,
             markers::commands::list_markers,

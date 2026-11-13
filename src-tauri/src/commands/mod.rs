@@ -1224,78 +1224,14 @@ pub async fn stop_recording_core(state: &AppState) -> Result<(), String> {
                 .unwrap_or_default()
         });
 
+        // Automatic notes (Settings → AI → Make notes automatically): the
+        // whole recording, built on the marks and typed notes
+        // (meeting_notes.rs). Says "Notes are ready" when the window isn't
+        // in front.
         if !meeting_id.is_empty() {
-            let db_clone = state.database.clone();
-            let settings_clone = state.settings.clone();
-            let ai_clone = state.ai_client.clone();
-            tokio::spawn(async move {
-                // Check if auto-report is enabled and meeting duration > 6 min
-                let settings = match settings_clone.get_all().await {
-                    Ok(s) => s,
-                    Err(e) => {
-                        log::warn!("Failed to load settings for auto-report: {}", e);
-                        return;
-                    }
-                };
-
-                if !settings.auto_generate_report {
-                    log::info!("📊 Auto-report disabled, skipping");
-                    return;
-                }
-
-                // No AI provider configured (or not yet approved): skip
-                if !crate::ai::is_ready(crate::ai::Kind::Text) {
-                    log::info!("📊 Auto-report skipped — no AI provider ready (Settings → AI Engine)");
-                    return;
-                }
-
-                // Check meeting duration
-                match db_clone.get_meeting(&meeting_id).await {
-                    Ok(Some(meeting)) => {
-                        let duration = meeting.duration_seconds.unwrap_or(0);
-                        if duration < 360 {
-                            log::info!(
-                                "📊 Meeting {} is {} seconds (< 6 min), skipping auto-report",
-                                meeting_id,
-                                duration
-                            );
-                            return;
-                        }
-
-                        log::info!(
-                            "📊 Generating auto-report for meeting {} ({} seconds)",
-                            meeting_id,
-                            duration
-                        );
-
-                        let ai_client = { ai_clone.read().clone() };
-                        let generator = crate::meeting_notes::MeetingNotesGenerator::new(ai_client);
-                        let prompt = settings.meeting_report_prompt;
-
-                        match generator
-                            .generate_notes_with_prompt(&meeting_id, &db_clone, &prompt)
-                            .await
-                        {
-                            Ok(notes) => {
-                                log::info!(
-                                    "✅ Auto-report generated for meeting {} ({} characters)",
-                                    meeting_id,
-                                    notes.summary.chars().count()
-                                );
-                            }
-                            Err(e) => {
-                                log::error!("❌ Auto-report generation failed: {}", e);
-                            }
-                        }
-                    }
-                    Ok(None) => {
-                        log::warn!("📊 Meeting {} not found for auto-report", meeting_id);
-                    }
-                    Err(e) => {
-                        log::error!("📊 Failed to get meeting for auto-report: {}", e);
-                    }
-                }
-            });
+            if let Some(app) = crate::notifications::app() {
+                crate::meeting_notes::run::after_stop(app, meeting_id.clone());
+            }
         }
     }
 
@@ -3340,13 +3276,11 @@ pub async fn stop_realtime_transcription(state: State<'_, AppState>) -> Result<(
 /// Generate AI meeting notes from transcripts
 #[tauri::command(rename_all = "camelCase")]
 pub async fn generate_meeting_notes(
+    app: AppHandle,
     state: State<'_, AppState>,
     meeting_id: String,
 ) -> Result<crate::meeting_notes::GeneratedNotes, String> {
-    let ai_client = state.ai_client.read().clone();
-    let generator = crate::meeting_notes::MeetingNotesGenerator::new(ai_client);
-
-    generator.generate_notes(&meeting_id, &state.database).await
+    crate::meeting_notes::run::make(&app, &state, &meeting_id, crate::settings::DEFAULT_REPORT_PROMPT, "default").await
 }
 
 /// Get existing meeting notes

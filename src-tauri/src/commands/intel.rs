@@ -299,9 +299,11 @@ pub async fn set_meeting_report_prompt(
     Ok(())
 }
 
-/// Manually generate a meeting report for a specific meeting
+/// Make notes (Recordings → Notes → Make notes / Make again). The prompt
+/// follows the recording's type; a Meeting uses the saved report prompt.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn generate_meeting_report(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     meeting_id: String,
 ) -> Result<serde_json::Value, String> {
@@ -330,12 +332,7 @@ pub async fn generate_meeting_report(
         None => settings.meeting_report_prompt.clone(),
     };
 
-    let ai_client = { state.ai_client.read().clone() };
-    let generator = crate::meeting_notes::MeetingNotesGenerator::new(ai_client);
-
-    let notes = generator
-        .generate_notes_with_prompt(&meeting_id, &state.database, &prompt_text)
-        .await?;
+    let notes = crate::meeting_notes::run::make(&app, &state, &meeting_id, &prompt_text, "auto-report").await?;
 
     Ok(serde_json::json!({
         "summary": notes.summary,

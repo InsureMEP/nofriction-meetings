@@ -4,6 +4,12 @@
 //! personal; stored as `test` for all three), with an optional short note.
 //! One tap marks ★; the kind and note can be changed afterwards.
 //!
+//! A fourth stored kind, `note`, is a line the user typed while listening
+//! (docs/design/FADELL_V2.md §6): the same row, the same clock, so Rewind,
+//! time-range Delete, the study guide, Chat, Export and sync handle it the
+//! way they handle a mark. It is never one of the kinds a mark is offered
+//! or changed to, and it always has text.
+//!
 //! Markers live in `meeting_markers` (this module owns the table) and go
 //! with their meeting (`ON DELETE CASCADE`). A note is user content: a
 //! time-range Delete/Strike removes the markers inside the range
@@ -18,12 +24,17 @@ use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqliteConnection;
 use sqlx::{Pool, Row, Sqlite};
 
-/// Stored kind values, in the order the UI offers them.
+/// The mark kinds, in the order the UI offers them.
 pub const KINDS: &[&str] = &["important", "question", "test"];
+/// A line the user typed while listening. Stored beside the marks, never
+/// offered as a mark kind.
+pub const NOTE_KIND: &str = "note";
 /// What a one-tap mark is.
 pub const DEFAULT_KIND: &str = "important";
 /// Long enough for "ask about the second proof", short enough to stay a note.
 pub const MAX_NOTE_CHARS: usize = 280;
+/// A typed note is one line of the user's own notes: a sentence or two.
+pub const MAX_TYPED_NOTE_CHARS: usize = 1000;
 /// A mark this soon after the previous one in the same meeting is the same
 /// mark (the hotkey and the menu accelerator, or a double tap).
 pub const DEBOUNCE_MS: i64 = 800;
@@ -34,7 +45,7 @@ pub struct Marker {
     pub meeting_id: String,
     /// Wall clock, RFC 3339 (same clock as transcript lines and screens)
     pub ts: String,
-    /// "important" | "question" | "test"
+    /// "important" | "question" | "test", or "note" for a typed note
     pub kind: String,
     pub note: Option<String>,
     pub created_at: String,
@@ -42,11 +53,12 @@ pub struct Marker {
     pub offset_ms: i64,
 }
 
-/// ★ / ? / ✎, for prompts and exports.
+/// ★ / ? / ✎ (and ✍ for a typed note), for prompts and exports.
 pub fn symbol(kind: &str) -> &'static str {
     match kind {
         "question" => "?",
         "test" => "✎",
+        NOTE_KIND => "✍",
         _ => "★",
     }
 }
@@ -58,6 +70,7 @@ pub fn label(kind: &str, rec: crate::recording_kind::RecordingKind) -> &'static 
     match kind {
         "question" => "Question",
         "test" => rec.third_mark_label(),
+        NOTE_KIND => "Note",
         _ => "Important",
     }
 }
@@ -66,21 +79,52 @@ pub fn label(kind: &str, rec: crate::recording_kind::RecordingKind) -> &'static 
 // Schema (runs inside DatabaseManager::run_migrations on its one connection)
 // ═══════════════════════════════════════════════════════════════════════════
 
-pub async fn ensure_schema(conn: &mut SqliteConnection) -> Result<(), sqlx::Error> {
-    sqlx::query(
+fn create_table_sql(name: &str) -> String {
+    format!(
         r#"
-        CREATE TABLE IF NOT EXISTS meeting_markers (
+        CREATE TABLE IF NOT EXISTS {} (
             id TEXT PRIMARY KEY,
             meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
             ts TEXT NOT NULL,
-            kind TEXT NOT NULL CHECK (kind IN ('important', 'question', 'test')),
+            kind TEXT NOT NULL CHECK (kind IN ('important', 'question', 'test', 'note')),
             note TEXT,
             created_at TEXT NOT NULL
         )
         "#,
+        name
     )
-    .execute(&mut *conn)
-    .await?;
+}
+
+pub async fn ensure_schema(conn: &mut SqliteConnection) -> Result<(), sqlx::Error> {
+    use sqlx::Connection;
+    sqlx::query(&create_table_sql("meeting_markers")).execute(&mut *conn).await?;
+    // Tables made before typed notes only allow the three mark kinds. A
+    // CHECK can't be altered, so the table is rebuilt once, in one
+    // transaction: copy into a new table, drop the old one, rename the new
+    // one into place (the order SQLite documents, so nothing that names
+    // `meeting_markers` is rewritten). Dropping the old table drops its
+    // sync triggers; sync::store::ensure_schema runs after this and makes
+    // them again.
+    let sql: Option<String> =
+        sqlx::query_scalar("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'meeting_markers'")
+            .fetch_optional(&mut *conn)
+            .await?;
+    if sql.map_or(false, |s| !s.contains("'note'")) {
+        let mut tx = conn.begin().await?;
+        sqlx::query("DROP TABLE IF EXISTS meeting_markers_rebuild").execute(&mut *tx).await?;
+        sqlx::query(&create_table_sql("meeting_markers_rebuild")).execute(&mut *tx).await?;
+        let n = sqlx::query(
+            "INSERT INTO meeting_markers_rebuild (id, meeting_id, ts, kind, note, created_at) \
+             SELECT id, meeting_id, ts, kind, note, created_at FROM meeting_markers",
+        )
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+        sqlx::query("DROP TABLE meeting_markers").execute(&mut *tx).await?;
+        sqlx::query("ALTER TABLE meeting_markers_rebuild RENAME TO meeting_markers").execute(&mut *tx).await?;
+        tx.commit().await?;
+        log::info!("Markers: table rebuilt to allow typed notes ({} kept)", n);
+    }
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_meeting_markers_meeting ON meeting_markers(meeting_id, ts)")
         .execute(&mut *conn)
         .await?;
@@ -91,7 +135,8 @@ pub async fn ensure_schema(conn: &mut SqliteConnection) -> Result<(), sqlx::Erro
 // Validation (pure)
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// `None` → ★ (a one-tap mark). Unknown kinds are refused.
+/// `None` → ★ (a one-tap mark). Unknown kinds are refused, and so is
+/// `note`: a typed note is never a kind a mark can be given.
 pub fn normalize_kind(kind: Option<&str>) -> Result<&'static str, String> {
     match kind.map(str::trim).filter(|k| !k.is_empty()) {
         None => Ok(DEFAULT_KIND),
@@ -103,18 +148,48 @@ pub fn normalize_kind(kind: Option<&str>) -> Result<&'static str, String> {
     }
 }
 
-/// Trimmed, whitespace runs closed up to one space, at most
-/// [`MAX_NOTE_CHARS`]; empty → no note.
-pub fn clean_note(note: Option<&str>) -> Result<Option<String>, String> {
+/// Like [`normalize_kind`], and also accepts `note`.
+fn stored_kind(kind: Option<&str>) -> Result<&'static str, String> {
+    match kind.map(str::trim) {
+        Some(k) if k.eq_ignore_ascii_case(NOTE_KIND) => Ok(NOTE_KIND),
+        other => normalize_kind(other),
+    }
+}
+
+pub fn is_note(kind: &str) -> bool {
+    kind == NOTE_KIND
+}
+
+fn clean_text(note: Option<&str>, max: usize) -> Result<Option<String>, String> {
     let Some(n) = note else { return Ok(None) };
     let n = n.split_whitespace().collect::<Vec<_>>().join(" ");
     if n.is_empty() {
         return Ok(None);
     }
-    if n.chars().count() > MAX_NOTE_CHARS {
-        return Err(format!("Keep the note under {} characters", MAX_NOTE_CHARS));
+    if n.chars().count() > max {
+        return Err(format!("Keep the note under {} characters", max));
     }
     Ok(Some(n))
+}
+
+/// A mark's note: trimmed, whitespace runs closed up to one space, at most
+/// [`MAX_NOTE_CHARS`]; empty → no note.
+pub fn clean_note(note: Option<&str>) -> Result<Option<String>, String> {
+    clean_text(note, MAX_NOTE_CHARS)
+}
+
+/// A typed note: one line, at most [`MAX_TYPED_NOTE_CHARS`], never empty.
+pub fn clean_typed_note(text: &str) -> Result<String, String> {
+    clean_text(Some(text), MAX_TYPED_NOTE_CHARS)?.ok_or_else(|| "Type something first.".to_string())
+}
+
+/// The note as it may be stored for `kind`.
+fn clean_for(kind: &str, note: Option<&str>) -> Result<Option<String>, String> {
+    if is_note(kind) {
+        clean_typed_note(note.unwrap_or_default()).map(Some)
+    } else {
+        clean_note(note)
+    }
 }
 
 fn parse_ts(s: &str) -> Option<DateTime<Utc>> {
@@ -170,7 +245,9 @@ async fn get(pool: &Pool<Sqlite>, id: &str) -> Result<Marker, String> {
 }
 
 /// Add a marker at `ts` (wall clock). With `debounce`, a mark within
-/// [`DEBOUNCE_MS`] after the meeting's latest one returns that one instead.
+/// [`DEBOUNCE_MS`] after the meeting's latest mark returns that one
+/// instead. A typed note (`kind` = `note`) needs text and is never folded
+/// into another row.
 pub async fn add(
     pool: &Pool<Sqlite>,
     meeting_id: &str,
@@ -179,12 +256,13 @@ pub async fn add(
     note: Option<&str>,
     debounce: bool,
 ) -> Result<Marker, String> {
-    let kind = normalize_kind(kind)?;
-    let note = clean_note(note)?;
+    let kind = stored_kind(kind)?;
+    let note = clean_for(kind, note)?;
     meeting_start(pool, meeting_id).await?;
-    if debounce {
-        let last: Option<(String, String)> =
-            sqlx::query_as("SELECT id, ts FROM meeting_markers WHERE meeting_id = ? ORDER BY ts DESC LIMIT 1")
+    if debounce && !is_note(kind) {
+        let last: Option<(String, String)> = sqlx::query_as(
+            "SELECT id, ts FROM meeting_markers WHERE meeting_id = ? AND kind != 'note' ORDER BY ts DESC LIMIT 1",
+        )
                 .bind(meeting_id)
                 .fetch_optional(pool)
                 .await
@@ -223,7 +301,8 @@ pub async fn add_at_offset(
 }
 
 /// Change a marker's kind and/or note. `note: Some(None)` (or an empty
-/// note) removes the note; `None` keeps it.
+/// note) removes a mark's note; `None` keeps it. A typed note can have its
+/// text changed but not emptied (delete it instead) and not its kind.
 pub async fn update(
     pool: &Pool<Sqlite>,
     id: &str,
@@ -231,12 +310,14 @@ pub async fn update(
     note: Option<Option<&str>>,
 ) -> Result<Marker, String> {
     let current = get(pool, id).await?;
+    // A typed note stays a note and a mark stays a mark
     let kind = match kind {
+        Some(_) if is_note(&current.kind) => return Err("A note can't be changed into a mark.".into()),
         Some(k) => normalize_kind(Some(k))?.to_string(),
         None => current.kind.clone(),
     };
     let note = match note {
-        Some(n) => clean_note(n)?,
+        Some(n) => clean_for(&kind, n)?,
         None => current.note.clone(),
     };
     sqlx::query("UPDATE meeting_markers SET kind = ?, note = ? WHERE id = ?")
@@ -292,6 +373,10 @@ pub mod commands {
     pub const MARKER_ADDED_EVENT: &str = "marker_added";
     /// Event when a mark was asked for but nothing is being recorded.
     pub const MARKER_FAILED_EVENT: &str = "marker_failed";
+    /// Event carrying a typed note just saved (the live transcript shows it
+    /// where it was written). Separate from [`MARKER_ADDED_EVENT`], which
+    /// opens the capture bar's kind chooser.
+    pub const NOTE_ADDED_EVENT: &str = "note_added";
 
     /// The meeting being recorded right now, if any.
     fn recording_meeting(state: &AppState) -> Option<String> {
@@ -311,7 +396,9 @@ pub mod commands {
         note: Option<&str>,
     ) -> Result<Marker, String> {
         let meeting_id = recording_meeting(state).ok_or("Start a recording to mark a moment.")?;
-        let m = add(state.database.pool(), &meeting_id, Utc::now(), kind, note, true).await?;
+        // One of the three mark kinds (a typed note goes through `add_note`)
+        let kind = normalize_kind(kind)?;
+        let m = add(state.database.pool(), &meeting_id, Utc::now(), Some(kind), note, true).await?;
         let _ = app.emit(MARKER_ADDED_EVENT, &m);
         Ok(m)
     }
@@ -337,7 +424,18 @@ pub mod commands {
         mark_now(&app, &state, kind.as_deref(), note.as_deref()).await
     }
 
-    /// Mark a moment of a recorded meeting (Recordings view).
+    /// Keep a line the user typed, stamped now, in the meeting being
+    /// recorded (the note field under the live transcript).
+    #[tauri::command(rename_all = "camelCase")]
+    pub async fn add_note(app: AppHandle, state: State<'_, AppState>, text: String) -> Result<Marker, String> {
+        let meeting_id = recording_meeting(&state).ok_or("Start a recording to type a note.")?;
+        let m = add(state.database.pool(), &meeting_id, Utc::now(), Some(NOTE_KIND), Some(&text), false).await?;
+        let _ = app.emit(NOTE_ADDED_EVENT, &m);
+        Ok(m)
+    }
+
+    /// Mark a moment of a recorded meeting (Recordings view). `kind: "note"`
+    /// with text adds a typed note at that moment.
     #[tauri::command(rename_all = "camelCase")]
     pub async fn add_marker(
         state: State<'_, AppState>,
@@ -525,6 +623,123 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(notes, 0);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_typed_note_is_not_a_mark_kind() {
+        // Offered kinds are still the three marks
+        assert_eq!(KINDS, &["important", "question", "test"]);
+        assert!(normalize_kind(Some("note")).is_err(), "a mark can't be given the note kind");
+        assert_eq!(stored_kind(Some("NOTE")).unwrap(), "note");
+        assert_eq!(stored_kind(None).unwrap(), "important");
+        assert_eq!(symbol("note"), "✍");
+        for rec in [
+            crate::recording_kind::RecordingKind::Class,
+            crate::recording_kind::RecordingKind::Meeting,
+            crate::recording_kind::RecordingKind::Personal,
+        ] {
+            assert_eq!(label("note", rec), "Note");
+        }
+        // One line, longer than a mark's note, never empty
+        assert_eq!(clean_typed_note("  the pump   moves\n3 Na out ").unwrap(), "the pump moves 3 Na out");
+        assert!(clean_typed_note("   ").is_err());
+        assert!(clean_typed_note(&"x".repeat(MAX_TYPED_NOTE_CHARS)).is_ok());
+        assert!(clean_typed_note(&"x".repeat(MAX_TYPED_NOTE_CHARS + 1)).is_err());
+        assert!(MAX_TYPED_NOTE_CHARS > MAX_NOTE_CHARS);
+    }
+
+    #[tokio::test]
+    async fn typed_notes_are_stored_beside_marks_and_never_fold_into_one() {
+        let (db, dir) = db().await;
+        let pool = db.pool();
+        let t = Utc::now();
+        let mark = add(pool, "m1", t, None, None, true).await.unwrap();
+        // Typed within the debounce window of a mark, and of each other: all kept
+        let n1 = add(pool, "m1", t + chrono::Duration::milliseconds(100), Some("note"), Some("sodium out"), true)
+            .await
+            .unwrap();
+        let n2 = add(pool, "m1", t + chrono::Duration::milliseconds(200), Some("note"), Some("potassium in"), true)
+            .await
+            .unwrap();
+        assert_eq!((n1.kind.as_str(), n1.note.as_deref()), ("note", Some("sodium out")));
+        assert_ne!(n1.id, n2.id);
+        assert_ne!(n1.id, mark.id);
+        // A mark right after a note is still its own mark (the debounce looks at marks only)
+        let mark2 = add(pool, "m1", t + chrono::Duration::milliseconds(DEBOUNCE_MS + 300), None, None, true).await.unwrap();
+        assert_ne!(mark2.id, n2.id);
+        assert_eq!(mark2.kind, "important");
+        assert_eq!(list(pool, "m1").await.unwrap().len(), 4);
+
+        // A note needs text
+        assert!(add(pool, "m1", t, Some("note"), None, false).await.is_err());
+        assert!(add(pool, "m1", t, Some("note"), Some("  "), false).await.is_err());
+        // A long line fits a note but not a mark
+        let long = "y".repeat(MAX_NOTE_CHARS + 50);
+        assert!(add(pool, "m1", t, Some("note"), Some(&long), false).await.is_ok());
+        assert!(add(pool, "m1", t, Some("important"), Some(&long), false).await.is_err());
+
+        // Its text can change; its kind can't, and it can't be emptied
+        let n1b = update(pool, &n1.id, None, Some(Some("sodium out, three of them"))).await.unwrap();
+        assert_eq!((n1b.kind.as_str(), n1b.note.as_deref()), ("note", Some("sodium out, three of them")));
+        assert!(update(pool, &n1.id, Some("important"), None).await.is_err());
+        assert!(update(pool, &n1.id, None, Some(None)).await.is_err());
+        // And a mark can't become a note
+        assert!(update(pool, &mark.id, Some("note"), None).await.is_err());
+        delete(pool, &n2.id).await.unwrap();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn an_older_markers_table_is_rebuilt_once_and_keeps_its_rows() {
+        let dir = std::env::temp_dir().join(format!("nf-markers-old-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = DatabaseManager::new(&dir.join("t.db")).await.unwrap();
+        db.run_migrations().await.unwrap();
+        db.create_meeting("m1", "Biology 101").await.unwrap();
+        let pool = db.pool();
+        // Put the table back the way 3.9.0 made it, with a row and an index
+        sqlx::query("DROP TABLE meeting_markers").execute(pool).await.unwrap();
+        sqlx::query(
+            "CREATE TABLE meeting_markers (id TEXT PRIMARY KEY, \
+             meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE, ts TEXT NOT NULL, \
+             kind TEXT NOT NULL CHECK (kind IN ('important', 'question', 'test')), note TEXT, created_at TEXT NOT NULL)",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO meeting_markers VALUES ('old1', 'm1', ?, 'test', 'chapter 4', ?)")
+            .bind(Utc::now().to_rfc3339())
+            .bind(Utc::now().to_rfc3339())
+            .execute(pool)
+            .await
+            .unwrap();
+        assert!(add(pool, "m1", Utc::now(), Some("note"), Some("x"), false).await.is_err(), "the old CHECK refuses a note");
+
+        db.run_migrations().await.unwrap();
+        let kept = list(pool, "m1").await.unwrap();
+        assert_eq!(kept.len(), 1);
+        assert_eq!((kept[0].id.as_str(), kept[0].kind.as_str(), kept[0].note.as_deref()), ("old1", "test", Some("chapter 4")));
+        add(pool, "m1", Utc::now(), Some("note"), Some("now it fits"), false).await.unwrap();
+        // The sync triggers were made again on the rebuilt table: the new row is tracked
+        let tracked: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sync_meta WHERE entity = 'mark'")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert!(tracked >= 1, "a note written after the rebuild is logged for sync");
+        let leftovers: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM sqlite_master WHERE name = 'meeting_markers_rebuild'")
+                .fetch_one(pool)
+                .await
+                .unwrap();
+        assert_eq!(leftovers, 0);
+        // Running again changes nothing
+        db.run_migrations().await.unwrap();
+        assert_eq!(list(pool, "m1").await.unwrap().len(), 2);
+        // The meeting still takes its markers with it
+        db.delete_meeting("m1").await.unwrap();
+        let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM meeting_markers").fetch_one(pool).await.unwrap();
+        assert_eq!(left, 0);
         let _ = std::fs::remove_dir_all(dir);
     }
 

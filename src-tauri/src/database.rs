@@ -165,6 +165,10 @@ pub struct MeetingNotes {
     /// Generated before the transcript/screens were edited: offer "regenerate?"
     #[serde(default)]
     pub stale_after_edit: bool,
+    /// JSON `[{marker_id, detail}]`: what was being said at each note the
+    /// user typed (meeting_notes.rs)
+    #[serde(default)]
+    pub note_details: Option<String>,
 }
 
 /// User comment on a meeting
@@ -1074,6 +1078,8 @@ impl DatabaseManager {
 
         // Links & References: added references, hidden-link hashes (docs/LINKS.md)
         crate::meeting_links::ensure_schema(&mut conn).await?;
+        // Notes: what was being said at each typed note (meeting_notes.rs)
+        crate::meeting_notes::ensure_schema(&mut conn).await?;
         // Moment markers and study guides (docs/STUDY_TOOLS.md)
         crate::markers::ensure_schema(&mut conn).await?;
         crate::study::ensure_schema(&mut conn).await?;
@@ -3480,13 +3486,24 @@ impl DatabaseManager {
         Ok(())
     }
 
+    /// What was being said at each note the user typed, for these notes
+    /// (meeting_notes.rs `NoteDetail` list as JSON).
+    pub async fn set_meeting_note_details(&self, notes_id: &str, details_json: &str) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE meeting_notes SET note_details = ? WHERE id = ?")
+            .bind(details_json)
+            .bind(notes_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     /// Get meeting notes by meeting ID
     pub async fn get_meeting_notes(
         &self,
         meeting_id: &str,
     ) -> Result<Option<MeetingNotes>, sqlx::Error> {
-        let row = sqlx::query_as::<_, (String, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, String, Option<String>, i64)>(
-            "SELECT id, meeting_id, summary, key_topics, decisions, action_items, participants, generated_at, model_used, stale_after_edit FROM meeting_notes WHERE meeting_id = ? ORDER BY generated_at DESC LIMIT 1"
+        let row = sqlx::query_as::<_, (String, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, String, Option<String>, i64, Option<String>)>(
+            "SELECT id, meeting_id, summary, key_topics, decisions, action_items, participants, generated_at, model_used, stale_after_edit, note_details FROM meeting_notes WHERE meeting_id = ? ORDER BY generated_at DESC, rowid DESC LIMIT 1"
         )
         .bind(meeting_id)
         .fetch_optional(&self.pool)
@@ -3504,6 +3521,7 @@ impl DatabaseManager {
                 generated_at,
                 model_used,
                 stale,
+                note_details,
             )| {
                 MeetingNotes {
                     id,
@@ -3513,11 +3531,17 @@ impl DatabaseManager {
                     decisions,
                     action_items,
                     participants,
+                    // Stored by SQLite's datetime('now'): "YYYY-MM-DD HH:MM:SS", UTC
                     generated_at: DateTime::parse_from_rfc3339(&generated_at)
                         .map(|dt| dt.with_timezone(&Utc))
+                        .or_else(|_| {
+                            chrono::NaiveDateTime::parse_from_str(&generated_at, "%Y-%m-%d %H:%M:%S")
+                                .map(|n| n.and_utc())
+                        })
                         .unwrap_or_else(|_| Utc::now()),
                     model_used,
                     stale_after_edit: stale != 0,
+                    note_details,
                 }
             },
         ))

@@ -273,7 +273,8 @@ pub struct MarkItem {
     pub id: String,
     pub rec: String,
     pub at: i64,
-    /// important | question | test
+    /// important | question | test, or note (a line the user typed; a
+    /// version that doesn't know it skips the item)
     pub kind: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,

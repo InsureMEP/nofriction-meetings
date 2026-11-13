@@ -76,6 +76,12 @@ extern "C" fn on_app_activated(_ctx: *mut std::os::raw::c_void, _json: *const st
     }
 }
 
+/// The app handle, for work that starts without one (the automatic notes
+/// after a recording stops).
+pub fn app() -> Option<AppHandle> {
+    APP.get().cloned()
+}
+
 pub fn focus_main_window(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();

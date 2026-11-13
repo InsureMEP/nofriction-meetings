@@ -442,6 +442,51 @@ async fn marks_refs_topics_and_notes_apply_and_round_trip() {
     assert!(out.iter().any(|i| matches!(i, Item::Mark(m) if m.id == uid(2) && m.kind == "test")));
 }
 
+#[tokio::test]
+async fn a_typed_note_travels_as_a_mark_and_the_notes_carry_what_was_written_under_it() {
+    let f = setup().await;
+    let items = vec![
+        Item::Recording(rec_item(REC, "R", 1)),
+        // From a phone that has typed notes
+        Item::Mark(p::MarkItem { id: uid(2), rec: REC.into(), at: 1_760_000_100_000, kind: "note".into(), note: Some("pump 3 na out".into()), created: 1, modified: 5 }),
+        // A typed note always has text; an empty one is skipped
+        Item::Mark(p::MarkItem { id: uid(3), rec: REC.into(), at: 1_760_000_110_000, kind: "note".into(), note: Some("  ".into()), created: 1, modified: 5 }),
+        // A kind from some later version: skipped, never an error
+        Item::Mark(p::MarkItem { id: uid(4), rec: REC.into(), at: 1_760_000_120_000, kind: "doodle".into(), note: None, created: 1, modified: 5 }),
+    ];
+    let r = store::apply(f.pool(), &f.env, PHONE, &tk(), items).await;
+    assert_eq!(r.applied, 2, "{:?}", r);
+    let markers = crate::markers::list(f.pool(), REC).await.unwrap();
+    assert_eq!(markers.len(), 1);
+    assert_eq!((markers[0].kind.as_str(), markers[0].note.as_deref()), ("note", Some("pump 3 na out")));
+
+    // A note typed on this Mac goes out as a mark of kind `note`
+    let mine = crate::markers::add(f.pool(), REC, chrono::Utc::now(), Some("note"), Some("2 k in"), false).await.unwrap();
+    let (out, _) = store::collect(f.pool(), &uid(99), 0, &tk()).await.unwrap();
+    assert!(out.iter().any(|i| matches!(i, Item::Mark(m) if m.kind == "note" && m.note.as_deref() == Some("2 k in"))));
+
+    // Notes made here carry "What you wrote" for the notes that got a detail
+    f.db.save_meeting_notes("n1", REC, Some("Transport."), None, None, None, None, Some("lecture-notes")).await.unwrap();
+    let details = serde_json::json!([{ "marker_id": mine.id, "detail": "Two potassium\nions come in." }]).to_string();
+    f.db.set_meeting_note_details("n1", &details).await.unwrap();
+    let (out, _) = store::collect(f.pool(), &uid(99), 0, &tk()).await.unwrap();
+    let md = out.iter().find_map(|i| if let Item::Notes(n) = i { Some(n.md.clone()) } else { None }).unwrap();
+    assert_eq!(md, "## What you wrote\n- **2 k in**: Two potassium ions come in.\n\n**Lecture summary**\nTransport.");
+}
+
+#[test]
+fn what_you_wrote_keeps_the_typed_order_and_only_notes_with_a_detail() {
+    let typed = vec![("a".to_string(), "first **line**".to_string()), ("b".to_string(), "second".to_string()), ("c".to_string(), "third".to_string())];
+    let details = r#"[{"marker_id": "c", "detail": "about the third"}, {"marker_id": "a", "detail": "about the first"}, {"marker_id": "gone", "detail": "x"}, {"marker_id": "b", "detail": "  "}]"#;
+    assert_eq!(
+        store::what_you_wrote_markdown(&typed, Some(details)).unwrap(),
+        "## What you wrote\n- **first line**: about the first\n- **third**: about the third"
+    );
+    assert_eq!(store::what_you_wrote_markdown(&typed, None), None);
+    assert_eq!(store::what_you_wrote_markdown(&typed, Some("not json")), None);
+    assert_eq!(store::what_you_wrote_markdown(&[], Some(details)), None);
+}
+
 #[test]
 fn mac_notes_become_markdown_by_layout() {
     let md = store::notes_markdown(
