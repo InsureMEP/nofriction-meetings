@@ -186,8 +186,10 @@ struct NoteDraft: Equatable {
 /// Editing and deleting what the user typed (the same path as a mark's note),
 /// keeping the notes' "What you wrote" section in step, in the same step: a
 /// typed note's detail never outlives the note, and an edited line's bullet
-/// follows it (docs/design/FADELL_V2.md §6). The notes change, so they are
-/// sent to the other device again.
+/// follows it (docs/design/FADELL_V2.md §6). What Fill in the blanks added to
+/// the notes was made beside the user's lines, so it goes whenever one of
+/// them is changed or deleted (here, or on the other device). The notes
+/// change, so they are sent to the other device again.
 @MainActor
 enum TypedNoteStore {
     /// Change a typed note's text. Empty text changes nothing (delete it instead).
@@ -207,17 +209,26 @@ enum TypedNoteStore {
     }
 
     /// Take what the notes wrote under a typed note out of them (before the
-    /// note itself is deleted, here or by the other device).
+    /// note itself is deleted, here or by the other device), and with it
+    /// what Fill in the blanks added.
     static func removeFromNotes(_ marker: MomentMarker, in meeting: Meeting) {
-        guard let notes = meeting.aiNotes, let index = meeting.typedNotes.firstIndex(where: { $0.id == marker.id }) else { return }
-        meeting.aiNotes = WhatYouWrote.removing(typedIndex: index, typed: meeting.typedNotes.compactMap(\.note), from: notes)
+        guard marker.isTypedNote, let notes = meeting.aiNotes else { return }
+        var text = FillInTheBlanks.removed(from: notes)
+        if let index = meeting.typedNotes.firstIndex(where: { $0.id == marker.id }) {
+            text = WhatYouWrote.removing(typedIndex: index, typed: meeting.typedNotes.compactMap(\.note), from: text)
+        }
+        if text != notes { meeting.aiNotes = text }
     }
 
     /// A typed note's text is about to become `newText` (edited here, or on
-    /// the other device): its bullet's line follows.
+    /// the other device): its bullet's line follows, and what Fill in the
+    /// blanks added goes.
     static func followInNotes(_ marker: MomentMarker, newText: String) {
-        guard let meeting = marker.meeting, let notes = meeting.aiNotes,
-              let index = meeting.typedNotes.firstIndex(where: { $0.id == marker.id }) else { return }
-        meeting.aiNotes = WhatYouWrote.replacing(typedIndex: index, with: newText, typed: meeting.typedNotes.compactMap(\.note), in: notes)
+        guard marker.isTypedNote, let meeting = marker.meeting, let notes = meeting.aiNotes else { return }
+        var text = FillInTheBlanks.removed(from: notes)
+        if let index = meeting.typedNotes.firstIndex(where: { $0.id == marker.id }) {
+            text = WhatYouWrote.replacing(typedIndex: index, with: newText, typed: meeting.typedNotes.compactMap(\.note), in: text)
+        }
+        if text != notes { meeting.aiNotes = text }
     }
 }

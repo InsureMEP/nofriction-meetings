@@ -65,17 +65,24 @@ extension MeetingAI {
         }
     }
 
+    /// How the input is laid out: the times, a long recording condensed in
+    /// parts, and stricken text. In the notes prompt and in Fill in the
+    /// blanks (`fillSystem`).
+    static func readingRules(for kind: RecordingKind) -> String {
+        """
+        Each transcript line starts with its time as [m:ss]. A long recording arrives as time-stamped notes condensed from \
+        the whole transcript instead; write from them the same way. Text shown as [stricken from the record] was removed by \
+        the \(StudyWords(kind).person): never guess at or mention what it said.
+        """
+    }
+
     /// The notes prompt: the type's prompt exactly as it was (Meeting, Class
     /// or Personal sections), then how to read the input, and, when the user
     /// typed notes, the `## What you wrote` section that comes first.
     static func notesSystem(for kind: RecordingKind, typedNotes: Bool) -> String {
         let w = StudyWords(kind)
         var s = notesSystem(for: kind) + "\n\n"
-        s += """
-            Each transcript line starts with its time as [m:ss]. A long recording arrives as time-stamped notes condensed from \
-            the whole transcript instead; write from them the same way. Text shown as [stricken from the record] was removed by \
-            the \(w.person): never guess at or mention what it said. The \(w.person) marked moments while listening (\(w.marksHeader))
-            """
+        s += readingRules(for: kind) + " The \(w.person) marked moments while listening (\(w.marksHeader))"
         s += typedNotes ? " and typed their own lines (\(typedHeader)). " : ". "
         s += "Cover what was marked\(typedNotes ? " and typed" : "") first: make sure the notes include what was being said at those moments."
         if typedNotes {
@@ -463,7 +470,8 @@ enum WhatYouWrote {
 // MARK: - Making and saving
 
 /// Make notes for a recording and save them: the one path for Make notes on
-/// a recording, in the Export sheet, and automatic notes.
+/// a recording, in the Export sheet, and automatic notes. Fill in the blanks
+/// writes into the same notes, through `saveFill`.
 @MainActor
 enum NotesStore {
     /// Runs the requests, then saves in one step (`save`). Topics are named
@@ -505,11 +513,84 @@ enum NotesStore {
         }
         // The user's lines as they are now (one may have been edited or deleted meanwhile)
         let now = typedNotes(meeting)
-        let text = WhatYouWrote.finalize(raw, asked: asked ?? now.map(\.id), now: now)
+        // Notes that are made again start without what Fill in the blanks
+        // wrote for the old ones (and a model can't put those sections there)
+        let text = FillInTheBlanks.removed(from: WhatYouWrote.finalize(raw, asked: asked ?? now.map(\.id), now: now))
         meeting.aiNotes = text
         meeting.aiNotesAt = .now
         meeting.aiNotesStale = false
         NotebookItems.pruneDone(meeting, context: context)
+        try? context.save()
+        return text
+    }
+
+    // MARK: Fill in the blanks (FillInTheBlanks.swift)
+
+    /// What a Fill in the blanks pass was given, taken before its first
+    /// request: the save is refused if any of it changed meanwhile.
+    struct FillBasis: Equatable, Sendable {
+        struct TypedLine: Equatable, Sendable {
+            var id: UUID
+            var text: String
+        }
+
+        /// The transcript lines it read
+        var read: [String]
+        /// The notes it was shown (`aiNotes`, exactly)
+        var notes: String
+        /// The lines the user typed, as they were
+        var typed: [TypedLine]
+    }
+
+    private static func typedLines(_ meeting: Meeting) -> [FillBasis.TypedLine] {
+        meeting.typedNotes.map { FillBasis.TypedLine(id: $0.id, text: $0.note ?? "") }
+    }
+
+    /// Fill in the blanks for a recording that has notes: runs the requests,
+    /// then saves in one step (`saveFill`). Only the user's tap calls this;
+    /// nothing automatic does. `recording`: the recording that is running
+    /// now, if one is: its own notes aren't filled in until it stops.
+    /// An answer with both lists empty adds nothing (`Filled.isEmpty`).
+    @discardableResult
+    static func fill(_ meeting: Meeting, contextTokens: Int, complete: MeetingAI.Complete, context: ModelContext,
+                     recording: UUID? = nil, progress: @Sendable (String) async -> Void = { _ in }) async throws -> FillInTheBlanks.Filled {
+        guard recording != meeting.id else { throw FillInTheBlanks.Failure.stillRecording }
+        guard let notes = meeting.aiNotes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw FillInTheBlanks.Failure.needsNotes
+        }
+        // A Delete in its undo window may still be put back: nothing is asked
+        // until it is settled (the save would be refused anyway)
+        guard !meeting.redactions.contains(where: { !$0.isStrike }) else { throw FillInTheBlanks.Failure.pendingEdit }
+        let input = NotesInput(meeting: meeting)
+        let basis = FillBasis(read: input.study.transcriptLines, notes: notes, typed: typedLines(meeting))
+        let filled = try await MeetingAI.fill(input, notes: notes, contextTokens: contextTokens, complete: complete, progress: progress)
+        try saveFill(filled, basis: basis, to: meeting, context: context)
+        return filled
+    }
+
+    /// The save and its checks are one step, like `save`: synchronous on the
+    /// model context, with no `await` between the checks and the write.
+    /// Nothing is written when the recording was deleted, a Delete is
+    /// waiting in its undo window or a line that was read is gone (the
+    /// checks `save` makes), the notes aren't the text the pass was given
+    /// (they were made again, or changed), or the typed notes (ids and
+    /// text) differ from when it started. Otherwise the two sections
+    /// replace any earlier ones, at the end of the notes; the user's lines
+    /// and the rest of the notes are left as they are. Returns the notes as
+    /// saved; nil when there was nothing to add (nothing is written then).
+    @discardableResult
+    static func saveFill(_ filled: FillInTheBlanks.Filled, basis: FillBasis, to meeting: Meeting, context: ModelContext) throws -> String? {
+        guard meeting.modelContext != nil, !meeting.isDeleted,
+              !meeting.redactions.contains(where: { !$0.isStrike }),
+              MeetingAI.lostLines(read: basis.read, now: StudyInput(meeting: meeting, screenPrefix: true).transcriptLines) == 0 else {
+            throw FillInTheBlanks.Failure.transcriptChanged
+        }
+        guard meeting.aiNotes == basis.notes, typedLines(meeting) == basis.typed else {
+            throw FillInTheBlanks.Failure.notesChanged
+        }
+        guard let sections = FillInTheBlanks.markdown(filled) else { return nil }
+        let text = FillInTheBlanks.replacing(in: basis.notes, with: sections)
+        meeting.aiNotes = text
         try? context.save()
         return text
     }

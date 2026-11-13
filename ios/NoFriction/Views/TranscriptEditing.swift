@@ -476,8 +476,12 @@ struct StrikeSummary {
                 destroyed.append("No word timings for this line, so the whole line is silenced")
             }
         }
-        if meeting.aiNotes != nil, !plan.changes.isEmpty {
+        if let notes = meeting.aiNotes, !plan.changes.isEmpty {
             destroyed.append("Matching text in the notes (they're marked as made before an edit)")
+            // The two sections paraphrase the recording: they go whole
+            if FillInTheBlanks.has(notes) {
+                destroyed.append("What Fill in the blanks added to the notes (fill in the blanks again after the strike)")
+            }
         }
         if !meeting.studyMaterials.isEmpty, !plan.changes.isEmpty {
             destroyed.append("This recording's \(meeting.kind.guideTitle.lowercased()) (make it again after the strike)")

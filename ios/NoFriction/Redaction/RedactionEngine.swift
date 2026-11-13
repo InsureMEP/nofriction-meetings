@@ -305,9 +305,11 @@ enum RedactionEngine {
                     try removeFile(Storage.snapshots.appending(path: name))
                 }
                 if meeting.aiNotes != nil { meeting.aiNotesStale = true }
-                // Text was removed (it had audio to silence) or we can't tell: no study guide survives it
+                // Text was removed (it had audio to silence) or we can't tell: no study guide survives it,
+                // and neither does what Fill in the blanks added to the notes (it needs no words to be removed)
                 if !ranges.isEmpty || (decode([String].self, record.pendingFilesJSON) ?? []).isEmpty {
                     purgeDerived(meeting, context: context)
+                    if let notes = meeting.aiNotes, FillInTheBlanks.has(notes) { meeting.aiNotes = FillInTheBlanks.removed(from: notes) }
                 }
                 context.delete(record)
             } catch {
@@ -347,11 +349,16 @@ enum RedactionEngine {
         NotebookItems.pruneDone(meeting, context: context)
     }
 
-    /// Saved AI notes: redact the removed text and flag them as made before an edit.
+    /// Saved AI notes: redact the removed text and flag them as made before an
+    /// edit. What Fill in the blanks added to them paraphrases the recording,
+    /// like a study guide, so when transcript text was removed its two
+    /// sections go whole, whatever the words were.
     static func redactAIOutputs(_ meeting: Meeting, phrases: [String], replacement: String) {
         guard let notes = meeting.aiNotes else { return }
         let before = SyncEngine.notesHash(meeting)
-        meeting.aiNotes = RedactionText.redact(notes, phrases: phrases, replacement: replacement)
+        // No phrases: only photos or screens went, and the transcript reads as it did
+        let kept = phrases.isEmpty ? notes : FillInTheBlanks.removed(from: notes)
+        meeting.aiNotes = RedactionText.redact(kept, phrases: phrases, replacement: replacement)
         meeting.aiNotesStale = true
         SyncLedger.notesRewritten(meeting.id, before: before, after: SyncEngine.notesHash(meeting))
     }
