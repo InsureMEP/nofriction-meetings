@@ -474,12 +474,19 @@ enum WhatYouWrote {
 /// writes into the same notes, through `saveFill`.
 @MainActor
 enum NotesStore {
+    /// Said when Make notes is pressed on the recording that is still running (the Mac's wording)
+    static let stillRecording = "Stop the recording to make notes from it."
+
     /// Runs the requests, then saves in one step (`save`). Topics are named
     /// with the notes, as before; a failure there is the caller's to show
     /// or ignore (`topicsError`).
     @discardableResult
     static func make(_ meeting: Meeting, contextTokens: Int, complete: MeetingAI.Complete, context: ModelContext,
                      progress: @Sendable (String) async -> Void = { _ in }) async throws -> String {
+        // A Delete in its undo window may still be put back, and what it
+        // removes must not be sent: nothing is asked until it is settled
+        // (the save would be refused anyway)
+        guard !meeting.redactions.contains(where: { !$0.isStrike }) else { throw FillInTheBlanks.Failure.pendingEdit }
         let input = NotesInput(meeting: meeting)
         let read = input.study.transcriptLines
         // The typed notes as the request numbers them, by identity

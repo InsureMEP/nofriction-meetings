@@ -726,6 +726,14 @@ final class FillStoreTests: XCTestCase {
         why = await failure(m, ai)
         XCTAssertEqual(why, .pendingEdit)
         XCTAssertTrue(ai.calls.isEmpty, "nothing was sent")
+        // Make notes sends nothing either while the Delete can still be undone
+        do {
+            _ = try await NotesStore.make(m, contextTokens: 32_768, complete: ai.complete, context: context)
+            XCTFail("should throw")
+        } catch {
+            XCTAssertEqual(error as? FillInTheBlanks.Failure, .pendingEdit)
+        }
+        XCTAssertTrue(ai.calls.isEmpty, "nothing was sent")
         try RedactionEngine.undo(pending, context: context)
         XCTAssertEqual(m.aiNotes, "## Summary\nMembranes.")
         XCTAssertEqual(bare.aiNotes, "## Summary\nS")

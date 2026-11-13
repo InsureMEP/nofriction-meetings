@@ -398,9 +398,10 @@ struct MeetingDetailView: View {
     private func requestAI(_ action: AIAction) {
         pendingAI = nil
         // The recording that is still running: refused before anything is asked for
-        if action == .fill, session.meeting?.id == meeting.id {
+        // (it can be opened from People while it runs)
+        if action == .fill || action == .notes, session.meeting?.id == meeting.id {
             aiNotice = nil
-            aiError = FillInTheBlanks.Failure.stillRecording.errorDescription
+            aiError = action == .fill ? FillInTheBlanks.Failure.stillRecording.errorDescription : NotesStore.stillRecording
             return
         }
         guard store.isPro else {

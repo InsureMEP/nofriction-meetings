@@ -266,7 +266,8 @@ enum StudyParse {
     private static func answerIndex(_ v: Any?, choices: [String]) -> Int? {
         if let n = v as? NSNumber, !isBool(n) {
             let d = n.doubleValue
-            guard d == d.rounded(), d >= 0, Int(d) < choices.count else { return nil }
+            // Compared as a Double first: Int(1e30) stops the app
+            guard d == d.rounded(), d >= 0, d < Double(choices.count) else { return nil }
             return Int(d)
         }
         guard let s = (v as? String)?.trimmingCharacters(in: .whitespaces) else { return nil }

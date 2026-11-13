@@ -38,6 +38,7 @@ final class StudyParseTests: XCTestCase {
           {"question": "Letter", "choices": ["a", "b", "c"], "answer": "C)", "time": "[1:02:03]"},
           {"question": "Text", "options": ["red", "green"], "correct": "Green", "t": 95},
           {"question": "Out of range", "choices": ["a", "b"], "answer": 2},
+          {"question": "Far out of range", "choices": ["a", "b"], "answer": 1e30},
           {"question": "Bool", "choices": ["a", "b"], "answer": true},
           {"question": "Dupes", "choices": ["same", "Same"], "answer": 0},
           {"question": "Late", "choices": ["a", "b"], "answer": 1, "time": "99:00"}
