@@ -264,8 +264,8 @@ function RecordingSettings({ showToast }: { showToast: (text: string, error?: bo
                     <div className="settings-label">
                         <span className="label-main">Remind me when something starts</span>
                         <span className="label-sub">
-                            A notification when a calendar event begins, when a notebook you usually record at this time is
-                            due, or when a call app takes the microphone. The Record screen offers it with one button.
+                            A notification when a calendar event begins, a notebook you usually record is due, or a call
+                            app takes the microphone.
                         </span>
                     </div>
                     <div
@@ -284,8 +284,7 @@ function RecordingSettings({ showToast }: { showToast: (text: string, error?: bo
                     <div className="settings-label">
                         <span className="label-main">Start by itself</span>
                         <span className="label-sub">
-                            Starts recording for the same three things instead of asking, and tells you it did. Tell people
-                            you're recording: in many places everyone must agree.
+                            Starts recording instead of asking, and tells you it did. Tell people you're recording.
                         </span>
                     </div>
                     <div
