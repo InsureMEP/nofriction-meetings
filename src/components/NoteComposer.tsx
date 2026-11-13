@@ -75,7 +75,7 @@ export function NoteComposer({ onSaved }: { onSaved: (row: StoredMarker) => void
                         }
                     }}
                     placeholder="Type a note"
-                    aria-label="Type a note. Enter keeps it at this moment."
+                    aria-label="Type a note. Return keeps it at this moment."
                     maxLength={MAX_TYPED_NOTE_CHARS}
                     autoComplete="off"
                     spellCheck

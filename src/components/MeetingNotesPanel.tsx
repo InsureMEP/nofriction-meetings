@@ -6,7 +6,7 @@
 // notes' style follows the recording's type: meeting notes, lecture notes
 // (class) or personal notes.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -32,6 +32,7 @@ import { markersApi, notifyMarkersChanged } from "../lib/study";
 import { MAX_TYPED_NOTE_CHARS, cleanTypedNote, clock } from "../lib/studyLogic";
 import { useMarkers } from "./study/MarkerList";
 import { NoteIcon, TrashIcon } from "./icons";
+import { useUndoDelete } from "./UndoToast";
 import { useRecordingKind } from "../hooks/useRecordingKind";
 import ErrorState from "./ErrorState";
 import { TopicsEditor } from "./TopicChips";
@@ -317,6 +318,10 @@ function WhatYouWrote({
     onChanged: () => void;
 }) {
     const [error, setError] = useState<string | null>(null);
+    // A line being deleted: gone at once, Undo for a few seconds (the one
+    // safety model for every delete in the app)
+    const [hidden, setHidden] = useState<string | null>(null);
+    const undoDelete = useUndoDelete((e) => setError(`Couldn't delete that note: ${String(e)}`));
     const run = async (fn: () => Promise<unknown>) => {
         setError(null);
         try {
@@ -326,6 +331,21 @@ function WhatYouWrote({
             setError(String(e));
         }
     };
+    const remove = (line: WrittenLine) => {
+        setError(null);
+        setHidden(line.note.id);
+        undoDelete.start(
+            "Deleted your note",
+            async () => {
+                // It stays hidden until the list is read again without it
+                await markersApi.remove(line.note.id);
+                onChanged();
+            },
+            () => setHidden(null),
+        );
+    };
+    const shown = lines.filter((l) => l.note.id !== hidden);
+    if (shown.length === 0) return <>{undoDelete.toast}</>;
     return (
         <section className="mn-wrote" aria-label={WHAT_YOU_WROTE}>
             <h4 className="mn-wrote__title">
@@ -337,10 +357,11 @@ function WhatYouWrote({
                 </p>
             )}
             <ol className="mn-wrote__list">
-                {lines.map((l) => (
-                    <WrittenRow key={l.note.id} line={l} onJump={onJump} run={run} />
+                {shown.map((l) => (
+                    <WrittenRow key={l.note.id} line={l} onJump={onJump} run={run} onDelete={() => remove(l)} />
                 ))}
             </ol>
+            {undoDelete.toast}
         </section>
     );
 }
@@ -349,15 +370,24 @@ function WrittenRow({
     line,
     onJump,
     run,
+    onDelete,
 }: {
     line: WrittenLine;
     onJump?: (ms: number) => void;
     run: (fn: () => Promise<unknown>) => void;
+    onDelete: () => void;
 }) {
     const { note, detail } = line;
     const [editing, setEditing] = useState(false);
     const [text, setText] = useState(note.text);
+    const textRef = useRef<HTMLButtonElement>(null);
+    const wasEditing = useRef(false);
     useEffect(() => setText(note.text), [note.text]);
+    // Leaving the field puts the keyboard back on the line it edited
+    useEffect(() => {
+        if (wasEditing.current && !editing) textRef.current?.focus({ preventScroll: true });
+        wasEditing.current = editing;
+    }, [editing]);
     const save = () => {
         setEditing(false);
         const cleaned = cleanTypedNote(text);
@@ -391,7 +421,7 @@ function WrittenRow({
                         onChange={(e) => setText(e.target.value)}
                         onBlur={save}
                         onKeyDown={(e) => {
-                            if (e.key === "Enter") save();
+                            if (e.key === "Enter" && !e.nativeEvent.isComposing) save();
                             if (e.key === "Escape") {
                                 setText(note.text);
                                 setEditing(false);
@@ -399,7 +429,7 @@ function WrittenRow({
                         }}
                     />
                 ) : (
-                    <button type="button" className="mn-wrote__text" onClick={() => setEditing(true)} title="Change what you wrote">
+                    <button ref={textRef} type="button" className="mn-wrote__text" onClick={() => setEditing(true)} title="Change what you wrote">
                         {note.text}
                     </button>
                 )}
@@ -408,7 +438,7 @@ function WrittenRow({
             <button
                 type="button"
                 className="mn-wrote__delete"
-                onClick={() => run(() => markersApi.remove(note.id))}
+                onClick={onDelete}
                 title="Delete this note"
                 aria-label={`Delete your note at ${clock(note.offset_ms)}`}
             >
