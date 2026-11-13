@@ -190,9 +190,9 @@ wrote.
   lives inside Recordings.
 - **No server.** Everything above is computed on the device from what is
   already stored. Suggestions never leave it.
-- **No floating window** (yet). A quick-note panel over other apps needs a
-  non-activating panel the app doesn't have; ⌃⌥⌘M still marks from anywhere.
-  It is the next thing to build once the note line has earned it.
+- **No floating window.** (Changed 2026-11-13: the owner asked for the
+  quick-note panel, §10. It is one field over the app in front, not a
+  second window to manage; ⌃⌥⌘M still marks from anywhere.)
 
 ---
 
@@ -348,7 +348,7 @@ Decisions it left for the owner, and the answers (2026-11-13):
   desktop control sizes (DESIGN.md, Accessibility).
 - **A quick-note panel over other apps** (a non-activating floating field
   on a global key) is the next thing to build once the note field has
-  earned it. **Answer: build it.**
+  earned it. **Answer: build it.** Built 2026-11-13 (§10).
 
 ---
 
@@ -433,3 +433,106 @@ Apple on-device model. Recording flows were driven with demo data; the
 calendar source, a reminder firing, the Shortcut and the Apple model were
 not run. Nothing was run on a device. iPad was looked at in two
 screenshots; the UI tests ran on iPhone.
+
+---
+
+## 10. The quick-note panel (Mac, 2026-11-13)
+
+The note field with another way in. With slides, a call or a browser in
+front, **⌃⌥⌘N** opens one field over it. Return keeps the line at that
+moment and the panel is gone. The app in front stays in front.
+
+**Rules**
+
+- **It is the note field, nothing more.** A line goes through
+  `markers::commands::keep_note`, the call the in-app field makes: a mark
+  of kind `note` on the recording the panel was opened in, with the
+  late-note rule (§6) unchanged. Everything a typed note does afterwards
+  (What you wrote, Rewind, Export, sync, purge) follows from that. No AI,
+  no network, no setting; free.
+- **The app in front stays in front.** The panel is an `NSPanel` created
+  non-activating (`quick_note/panel.rs`), so it takes the keyboard without
+  bringing noFriction forward, and closing it hands the keyboard back. It
+  is native, not a second web view: it costs no web process and is on
+  screen before the next key is pressed.
+- **A hidden app stays hidden.** Hiding noFriction (⌘H) doesn't hide the
+  panel, so opening it doesn't bring the main window back over the slides.
+- **While it has the keyboard, ⌘ keys stay in it.** ⌘Q typed into the panel
+  would otherwise reach noFriction's own menu and quit it mid-recording.
+  The editing keys work on any keyboard layout (⌘V ⌘C ⌘X ⌘A ⌘Z, ⌘← ⌘→ ⌘⌫),
+  ⌘W closes it, the rest do nothing.
+- **The panel stores nothing until Return.** Esc, a click elsewhere or the
+  key again closes it and leaves the line in the field, in memory, while
+  the same recording is on. Another recording, or none, starts empty.
+- **It never starts a recording.** With nothing recording, the key shows
+  "Nothing is recording" for a moment and takes no keys.
+- **After Return the field takes no keys until the line is kept or not.**
+  Kept: the panel closes. Not kept: it stays, with the line and the
+  reason. The save can land after the panel was closed or opened again, so
+  it touches only what is still its own (`quick_note::settle`): it never
+  empties a field that holds something else, and a failure that lands on
+  a closed panel is said the next time it opens in that recording.
+- **It asks to be left out of screen captures and shared screens**
+  (`NSWindowSharingNone`). macOS decides whether a capture honors that.
+- **File → Type a Note** and the tray's **Type a Note** open the same
+  panel, for when another app owns the key.
+- **Its callbacks must not panic.** The shipped build aborts on a panic,
+  which would end the app mid-recording.
+
+**iPhone and iPad:** not offered. An iPhone app can't put a field over
+another app.
+
+**Verified** with `cargo run --example quick_note_panel` (in `src-tauri/`),
+which runs the panel's window on the Mac without the app or its data
+(36 checks):
+
+- The panel is on screen and has the keyboard while the app in front and
+  the menu bar's owner are unchanged, and AppKit doesn't announce that the
+  app became active (noFriction listens for that to answer a notification
+  click).
+- A key press sent through the window server arrives in it, and stops
+  arriving once it is closed or while only the notice is up.
+- Typing, ⌘A, ⌘← ⌘→ ⌘⌫, ⌘A on a layout that isn't Latin, ⌘W, ⌘Q blocked.
+- Return reports the line once; while it is being kept, typing and a
+  second Return do nothing and Esc still closes; after a failure the field
+  takes keys again with the line in it.
+- Esc keeps the draft, and typing continues after it.
+- With the app hidden, the panel comes up and the app stays hidden.
+- The window server lists the panel as not shared.
+
+**What the review found (2026-11-13)**
+
+An independent review read the code before it merged. It found no crash
+or undefined behaviour, and these:
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | When a slow save landed, it emptied and closed the panel whatever had happened since Return: text typed after Return was wiped, and a failure that landed on a closed panel was never said | Fixed: the field takes no keys while a line is being kept, and the save touches only what is still its own |
+| 2 | With noFriction hidden (⌘H), the panel might not appear | The example showed something else: the panel appeared and the whole app came back with it. Fixed (`canHide` off) |
+| 3 | Opening the panel might count as "the app became active" and bring the main window forward after a notification | Checked: AppKit doesn't announce it. No change |
+| 4 | ⌘← ⌘→ ⌘⌫ did nothing in the field; ⌘V ⌘C ⌘X ⌘A ⌘Z did nothing on Russian, Greek or Hebrew layouts; the panel's own key, if it ever reached the panel, would close it at once | Fixed: the field's keys go to the field, letters are matched as ⌘ types them, and the panel leaves its own key to the global one |
+| 5 | The guard around the callbacks does nothing in the shipped build, which aborts on a panic | No reachable panic was found. The comment now says so, and the rule is above |
+| 6 | "Nothing typed is stored until Return" rests on macOS leaving the panel out of the app's own screenshots | The window server lists the panel as not shared. That a capture honors it is not verified (below) |
+| 7 | The example could pass falsely: ⌘Q reaching the menu ended it with a success code, and two checks could not fail | Fixed: the Quit item sets a flag, and the checks send a real key and require that it doesn't arrive |
+
+**Not verified**
+
+- In the real app: the key, the menu and tray items, and a line arriving
+  in the live transcript. The app was not launched (it has no data-folder
+  override, so a development build would open the real database).
+- Over a full-screen app, on a second display, with Stage Manager, and
+  with an input method (Japanese, Chinese).
+- That a screenshot or a shared screen leaves the panel out. If the app's
+  own capture didn't, a line being typed would be in that screenshot like
+  anything else on the screen, kept and purged with the recording's
+  screens.
+- How it looks over real content. Its own drawing was checked; the blurred
+  background was not.
+
+**Not changed**
+
+- The Mac's screen-text reader (default flavor, `accessibility_extractor.rs`)
+  reads the focused window of the app in front, noFriction's own windows
+  included. Over another app the panel is never the app in front, so it
+  isn't read. With noFriction itself in front it is read like the main
+  window's note field always was.

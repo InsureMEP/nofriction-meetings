@@ -451,7 +451,15 @@ UI in `src/components/redaction/Redaction.tsx`.
   and its ticks (`notebook_item_done`) are a hash of the item's text per
   recording, deleted with the recording. Up next (`up_next.rs`) stores only
   the keys the user said "Not now" to today (a notebook name or a calendar
-  event id).
+  event id). The quick-note panel (`quick_note.rs`) stores nothing of its
+  own: a line it keeps is a typed note like any other, and a line not yet
+  kept is only in the panel's field, in memory, until Return, another
+  recording or quit. The panel asks macOS to leave it out of screen
+  captures and shared screens (`NSWindowSharingNone`), and the window
+  server lists it as not shared. Whether a capture honors that is macOS's
+  decision and was not verified: if the app's own capture didn't, a line
+  being typed would be in that screenshot like anything else on the
+  screen, and is purged with the recording's screens.
   **iPhone:** a typed note is a `MomentMarker` of kind `note`, deleted with
   its recording. There is no time-range edit, so a Delete or Strike of
   words, lines or screens leaves typed lines alone; what the notes wrote
