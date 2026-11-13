@@ -59,6 +59,10 @@ numbered, and asks for one more field, `your_notes: [{n, detail}]`: what was
 being said when each note was typed. The details are stored on the notes row
 (`meeting_notes.note_details`, JSON `[{marker_id, detail}]`) and shown under
 each line in **What you wrote**. Marker ids never appear in a prompt.
+Automatic notes wait 12 seconds after Stop for the transcriber's last lines
+and the post-end trim, with "Making notes…" already showing. Notes are not
+saved if a line they were made from has since been deleted, stricken or
+edited (`lost_lines`); lines that only arrived meanwhile don't count.
 
 - **Mac** (`src-tauri/src/markers.rs`, table `meeting_markers`: id,
   meeting_id, ts, kind, note, created_at; `ON DELETE CASCADE`). Mark with

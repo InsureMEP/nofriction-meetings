@@ -430,7 +430,7 @@ pub async fn generate_and_save(
     if !input.study.has_transcript() {
         return Err(NO_TRANSCRIPT.into());
     }
-    let fingerprint = input.study.fingerprint();
+    let read = input.study.transcript_lines();
     let (prompt_text, label) = crate::recording_kind::report_prompt(
         input.study.kind,
         input.study.notebook.as_deref(),
@@ -439,11 +439,13 @@ pub async fn generate_and_save(
     );
     let (notes, details) = write(c, &input, &prompt_text, progress).await.map_err(String::from)?;
 
-    // Notes made from text that was deleted or stricken meanwhile must
-    // never be written after the purge ran
+    // Notes made from text that was deleted, stricken or edited meanwhile
+    // must never be written after the purge ran. Lines that arrived since
+    // (the transcriber's last ones land a few seconds after Stop) are not a
+    // reason to throw the notes away.
     let mut conn = pool.acquire().await.map_err(err("Database busy"))?;
     if crate::study::has_pending_delete(&mut conn, meeting_id).await?
-        || load_input_conn(&mut conn, meeting_id).await?.study.fingerprint() != fingerprint
+        || lost_lines(&read, &load_input_conn(&mut conn, meeting_id).await?.study.transcript_lines()) > 0
     {
         return Err(TRANSCRIPT_CHANGED.into());
     }
@@ -473,6 +475,25 @@ pub async fn generate_and_save(
     // Topics follow the notes (docs/TOPICS_AND_CHAT.md), in the background
     crate::topics::find_after_notes(database.clone(), meeting_id.to_string());
     Ok(notes)
+}
+
+/// How many of the lines the notes were made from are no longer in the
+/// transcript as they were (deleted, stricken or edited). Each line counts
+/// as often as it occurs; added lines don't count.
+pub fn lost_lines(read: &[String], now: &[String]) -> usize {
+    let mut have: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for l in now {
+        *have.entry(l.as_str()).or_default() += 1;
+    }
+    read.iter()
+        .filter(|l| match have.get_mut(l.as_str()) {
+            Some(n) if *n > 0 => {
+                *n -= 1;
+                false
+            }
+            _ => true,
+        })
+        .count()
 }
 
 /// The notes lists as stored; a list that can't be written is stored empty.
@@ -525,18 +546,14 @@ pub mod run {
         state.state_builder.read().current_meeting_id()
     }
 
-    /// Make and save the notes, one run per recording at a time, telling
-    /// the window what it is doing.
-    pub async fn make(
-        app: &AppHandle,
-        state: &AppState,
-        meeting_id: &str,
-        meeting_prompt: &str,
-        meeting_label: &str,
-    ) -> Result<GeneratedNotes, String> {
-        if recording_meeting(state).as_deref() == Some(meeting_id) {
-            return Err(STILL_RECORDING.into());
-        }
+    /// The transcriber's last lines, and the trim of what it heard after a
+    /// detected end (10 s after Stop), land after the recording stops.
+    /// Automatic notes wait for both.
+    const SETTLE_AFTER_STOP: std::time::Duration = std::time::Duration::from_secs(12);
+
+    /// Take the recording's one notes slot (released when the guard drops)
+    /// and tell the window a run has begun.
+    fn reserve(app: &AppHandle, meeting_id: &str) -> Result<RunGuard, String> {
         {
             let mut running = RUNNING.lock();
             if running.contains_key(meeting_id) {
@@ -544,7 +561,22 @@ pub mod run {
             }
             running.insert(meeting_id.to_string(), "Making notes…".into());
         }
-        let _guard = RunGuard(meeting_id.to_string());
+        let _ = app.emit(
+            PROGRESS_EVENT,
+            serde_json::json!({ "meetingId": meeting_id, "label": "Making notes…", "done": 0, "total": 1 }),
+        );
+        Ok(RunGuard(meeting_id.to_string()))
+    }
+
+    /// Make and save the notes in a slot already taken, telling the window
+    /// what the run is doing and when it ends.
+    async fn run_reserved(
+        app: &AppHandle,
+        state: &AppState,
+        meeting_id: &str,
+        meeting_prompt: &str,
+        meeting_label: &str,
+    ) -> Result<GeneratedNotes, String> {
         let emit = {
             let app = app.clone();
             let id = meeting_id.to_string();
@@ -558,25 +590,34 @@ pub mod run {
                 );
             }
         };
-        emit(Progress { done: 0, total: 1, label: "Making notes…".into() });
-        let result = generate_and_save(
-            &crate::study::LiveCompleter,
-            &state.database,
-            meeting_id,
-            meeting_prompt,
-            meeting_label,
-            &emit,
-        )
-        .await;
+        generate_and_save(&crate::study::LiveCompleter, &state.database, meeting_id, meeting_prompt, meeting_label, &emit).await
+    }
+
+    /// Make and save the notes, one run per recording at a time (Make notes
+    /// / Make again).
+    pub async fn make(
+        app: &AppHandle,
+        state: &AppState,
+        meeting_id: &str,
+        meeting_prompt: &str,
+        meeting_label: &str,
+    ) -> Result<GeneratedNotes, String> {
+        if recording_meeting(state).as_deref() == Some(meeting_id) {
+            return Err(STILL_RECORDING.into());
+        }
+        let guard = reserve(app, meeting_id)?;
+        let result = run_reserved(app, state, meeting_id, meeting_prompt, meeting_label).await;
+        drop(guard);
         let _ = app.emit(DONE_EVENT, serde_json::json!({ "meetingId": meeting_id, "ok": result.is_ok() }));
         result
     }
 
     /// After Stop: make the notes in the background when automatic notes
     /// are on, an AI is ready and the recording is worth it
-    /// ([`auto_notes_due`]). Says "Notes are ready" when the window isn't
-    /// in front. Never raises a dialog: a missing AI, consent or Pro just
-    /// means no automatic notes.
+    /// ([`auto_notes_due`]). The window shows "Making notes…" at once; the
+    /// run starts when the transcript has settled. Says "Notes are ready"
+    /// when the window isn't in front. Never raises a dialog: a missing AI,
+    /// consent or Pro just means no automatic notes.
     pub fn after_stop(app: AppHandle, meeting_id: String) {
         tauri::async_runtime::spawn(async move {
             let Some(state) = app.try_state::<AppState>() else { return };
@@ -603,7 +644,13 @@ pub mod run {
                 log::info!("Automatic notes: skipped ({} s, {} marks or notes)", duration, marked);
                 return;
             }
-            match make(&app, &state, &meeting_id, &settings.meeting_report_prompt, "auto-report").await {
+            // The user may already have pressed Make notes: then that run is the one
+            let Ok(guard) = reserve(&app, &meeting_id) else { return };
+            tokio::time::sleep(SETTLE_AFTER_STOP).await;
+            let result = run_reserved(&app, &state, &meeting_id, &settings.meeting_report_prompt, "auto-report").await;
+            drop(guard);
+            let _ = app.emit(DONE_EVENT, serde_json::json!({ "meetingId": meeting_id, "ok": result.is_ok() }));
+            match result {
                 Ok(_) => {
                     log::info!("Automatic notes: made for {}", meeting_id);
                     let front = app
@@ -1004,6 +1051,18 @@ mod tests {
     }
 
     #[test]
+    fn only_lines_that_were_read_and_are_gone_count_as_lost() {
+        let l = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let read = l(&["[0:00] a", "[0:05] b", "[0:05] b"]);
+        assert_eq!(lost_lines(&read, &read), 0);
+        assert_eq!(lost_lines(&read, &l(&["[0:00] a", "[0:05] b", "[0:05] b", "[0:09] late line"])), 0, "added lines are fine");
+        assert_eq!(lost_lines(&read, &l(&["[0:00] a", "[0:05] b"])), 1, "one of the two identical lines went");
+        assert_eq!(lost_lines(&read, &l(&["[0:00] a", "[0:05] [stricken from the record]", "[0:05] b"])), 1);
+        assert_eq!(lost_lines(&read, &[]), 3);
+        assert_eq!(lost_lines(&[], &read), 0);
+    }
+
+    #[test]
     fn automatic_notes_rule() {
         assert!(auto_notes_due(360, 0), "six minutes is enough on its own");
         assert!(!auto_notes_due(359, 0));
@@ -1107,6 +1166,19 @@ mod tests {
         let e = generate_and_save(&m, &f.db, "m1", "PROMPT", "default", &quiet()).await.unwrap_err();
         assert_eq!(e, TRANSCRIPT_CHANGED);
         assert!(f.db.get_meeting_notes("m1").await.unwrap().is_none());
+
+        // A line that arrives while the AI is writing (the transcriber's last
+        // ones land after Stop) doesn't cost the notes
+        let f3 = fx().await;
+        line(&f3, 0, None, "Cells have organelles.").await;
+        let m = Mock::new(32_768);
+        *m.edit.lock() = Some((
+            f3.db.clone(),
+            "INSERT INTO transcripts (meeting_id, text, timestamp, is_final, confidence) \
+             SELECT 'm1', 'Mitochondria make ATP.', started_at, 1, 0.9 FROM meetings WHERE id = 'm1'",
+        ));
+        generate_and_save(&m, &f3.db, "m1", "PROMPT", "default", &quiet()).await.unwrap();
+        assert!(f3.db.get_meeting_notes("m1").await.unwrap().is_some());
 
         // No transcript: nothing is asked
         let f2 = fx().await;
