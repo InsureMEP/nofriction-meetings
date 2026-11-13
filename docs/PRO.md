@@ -61,7 +61,7 @@ notes vault), not from taking away what free users have.
 
 | | Mac | iPhone and iPad |
 |---|---|---|
-| AI (notes, follow-up email, topics, review guides, chat, automatic notes, Make lesson) | `entitlement::require_pro()` in `ai::client::complete`, the single AI gate | `store.isPro` before every AI action (`MeetingDetailView.requestAI`, `ChatView.ask`) |
+| AI (notes, follow-up email, topics, review guides, chat, automatic notes, Make lesson) | `entitlement::require_pro()` in `ai::client::complete`, the single AI gate | `store.isPro` before every AI action (`MeetingDetailView.requestAI`, `ChatView.ask`); automatic notes run only when `AutoNotesRule` finds the setting on, Pro, AI set up and consent already given |
 | Sync | `entitlement::require_pro_feature(ProFeature::Sync)` | `store.isPro` |
 | Transcribe what's playing | (iPhone only) | `store.isPro` through `ScreenAudioPolicy`: the app tells the broadcast extension to write app audio only for Pro with the switch on, and the import deletes app audio otherwise ([SCREEN_CAPTURE_IOS.md](SCREEN_CAPTURE_IOS.md)) |
 | Export to Obsidian | `require_pro_feature(ProFeature::Obsidian)` in every vault-writing command, turning on auto-export, and the auto-export on Stop | (Mac only) |

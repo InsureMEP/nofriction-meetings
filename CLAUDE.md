@@ -185,16 +185,23 @@ these rules apply.
     recording stopped must not start another (`up_next::CallTracker`).
   - **No AI runs while recording.** The note field keeps what is typed; the
     AI works after Stop. Don't bring back live AI cards. Automatic notes
-    wait until no recording is running (`meeting_notes::run::after_stop`);
-    only the user's own **Make notes** may run during another recording.
+    wait until no recording is running (`meeting_notes::run::after_stop`;
+    iPhone `AutoNotes`, which checks before every request); only the
+    user's own **Make notes** may run during another recording.
   - **Notes are saved in one transaction with their check**
     (`meeting_notes::save_checked`: `BEGIN IMMEDIATE`, then "no pending
     delete and every line read is still there", then the insert). A check
     followed by a separate write lets a Delete or Strike land in between.
+    iPhone: `NotesStore.save` is one synchronous step on the model context;
+    never put an `await` between its check and its write, and send every
+    notes write through it.
   - **A typed note's detail never outlives the note.** Any new way to
     delete or change a `note`-kind marker must call
     `meeting_notes::typed_notes_changed` (it prunes `note_details` and
-    touches the notes row so sync resends them).
+    touches the notes row so sync resends them). iPhone: go through
+    `TypedNoteStore` (edit, delete, and the two sync paths), and keep
+    details paired with notes by identity
+    (`WhatYouWrote.finalize(_:asked:now:)`), never by position alone.
   - **Up next and the notebook's page call no AI and send nothing.** They
     are computed on the device from the calendar (only if access was
     already granted: never prompt for it there), the recordings, and which
@@ -202,7 +209,10 @@ these rules apply.
   - **A typed note is a mark of kind `note`**, never a fourth mark kind:
     not in the Marks list, its filter or its count, and not a kind a mark
     can be changed to. It syncs as a mark; a version that doesn't know the
-    kind skips it without an error (keep that true for any new kind).
+    kind skips it without an error (keep that true for any new kind). On
+    iPhone use `MarkerKind.markKinds` and `Meeting.marks` for anything that
+    lists marks (`allCases` and `markers` include notes); the watch decodes
+    marks only.
   - **Notes read the whole recording.** Never truncate a transcript for a
     prompt; condense it in parts (`study::condense_to_budget`,
     `MeetingAI`'s condense step). Prompts carry marks and typed notes by
@@ -212,6 +222,13 @@ these rules apply.
     is read from notes, marks and guides, so their purge is its purge.
   - **Yellow is for actions, focus and the ★ mark.** Typed notes, counts
     and chips are neutral (design review 2026-11-12).
+  - **iPhone reminders are local notifications planned from the routine**
+    (`RoutineReminders`, at most 24 pending). Permission is asked only from
+    the Record tab's card, whose button says **Continue**; never at launch
+    and never from a background path. The iPhone never starts a recording
+    by itself: the **Start Recording** shortcut opens the app first, and a
+    request made during first-run setup is dropped. What the iPhone does
+    differently and what was never run on a device: FADELL_V2.md §9.
 - Two Mac flavors must always build: the default (Developer ID DMG) and
   `--features mas` (sandboxed Mac App Store build). In `mas`: no ffmpeg,
   Accessibility, osascript, shell plugin or `.env`; Pro gating goes through

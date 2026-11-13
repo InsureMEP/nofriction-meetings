@@ -61,12 +61,12 @@ event and how many people are invited. Stop when you're done.
 > Tell people you're recording. In many places everyone must agree to be
 > recorded.
 
-### Up next (Mac)
+### Up next
 
-When something is starting, the Record screen shows one card with one
-button, for example **Record BIO 101**. Click it and the recording starts
-with the type, length and notebook already filled in: no questions.
-noFriction offers:
+When something is starting, the Record screen (Mac) or the Record tab
+(iPhone/iPad) shows one card with one button, for example **Record BIO
+101**. Click or tap it and the recording starts with the type, length and
+notebook already filled in: no questions. noFriction offers:
 
 - **A calendar event** that is on now or begins within 15 minutes, when it
   has other people on it or a call link, or you have recorded it before.
@@ -75,7 +75,7 @@ noFriction offers:
   Wednesdays at 9:00 and it is offered on the next Wednesday from 8:50.
   There is nothing to set up, and it stops being offered once you stop
   recording it (it looks at the last six weeks).
-- **A call** (macOS 14.2 or later): Zoom, Teams, Meet in a browser,
+- **A call** (Mac, macOS 14.2 or later): Zoom, Teams, Meet in a browser,
   FaceTime and similar apps, once one has had the microphone for ten
   seconds.
 
@@ -84,9 +84,12 @@ notes still have open (**Still open from last time**: the first three, and
 how many more), so you see what you said you'd do before you walk in.
 
 **Not now** hides that suggestion until tomorrow (a call: until it ends).
-**Record something else** opens the usual sheet. The menu-bar icon's first
-item becomes **Record BIO 101** too.
+The usual **Record** button is still there for anything else (on the Mac:
+**Record something else**).
 
+**Mac:**
+
+- The menu-bar icon's first item becomes **Record BIO 101** too.
 - **Remind me when something starts** (**Settings → Recording → Starting**,
   on): with the window closed or behind other apps, the same suggestion
   arrives as a notification. Click it to open the Record screen.
@@ -95,8 +98,27 @@ item becomes **Record BIO 101** too.
   decision, so this is something you turn on. A call that was already going
   when you pressed Stop doesn't start a new recording.
 
-All of this is worked out on your Mac from your calendar, your recordings
-and which apps are using the microphone. Nothing is sent anywhere.
+**iPhone/iPad:**
+
+- **Remind me when something starts** (**Settings**, on): a notification
+  when a notebook you usually record is about to start. It is planned
+  ahead for the next seven days, so it arrives with noFriction closed; tap
+  it to open the Record tab with the card showing. The first time there is
+  something to remind you of, the Record tab asks **Get a reminder when BIO
+  101 starts?** Tap **Continue** and iOS asks about notifications. After
+  **Not now** it doesn't ask again unless you turn the switch in Settings
+  off and on. A calendar event shows on the Record tab but sends no
+  notification from noFriction.
+- **Start Recording** is a shortcut for Siri ("Start a recording in
+  noFriction"), the Shortcuts app and the Action button. It opens
+  noFriction and starts recording with the type and length you chose last
+  time.
+- An iPhone never starts a recording by itself, and it doesn't watch for
+  calls.
+
+All of this is worked out on your device from your calendar, your
+recordings and (Mac) which apps are using the microphone. Nothing is sent
+anywhere.
 
 ### Automatic stop
 
@@ -170,15 +192,20 @@ The first time you record a **Class**, noFriction shows this once:
 
 ## Type notes while it listens
 
-**Mac:** while you record, there is one field under the transcript: **Type
-a note**. Type a few words and press Return. The line is kept with the
-moment you pressed it, and it appears in the transcript right there. Keep
-typing; the cursor stays in the field.
+While you record, there is one field under the transcript: **Type a
+note** (Mac, iPhone and iPad). Type a few words and press Return. The line
+is kept with the moment you pressed it, and it appears in the transcript
+right there. Keep typing; the cursor stays in the field. On iPhone, **Done** beside the field
+puts the keyboard away.
 
 - A note is one line of up to 1,000 characters. It is yours: the app never
-  rewrites it. Change or delete it later in the recording's **Notes**.
-- In **Rewind**, your notes sit in the transcript where you wrote them and
-  as small pins under the timeline; click one to hear that moment.
+  rewrites it. Change or delete it later in the recording's **Notes**
+  (iPhone/iPad: **⋯** beside the line; deleting asks first and can't be
+  undone).
+- **Mac:** in **Rewind**, your notes sit in the transcript where you wrote
+  them and as small pins under the timeline; click one to hear that moment.
+  **iPhone/iPad:** they sit in the recording's transcript where you wrote
+  them.
 - **Notes** opens with **What you wrote**: each line with its time. When
   notes are made (see [Use the AI features](#use-the-ai-features)), each
   line gets a sentence or two under it saying what was being said then, and
@@ -186,8 +213,12 @@ typing; the cursor stays in the field.
 - Typing and keeping notes is free. Having the AI finish them is part of
   noFriction Pro, like the rest of the notes.
 - Your notes are in **Export…** (with the marks), in the review guide's
-  input, in Chat's answers, and they sync to your iPhone with your marks. A
-  time-range **Delete** or **Strike** removes the notes typed in that time.
+  input, in Chat's answers, and they sync between your iPhone and Mac with
+  your marks. On the Mac, a time-range **Delete** or **Strike** removes the
+  notes typed in that time. Deleting or striking words or lines of the
+  transcript leaves your typed lines alone; what the notes wrote under them
+  is rewritten with the rest of the notes.
+- The Apple Watch records and marks; it has no note field.
 
 Marks are still one press (★ Important, ? Question, ✎); a note is for
 when you have words.
@@ -283,7 +314,13 @@ again, and a topic you removed doesn't come back.
 ## A notebook's page
 
 **Mac:** in **Recordings**, click a notebook's chip (**BIO 101**, **Acme
-project**). The list narrows to it and its page opens beside it:
+project**). The list narrows to it and its page opens beside it.
+
+**iPhone/iPad:** in **Recordings**, tap the notebook's chip, then **Open
+BIO 101** at the top of the list. A recording in a notebook also has
+**Open** beside the notebook's name.
+
+The page has:
 
 - **Due** (for a class), **Action items** (meetings) or **To-dos**
   (personal): everything the notes of its recordings say is to be done,
@@ -303,14 +340,15 @@ project**). The list narrows to it and its page opens beside it:
   your usual length. **Ask** opens Chat on this notebook.
 
 Click a recording to open it; **‹ BIO 101** above its title goes back to
-the page. **All** shows every recording again.
+the page (iPhone/iPad: the Back button). **All** shows every recording
+again.
 
 The same ticks are in each recording's **Notes**, beside its action
 items, deadlines or to-dos: tick one in either place.
 
 The page is read from the notes, marks and guides you already have, so it
 is free and uses no AI. What fills it (notes and guides) is made by the Pro
-features. A tick is kept on this Mac only.
+features. A tick is kept on the device you made it on; it doesn't sync.
 
 ---
 
@@ -445,8 +483,13 @@ the same consent dialog when the endpoint is a public one.
 - **Notes**: when you press **Stop**, the recording opens on **Notes**. If
   your AI is set up, notes are made by themselves for a recording of six
   minutes or more, or of one minute or more when you typed a note or marked
-  a moment in it; **Making notes…** shows while they are written, and a
-  notification says **Notes are ready** if noFriction isn't in front. The
+  a moment in it; **Making notes…** shows while they are written. On the
+  Mac a notification says **Notes are ready** if noFriction isn't in front.
+  On iPhone/iPad they are made while noFriction is open (iOS pauses apps
+  in the background), with Pro and an AI connection you have already
+  allowed, and there is no notification; if you left before they finished
+  and they aren't there, tap **Make notes**. Turn automatic notes off with
+  **Make notes automatically** in Settings. The
   notes read the whole recording (a long one is read in parts), cover what
   you marked and typed first, and follow the recording type's style. Read
   them in the recording's **Notes** view, or export them to Obsidian (see
@@ -700,10 +743,10 @@ decision 2026-10-10).
 
 | Free | noFriction Pro |
 |---|---|
-| Recording on iPhone, iPad, Mac and Apple Watch, with types, notebooks, timed recording and automatic stop | **Notes** (**Make notes**, **Make again**) and, on the Mac, automatic notes |
+| Recording on iPhone, iPad, Mac and Apple Watch, with types, notebooks, timed recording and automatic stop | **Notes** (**Make notes**, **Make again**) and automatic notes |
 | On-device microphone transcription (Mac: also the call's audio) | **Follow-up email** and **Topics** |
 | Screens: Mac screenshots, iPhone screen snapshots, photos | **Review guides** (study guides for a class) with flashcards, a practice quiz and CSV/Markdown export |
-| Marks, typed notes, Rewind, search, Links, calendar and people; Up next and a notebook's page (Mac) | **Chat** with your recordings |
+| Marks, typed notes, Rewind, search, Links, calendar and people; Up next and a notebook's page | **Chat** with your recordings |
 | Edit, Delete and Strike from the record | **Sync with your Mac**: recordings, transcripts, notes, marks and screens move between iPhone and Mac directly on your Wi-Fi. No server; pair once with a QR code ([details](#sync-your-iphone-and-mac)) |
 | Share a recording as text; export everything as JSON (Mac) | **Transcribe what's playing** (iPhone): while you capture the screen, noFriction also transcribes the audio of the video or call you're watching |
 | | **Export to Obsidian** (Mac): each recording saved as Markdown in your vault |
@@ -736,14 +779,16 @@ is part of noFriction Pro").
 - With Apple on-device AI, nothing leaves the device. With your own endpoint,
   AI features send recording text (and, on the Mac, screenshots for screen
   features) straight to that endpoint, after your permission if it's on the
-  internet. On the Mac, once AI is set up (and approved, for an internet
-  endpoint), the automatic notes use it. Turn that off in
-  **Settings → AI → Make notes automatically**. No AI runs while you record.
+  internet. Once AI is set up (and approved, for an internet endpoint),
+  the automatic notes use it. Turn that off with **Make notes
+  automatically** (Mac: **Settings → AI**; iPhone/iPad: **Settings**). No
+  automatic AI request starts while you record.
 - Sync (Pro) goes only to your own paired iPhone or Mac, directly over your
   local network and encrypted; nothing passes through a server.
-- Up next (Mac) is worked out on the Mac from your calendar (if you allowed
-  it), your recordings' times and notebooks, and which call apps are using
-  the microphone. None of it leaves the Mac.
+- Up next is worked out on the device from your calendar (if you allowed
+  it), your recordings' times and notebooks, and (Mac) which call apps are
+  using the microphone. None of it leaves the device. The iPhone's
+  reminders are local notifications; no push server is involved.
 - No accounts, no analytics, no tracking, no noFriction servers.
 
 Full policy: [nofriction.io/privacy](https://nofriction.io/privacy).
@@ -766,7 +811,7 @@ Full policy: [nofriction.io/privacy](https://nofriction.io/privacy).
 | Sync can't find the Mac | Both on the same Wi-Fi; noFriction open on the Mac with **Settings → Sync → Sync on this Mac** turned on; on the iPhone, Settings → Privacy & Security → Local Network → noFriction on. Networks that isolate devices (some guest or school Wi-Fi) block it. |
 | "Pair again" | The Mac forgot this iPhone, or was reinstalled. Pair again from **Settings → Sync** on both. |
 | Can't reach a local server | Check the address and that the server is running. Plain `http://` only works for this device, your local network or Tailscale. On iPhone/iPad, allow Local Network access, and use the computer's network address, not `localhost`. |
-| It keeps offering to record something | **Not now** hides it until tomorrow. To stop the notifications: **Settings → Recording → Remind me when something starts**. A notebook stops being offered when you haven't recorded it at that time for six weeks. |
+| It keeps offering to record something | **Not now** hides it until tomorrow. To stop the notifications: **Remind me when something starts** (Mac: **Settings → Recording**; iPhone/iPad: **Settings**). A notebook stops being offered when you haven't recorded it at that time for six weeks. |
 | A recording started by itself (Mac) | **Record by itself** is on: **Settings → Recording → Starting**. |
 | Notes cover only part of a long recording | Notes made by an earlier version read only the start. Open the recording → **Notes** → **Make again**. |
 | Recording stopped by itself | That's the time limit you chose or automatic stop; see [What is it, how long, and notebook](#what-is-it-how-long-and-notebook) and [Automatic stop](#automatic-stop). |

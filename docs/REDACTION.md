@@ -452,6 +452,23 @@ UI in `src/components/redaction/Redaction.tsx`.
   recording, deleted with the recording. Up next (`up_next.rs`) stores only
   the keys the user said "Not now" to today (a notebook name or a calendar
   event id).
+  **iPhone:** a typed note is a `MomentMarker` of kind `note`, deleted with
+  its recording. There is no time-range edit, so a Delete or Strike of
+  words, lines or screens leaves typed lines alone; what the notes wrote
+  under them is part of `aiNotes` (`## What you wrote`) and is rewritten and
+  flagged with the rest (`redactAIOutputs`). Deleting a typed note (in
+  Notes, or because the Mac deleted it) removes its bullet in the same step
+  (`TypedNoteStore`), and notes are saved with details only for the notes
+  they were written for (`WhatYouWrote.finalize(_:asked:now:)`). Ticks are
+  `NotebookItemDone` rows: a hash of the item's text, cascade-deleted with
+  the recording and pruned when the notes change (`NotebookItems.pruneDone`,
+  called from the redaction's derived purge and from sync). Up next keeps
+  only a hash of what **Not now** hid and the day; reminders carry the
+  notebook's name in a local notification and are cancelled and planned
+  again when the app becomes active, a recording stops, or one is removed
+  while the Recordings tab is loaded (`RoutineReminders`); a recording
+  removed by sync before that tab was opened is caught the next time the
+  app becomes active.
 - **Review / study guides.** `redact_ai_outputs` calls `study::purge_for_meeting`
   for every line edit (any removal, distinctive or not), in the action's
   transaction and in each backup's purge. `study::save_materials` re-checks
