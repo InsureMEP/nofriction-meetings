@@ -1552,6 +1552,11 @@ async fn apply_mark(tx: &mut SqliteConnection, peer: &str, m: &p::MarkItem) -> R
     .execute(&mut *tx)
     .await
     .map_err(err("Couldn't save a mark"))?;
+    // A typed note that arrived or was edited on the other device: what
+    // was written beside the old line doesn't outlive it (meeting_notes.rs)
+    if is_note {
+        crate::meeting_notes::typed_notes_changed(tx, &rec).await.map_err(err("Couldn't save a mark"))?;
+    }
     Ok(true)
 }
 

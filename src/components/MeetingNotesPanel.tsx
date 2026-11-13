@@ -359,7 +359,7 @@ export function MeetingNotesPanel({ meetingId, onJump }: MeetingNotesPanelProps)
                         <div className="rd-stale" role="status">
                             <span>These notes were made before an edit.</span>
                             <button className="rd-btn" onClick={generate} disabled={busy || showSetup}>
-                                {busy ? "Making notes…" : "Make again"}
+                                {busy && !fillRun ? "Making notes…" : "Make again"}
                             </button>
                         </div>
                     )}

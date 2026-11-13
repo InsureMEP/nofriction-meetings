@@ -37,12 +37,20 @@ pub const NOTES_CHANGED: &str = "The notes changed while this was being written.
 
 /// How many missed points and explanations are kept
 pub const MAX_MISSED: usize = 12;
-pub const MAX_MORE: usize = 10;
+pub const MAX_MORE: usize = 8;
 const MAX_POINT: usize = 400;
 const MAX_ABOUT: usize = 160;
 const MAX_MORE_DETAIL: usize = 700;
-/// The notes the user already has are shown to the AI up to this many characters
+/// The notes the user already has are shown to the AI up to this many
+/// characters, less on a small model: about a quarter of its window
+/// (`have_cap`), so the recording itself keeps most of the room.
 const MAX_HAVE_CHARS: usize = 6_000;
+const MIN_HAVE_CHARS: usize = 800;
+
+/// How much of NOTES SO FAR a model with this context window is shown.
+pub fn have_cap(context_tokens: usize) -> usize {
+    (context_tokens * 3 / 4).clamp(MIN_HAVE_CHARS, MAX_HAVE_CHARS)
+}
 
 /// Something that was said and the notes don't have.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -86,12 +94,7 @@ impl Filled {
 /// when transcript text is deleted or struck (`clear_for_meeting`, called
 /// from `redaction::redact_ai_outputs`).
 pub async fn ensure_schema(conn: &mut SqliteConnection) -> Result<(), sqlx::Error> {
-    let has: Option<i64> = sqlx::query_scalar("SELECT 1 FROM pragma_table_info('meeting_notes') WHERE name = 'filled'")
-        .fetch_optional(&mut *conn)
-        .await?;
-    if has.is_none() {
-        sqlx::query("ALTER TABLE meeting_notes ADD COLUMN filled TEXT").execute(&mut *conn).await?;
-    }
+    crate::database::ensure_columns(conn, "meeting_notes", &[("filled", "TEXT")]).await?;
     Ok(())
 }
 
@@ -109,19 +112,58 @@ pub async fn clear_for_meeting(conn: &mut SqliteConnection, meeting_id: &str) ->
     if !has_column(conn).await? {
         return Ok(0);
     }
-    Ok(sqlx::query("UPDATE meeting_notes SET filled = NULL WHERE meeting_id = ? AND filled IS NOT NULL")
+    let cleared = sqlx::query("UPDATE meeting_notes SET filled = NULL WHERE meeting_id = ? AND filled IS NOT NULL")
         .bind(meeting_id)
         .execute(&mut *conn)
         .await?
-        .rows_affected())
+        .rows_affected();
+    Ok(cleared + strip_synced(conn, meeting_id).await?)
+}
+
+/// Notes that came from the iPhone are Markdown in `summary`, and may carry
+/// the two sections the iPhone (or this Mac, on the way back) wrote. They
+/// are removed there too. Returns how many rows had them.
+async fn strip_synced(conn: &mut SqliteConnection, meeting_id: &str) -> Result<u64, sqlx::Error> {
+    let rows: Vec<(String, String)> =
+        sqlx::query_as("SELECT id, summary FROM meeting_notes WHERE meeting_id = ? AND model_used = ? AND summary IS NOT NULL")
+            .bind(meeting_id)
+            .bind(crate::sync::store::SYNCED_NOTES_MODEL)
+            .fetch_all(&mut *conn)
+            .await?;
+    let mut changed = 0;
+    for (id, md) in rows {
+        let stripped = strip_sections(&md);
+        if stripped != md.trim_end() {
+            sqlx::query("UPDATE meeting_notes SET summary = ? WHERE id = ?").bind(stripped).bind(id).execute(&mut *conn).await?;
+            changed += 1;
+        }
+    }
+    Ok(changed)
+}
+
+/// A typed line as `load_input` reads it (trimmed), hashed.
+/// Whether a recording's notes have anything filled in (for the Delete and
+/// Strike confirmation).
+pub async fn exists_for_meeting(conn: &mut SqliteConnection, meeting_id: &str) -> bool {
+    if !has_column(conn).await.unwrap_or(false) {
+        return false;
+    }
+    sqlx::query_scalar::<_, i64>("SELECT 1 FROM meeting_notes WHERE meeting_id = ? AND filled IS NOT NULL LIMIT 1")
+        .bind(meeting_id)
+        .fetch_optional(&mut *conn)
+        .await
+        .ok()
+        .flatten()
+        .is_some()
 }
 
 fn line_hash(text: &str) -> String {
-    let digest = Sha256::digest(text.as_bytes());
+    let digest = Sha256::digest(text.trim().as_bytes());
     digest.iter().take(8).map(|b| format!("{:02x}", b)).collect()
 }
 
-/// id → hash for the typed notes shown to the AI.
+/// id → hash for a recording's typed notes. All of them: when a long
+/// recording is condensed, every one is in what the AI is given.
 pub fn typed_hashes(typed: &[TypedNote]) -> BTreeMap<String, String> {
     typed.iter().map(|n| (n.marker_id.clone(), line_hash(&n.text))).collect()
 }
@@ -138,6 +180,9 @@ pub async fn typed_notes_changed(conn: &mut SqliteConnection, meeting_id: &str) 
             .bind(meeting_id)
             .fetch_all(&mut *conn)
             .await?;
+    // Sections inside notes from the iPhone don't say which typed notes they
+    // were made beside, so any typed-note change takes them
+    strip_synced(conn, meeting_id).await?;
     if rows.is_empty() {
         return Ok(());
     }
@@ -148,6 +193,7 @@ pub async fn typed_notes_changed(conn: &mut SqliteConnection, meeting_id: &str) 
     .fetch_all(&mut *conn)
     .await?
     .into_iter()
+    .filter(|(_, text)| !text.trim().is_empty())
     .map(|(id, text)| (id, line_hash(&text)))
     .collect();
     for (id, stored) in rows {
@@ -196,7 +242,7 @@ Rules:
             what = named("a class"),
             shape = shape,
             missed = MAX_MISSED,
-            more = 8,
+            more = MAX_MORE,
         ),
         RecordingKind::Meeting => format!(
             r#"You are helping someone complete their notes from a meeting. NOTES SO FAR is what they already have: the notes made from the recording and the lines they typed themselves. Below it is everything that was said. Find what the notes are missing, and say more about the key topics.
@@ -213,7 +259,7 @@ Rules:
 "#,
             shape = shape,
             missed = MAX_MISSED,
-            more = 8,
+            more = MAX_MORE,
         ),
         RecordingKind::Personal => format!(
             r#"You are helping someone complete their notes from {what}: a conversation, appointment, talk or idea. NOTES SO FAR is what they already have: the notes made from the recording and the lines they typed themselves. Below it is everything that was said. Find what the notes are missing, and say more about the key points.
@@ -231,7 +277,7 @@ Rules:
             what = named("a personal recording"),
             shape = shape,
             missed = MAX_MISSED,
-            more = 8,
+            more = MAX_MORE,
         ),
     }
 }
@@ -255,7 +301,7 @@ fn field_text(v: &Value, keys: &[&str]) -> Option<String> {
 /// NOTES SO FAR: the saved notes and the user's own lines, as plain text.
 /// Notes that came from the iPhone are Markdown in `summary` and are shown
 /// as they are.
-pub fn have_block(notes: &crate::database::MeetingNotes, typed: &[TypedNote]) -> String {
+pub fn have_block(notes: &crate::database::MeetingNotes, typed: &[TypedNote], cap: usize) -> String {
     let mut s = String::new();
     if let Some(summary) = notes.summary.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
         if notes.model_used.as_deref() == Some(crate::sync::store::SYNCED_NOTES_MODEL) {
@@ -311,8 +357,8 @@ pub fn have_block(notes: &crate::database::MeetingNotes, typed: &[TypedNote]) ->
             .map(|n| format!("[{}] {}", prompt::clock(n.ms), n.text.chars().take(PROMPT_NOTE_CHARS).collect::<String>()))
             .collect(),
     );
-    if s.chars().count() > MAX_HAVE_CHARS {
-        s = s.chars().take(MAX_HAVE_CHARS).collect::<String>() + "\n(more notes follow)\n";
+    if s.chars().count() > cap {
+        s = s.chars().take(cap).collect::<String>() + "\n(more notes follow)\n";
     }
     s
 }
@@ -395,13 +441,21 @@ pub fn parse(raw: &str, kind: RecordingKind, duration_ms: i64) -> Result<Filled,
         let about = clip(e.get("about").or_else(|| e.get("term")).or_else(|| e.get("concept")), MAX_ABOUT);
         let detail = clip(e.get("detail").or_else(|| e.get("text")).or_else(|| e.get("explanation")), MAX_MORE_DETAIL);
         let (Some(about), Some(detail)) = (about, detail) else { continue };
-        let background = e
-            .get("from")
-            .or_else(|| e.get("source"))
-            .and_then(|f| f.as_str())
-            .map(|f| f.trim().to_lowercase().starts_with("back"))
-            .unwrap_or(false)
-            || e.get("background").and_then(|b| b.as_bool()).unwrap_or(false);
+        let at = moment(e.get("at").or_else(|| e.get("time")), duration_ms);
+        // Said in the recording only when the answer says so, or gives its
+        // time and says nothing else. Anything else ("textbook", "outside
+        // knowledge", a flag) is background: it must never pass as said.
+        let from = e.get("from").or_else(|| e.get("source")).and_then(|f| f.as_str()).map(|f| f.trim().to_lowercase());
+        let flagged = match e.get("background") {
+            Some(Value::Bool(b)) => *b,
+            Some(Value::String(t)) => !matches!(t.trim().to_lowercase().as_str(), "" | "false" | "no"),
+            _ => false,
+        };
+        let said = match from.as_deref() {
+            Some(f) => ["recording", "transcript", "lecture", "class", "meeting", "said"].iter().any(|w| f.starts_with(w)),
+            None => at.is_some(),
+        };
+        let background = flagged || !said;
         // Outside a class nothing may come from anywhere but the recording
         if background && kind != RecordingKind::Class {
             continue;
@@ -409,8 +463,7 @@ pub fn parse(raw: &str, kind: RecordingKind, duration_ms: i64) -> Result<Filled,
         if more.iter().any(|m| m.about.eq_ignore_ascii_case(&about)) {
             continue;
         }
-        let at_ms = if background { None } else { moment(e.get("at").or_else(|| e.get("time")), duration_ms) };
-        more.push(More { about, detail, at_ms, background });
+        more.push(More { about, detail, at_ms: if background { None } else { at }, background });
     }
     more.truncate(MAX_MORE);
     Ok(Filled { missed, more, typed: BTreeMap::new() })
@@ -489,10 +542,16 @@ pub async fn fill_and_save(
         .await
         .map_err(err("Couldn't read the notes"))?
         .ok_or_else(|| NEEDS_NOTES.to_string())?;
+    // Text in a Delete's undo window is about to be removed: it isn't sent
+    let mut conn = pool.acquire().await.map_err(err("Database busy"))?;
+    if crate::study::has_pending_delete(&mut conn, meeting_id).await? {
+        return Err(crate::study::PENDING_EDIT.into());
+    }
+    drop(conn);
     let read = input.study.transcript_lines();
-    let have = have_block(&notes, &input.typed);
+    let have = have_block(&notes, &input.typed, have_cap(c.context_tokens()));
     let mut filled = write(c, &input, &have, progress).await.map_err(String::from)?;
-    filled.typed = typed_hashes(prompt_notes_of(&input.typed));
+    filled.typed = typed_hashes(&input.typed);
     save_checked(pool, meeting_id, &notes.id, &read, &filled).await?;
     Ok(filled)
 }
@@ -546,6 +605,8 @@ async fn save_locked(
     if latest.as_deref() != Some(notes_id) || filled.typed.iter().any(|(id, hash)| typed_now.get(id) != Some(hash)) {
         return Err(NOTES_CHANGED.into());
     }
+    // This Mac's result replaces any the notes carried in their own text
+    strip_synced(conn, meeting_id).await.map_err(err("Failed to save"))?;
     sqlx::query("UPDATE meeting_notes SET filled = ? WHERE id = ?")
         .bind(to_json_object(filled))
         .bind(notes_id)
@@ -600,17 +661,23 @@ pub fn markdown(filled_json: Option<&str>) -> Option<String> {
 /// them: they are taken out before this Mac's own are added, and before
 /// the notes are shown to the AI as what the user already has.
 pub fn strip_sections(md: &str) -> String {
-    let is_ours = |line: &str| {
+    // A heading is a `#` line or a line that is only **bold** (how the
+    // frontend reads notes Markdown, syncLogic.ts)
+    let heading = |line: &str| -> Option<String> {
         let t = line.trim();
-        t.strip_prefix("##").map(|h| h.trim().trim_matches('#').trim()).is_some_and(|h| {
-            h.eq_ignore_ascii_case(MISSED_HEADING) || h.eq_ignore_ascii_case(MORE_HEADING)
-        })
+        if t.starts_with('#') {
+            Some(t.trim_matches('#').trim().trim_matches('*').trim().to_string())
+        } else if t.len() > 4 && t.starts_with("**") && t.ends_with("**") && !t[2..t.len() - 2].contains("**") {
+            Some(t[2..t.len() - 2].trim().to_string())
+        } else {
+            None
+        }
     };
     let mut out: Vec<&str> = Vec::new();
     let mut skipping = false;
     for line in md.lines() {
-        if line.trim_start().starts_with('#') {
-            skipping = is_ours(line);
+        if let Some(h) = heading(line) {
+            skipping = h.eq_ignore_ascii_case(MISSED_HEADING) || h.eq_ignore_ascii_case(MORE_HEADING);
         }
         if !skipping {
             out.push(line);

@@ -552,7 +552,7 @@ and adds two sections:
   the order said, each with its time (on the Mac, a click opens Rewind
   there). At most 12.
 - **More detail.** The notes' key ideas explained further from what was
-  said. At most 10.
+  said. At most 8.
 
 **Rules**
 
@@ -593,7 +593,26 @@ saving and each way it is removed; the screen in the film harness (the
 button, progress, both sections, **Fill again**, and the paywall without
 Pro).
 
+**What the review found (2026-11-13).** An independent review read the Mac
+half before it merged. The Mac-only design held; the gaps were where the
+iPhone is involved:
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | A Strike or Delete made on the iPhone left the two sections on the iPhone | The iPhone half removes them in its own purge (it is the device that made the edit) |
+| 2 | Sections inside notes that came from the iPhone were outside every removal on the Mac | Fixed: Delete, Strike, a typed-note change and this Mac's own fill all strip them from that text too |
+| 3 | A typed note edited on the iPhone didn't remove what the Mac had filled in | Fixed: a typed note arriving by sync goes through `typed_notes_changed` |
+| 4 | Background was recognised only by a few spellings, so "textbook" or "outside knowledge" passed as said | Fixed: an entry counts as said only when it says so, or gives its time and says nothing else; everything else is background |
+| 5 | On a small model the notes shown to the AI could crowd out the recording | Fixed: they take about a quarter of the model's window, at most 6,000 characters |
+| 6 | An empty fill on iPhone-made notes hid the iPhone's sections on screen but still sent them | Fixed: this Mac's result replaces theirs in the stored text |
+| 7 | Only the first 40 typed notes were tracked, and a trailing space changed a note's hash | Fixed: every typed note, compared as the notes read it |
+| 8 | The Delete and Strike confirmation didn't list it | Fixed |
+| 9 | A fill (or Make notes) started inside a Delete's undo window sent the text that was about to be deleted | Fixed for both: nothing is sent while a Delete is pending |
+| 10 | The Mac and the screen disagreed on what a heading is | Fixed: a bold line is a heading in both |
+
 **Not verified.** No real AI was asked: the quality of what a model writes
 for a real lecture, and how well a small model keeps to "mark background",
-are untested. Not run in the real app.
+are untested. Not run in the real app. The two devices filling in and
+syncing with each other is covered by unit tests on each side, not by a
+run between a real iPhone and Mac.
 

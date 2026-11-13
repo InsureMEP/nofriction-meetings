@@ -2484,6 +2484,12 @@ async fn ai_preview(conn: &mut SqliteConnection, meeting_id: &str) -> Vec<String
                 .into(),
         );
     }
+    if crate::meeting_notes::fill::exists_for_meeting(conn, meeting_id).await {
+        items.push(
+            "What Fill in the blanks added to the notes (What you missed, More detail): deleted; fill in again after the edit"
+                .into(),
+        );
+    }
     let topics = crate::topics::count_for_meeting(conn, meeting_id).await;
     if topics > 0 {
         items.push(format!(

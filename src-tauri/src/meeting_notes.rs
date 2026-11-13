@@ -434,6 +434,13 @@ pub async fn generate_and_save(
     if !input.study.has_transcript() {
         return Err(NO_TRANSCRIPT.into());
     }
+    // Text in a Delete's undo window is about to be removed: it isn't sent
+    {
+        let mut conn = pool.acquire().await.map_err(err("Database busy"))?;
+        if crate::study::has_pending_delete(&mut conn, meeting_id).await? {
+            return Err(crate::study::PENDING_EDIT.into());
+        }
+    }
     let read = input.study.transcript_lines();
     let (prompt_text, label) = crate::recording_kind::report_prompt(
         input.study.kind,
@@ -1425,7 +1432,7 @@ mod tests {
             note_details: None,
             filled: None,
         };
-        let have = fill::have_block(&notes, &i.typed);
+        let have = fill::have_block(&notes, &i.typed, 6_000);
         for expected in [
             "Summary: A lecture on membranes.",
             "- Sodium-potassium pump",
@@ -1465,6 +1472,33 @@ mod tests {
         let meeting = fill::parse(FILL, RecordingKind::Meeting, 60_000).unwrap();
         assert_eq!(meeting.more.len(), 1);
         assert!(!meeting.more[0].background);
+        // Whatever isn't recognisably from the recording is background: it
+        // never passes as said, however the answer words it
+        let sly = r#"{"missed":[],"more":[
+            {"about":"A","detail":"d","from":"textbook","at":"0:10"},
+            {"about":"B","detail":"d","from":"outside knowledge"},
+            {"about":"C","detail":"d","background":"true","from":"recording","at":"0:10"},
+            {"about":"D","detail":"d","source":"background"},
+            {"about":"E","detail":"d"},
+            {"about":"F","detail":"d","at":"0:30"},
+            {"about":"G","detail":"d","from":"Transcript","at":"0:40"},
+            {"about":"H","detail":"d","from":"recording","background":false}]}"#;
+        let class = fill::parse(sly, RecordingKind::Class, 60_000).unwrap();
+        assert_eq!(
+            class.more.iter().map(|m| (m.about.as_str(), m.background, m.at_ms)).collect::<Vec<_>>(),
+            vec![
+                ("A", true, None),
+                ("B", true, None),
+                ("C", true, None),
+                ("D", true, None),
+                ("E", true, None),
+                ("F", false, Some(30_000)),
+                ("G", false, Some(40_000)),
+                ("H", false, None),
+            ]
+        );
+        let meeting = fill::parse(sly, RecordingKind::Meeting, 60_000).unwrap();
+        assert_eq!(meeting.more.iter().map(|m| m.about.as_str()).collect::<Vec<_>>(), vec!["F", "G", "H"]);
         // Nothing missing is an answer; no lists at all, or not an object, is not
         assert!(fill::parse(r#"{"missed":[],"more":[]}"#, RecordingKind::Class, 0).unwrap().is_empty());
         assert!(fill::parse(r#"{"summary":"notes again"}"#, RecordingKind::Class, 0).is_err());
@@ -1499,6 +1533,38 @@ mod tests {
         // Whatever the case of the heading
         assert_eq!(fill::strip_sections("Intro\n## what you missed\n- x\n## MORE DETAIL ##\n- y"), "Intro");
         assert_eq!(fill::strip_sections(""), "");
+        // A bold line is a heading too: it ends a section of ours, and can be one
+        assert_eq!(
+            fill::strip_sections("## What you missed\n- x\n**Key concepts**\n- Osmosis\n**More detail**\n- y"),
+            "**Key concepts**\n- Osmosis"
+        );
+        // The words inside a bullet or a paragraph are not a heading
+        let prose = "## Summary\nSee ## What you missed below.\n- **More detail** on osmosis: later";
+        assert_eq!(fill::strip_sections(prose), prose);
+    }
+
+    #[test]
+    fn a_small_model_is_shown_less_of_the_notes_so_the_recording_keeps_the_room() {
+        assert_eq!(fill::have_cap(4_096), 3_072);
+        assert_eq!(fill::have_cap(32_768), 6_000);
+        assert_eq!(fill::have_cap(512), 800);
+        let i = input(&[(0, "Cells have membranes.")], &[], &[]);
+        let notes = crate::database::MeetingNotes {
+            id: "n1".into(),
+            meeting_id: "m1".into(),
+            summary: Some("word ".repeat(2_000)),
+            key_topics: None,
+            decisions: None,
+            action_items: None,
+            participants: None,
+            generated_at: chrono::Utc::now(),
+            model_used: Some("lecture-notes".into()),
+            stale_after_edit: false,
+            note_details: None,
+            filled: None,
+        };
+        let have = fill::have_block(&notes, &i.typed, fill::have_cap(4_096));
+        assert!(have.chars().count() < 3_100 && have.ends_with("(more notes follow)\n"), "{}", have.chars().count());
     }
 
     async fn filled_json(f: &Fx) -> Option<String> {
@@ -1557,6 +1623,70 @@ mod tests {
         fill::fill_and_save(&Mock::answering(32_768, &[FILL]), &f.db, "m1", &quiet()).await.unwrap();
         generate_and_save(&Mock::new(32_768), &f.db, "m1", "PROMPT", "default", &quiet()).await.unwrap();
         assert_eq!(filled_json(&f).await, None);
+    }
+
+    /// Notes that came from the iPhone carry the two sections in their own
+    /// text. Every removal that takes this Mac's result takes those too.
+    #[tokio::test]
+    async fn sections_inside_notes_from_the_iphone_are_removed_the_same_ways() {
+        const SYNCED: &str = "## What you wrote\n- **pump: 3 Na out**: three sodium out\n\n## Summary\nMembranes.\n\n## What you missed\n- [0:10] The exam covers chapter three.\n\n## More detail\n- **Osmosis**: water moves. [0:40]";
+        const BARE: &str = "## What you wrote\n- **pump: 3 Na out**: three sodium out\n\n## Summary\nMembranes.";
+        async fn synced(f: &Fx) {
+            sqlx::query("DELETE FROM meeting_notes").execute(f.db.pool()).await.unwrap();
+            sqlx::query("INSERT INTO meeting_notes (id, meeting_id, summary, model_used) VALUES ('s1', 'm1', ?, 'synced-markdown')")
+                .bind(SYNCED)
+                .execute(f.db.pool())
+                .await
+                .unwrap();
+        }
+        async fn summary(f: &Fx) -> String {
+            f.db.get_meeting_notes("m1").await.unwrap().unwrap().summary.unwrap()
+        }
+        let f = fx().await;
+        let pool = f.db.pool();
+        line(&f, 0, None, "Cells have membranes.").await;
+        let t = start(&f).await;
+        let typed = crate::markers::add(pool, "m1", t, Some("note"), Some("pump: 3 Na out"), false).await.unwrap();
+
+        // Delete or Strike of transcript text
+        synced(&f).await;
+        let mut conn = pool.acquire().await.unwrap();
+        assert!(fill::exists_for_meeting(&mut conn, "m1").await == false, "nothing of this Mac's is there");
+        crate::redaction::redact_ai_outputs(&mut conn, "m1", "nowhere in it", "[stricken from the record]").await.unwrap();
+        drop(conn);
+        assert_eq!(summary(&f).await, BARE);
+
+        // A typed note changed
+        synced(&f).await;
+        crate::markers::update(pool, &typed.id, None, Some(Some("pump: 2 K in"))).await.unwrap();
+        assert_eq!(summary(&f).await, BARE);
+
+        // This Mac fills in: its result replaces theirs, in the row and in what is sent back
+        synced(&f).await;
+        let m = Mock::answering(32_768, &[FILL]);
+        fill::fill_and_save(&m, &f.db, "m1", &quiet()).await.unwrap();
+        assert!(!m.requests()[0].contains("The exam covers chapter three"), "an earlier fill isn't what the user already has");
+        assert_eq!(summary(&f).await, BARE);
+        assert!(filled_json(&f).await.is_some());
+    }
+
+    #[tokio::test]
+    async fn nothing_in_a_deletes_undo_window_is_sent() {
+        let f = fx().await;
+        line(&f, 0, None, "The launch code is tangerine.").await;
+        generate_and_save(&Mock::new(32_768), &f.db, "m1", "PROMPT", "default", &quiet()).await.unwrap();
+        sqlx::query(
+            "INSERT INTO redactions (id, meeting_id, kind, action, created_at, pending_payload) VALUES ('r1', 'm1', 'words', 'delete', datetime('now'), '{}')",
+        )
+        .execute(f.db.pool())
+        .await
+        .unwrap();
+        let m = Mock::answering(32_768, &[FILL]);
+        assert_eq!(fill::fill_and_save(&m, &f.db, "m1", &quiet()).await.unwrap_err(), crate::study::PENDING_EDIT);
+        assert!(m.requests().is_empty());
+        let m = Mock::new(32_768);
+        assert_eq!(generate_and_save(&m, &f.db, "m1", "PROMPT", "default", &quiet()).await.unwrap_err(), crate::study::PENDING_EDIT);
+        assert!(m.requests().is_empty());
     }
 
     #[tokio::test]
