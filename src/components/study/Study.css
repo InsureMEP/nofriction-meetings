@@ -217,8 +217,9 @@
     cursor: pointer;
 }
 .study-pin:hover { border-color: var(--text-primary, #f5f5f5); }
-/* Typed notes sit just under the marks' pins: a smaller, squarer pin */
-.study-pins.is-notes { top: 8px; z-index: 5; }
+/* Marks sit above the scrubber, typed notes below it: a smaller, squarer
+   pin, clear of the track and its ticks */
+.study-pins.is-notes { top: 24px; }
 .study-pin.is-note {
     width: 14px;
     height: 12px;
