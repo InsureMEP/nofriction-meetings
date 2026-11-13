@@ -9,12 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [Mac 4.0.0 (49) · iPhone and iPad 2.0.0 (14)] - 2026-11-13
-
-Built and uploaded to TestFlight on 2026-11-13; not yet submitted for
-review (docs/RELEASE_STATUS.md). The v2 work (plan and reasons:
-docs/design/FADELL_V2.md), on the Mac and on iPhone and iPad. An entry
-marked (Mac) or (iPhone) is on that platform only.
+On `main`, not in a build yet.
 
 ### Added
 - **Read the screens (Mac).** In a recording's Notes, **Read the screens…**
@@ -34,12 +29,32 @@ marked (Mac) or (iPhone) is on that platform only.
   screen. It needs a model that can read images (Settings → AI → Screens)
   and is part of noFriction Pro. Deleting or striking a screen removes
   what was read from it.
-- Settings → AI now says where pictures go apart from where text goes
-  (they can differ: Apple on-device for text, another model for Read the
-  screens).
 - The prompt library for pictures: one instruction per kind (slide,
   whiteboard, document, code, table, chart, web page, call, photo),
   chosen on your Mac from the app the screen came from.
+
+### Changed
+- Settings → AI says where pictures go apart from where text goes (they
+  can differ: Apple on-device for text, another model for Read the
+  screens). It no longer says screenshots go with every screen feature;
+  none did.
+- The AI consent dialog says a picture (a screen, or a photo) is sent only
+  when you press **Read the screens**, which shows each one first. Its
+  keyboard focus starts on **Not now**, so a stray Return never allows a
+  send.
+- A recording of your whole display now also notes which app and window
+  were in front of each screen. It stays on your Mac and goes with the
+  screen when you delete or strike it; Read the screens uses it to leave
+  out a display that had a private app in front.
+
+## [Mac 4.0.0 (49) · iPhone and iPad 2.0.0 (14)] - 2026-11-13
+
+Built and uploaded to TestFlight on 2026-11-13; not yet submitted for
+review (docs/RELEASE_STATUS.md). The v2 work (plan and reasons:
+docs/design/FADELL_V2.md), on the Mac and on iPhone and iPad. An entry
+marked (Mac) or (iPhone) is on that platform only.
+
+### Added
 - **Fill in the blanks.** One button in a recording's Notes. It reads the
   whole recording again beside the notes you have and adds **What you
   missed** (things that were said and aren't in the notes, each with the
@@ -165,10 +180,8 @@ On the Mac, unless marked.
   topics that follow notes had no check, and automatic notes for a long
   recording only checked before their first request. Each request now
   waits for the recording to stop.
-- The consent dialog said it sends "selected screenshots" when no feature
-  sent a picture. It now says a screen is sent only when you press **Read
-  the screens**, which shows each one first. The dialog's keyboard focus
-  starts on **Not now**, so a stray Return never allows a send.
+- The consent dialog said it sends "selected screenshots". No feature sends
+  a picture; it now says so.
 - **Make notes doesn't send text that is about to be deleted.** A run
   started inside a Delete's five-second undo window read the transcript as
   it still was. It now waits to be asked again (Mac and iPhone).
