@@ -297,3 +297,19 @@ export const CrossIcon: React.FC<IconProps> = ({ size = 16, strokeWidth = 2, cla
         <path d="M18 6L6 18M6 6l12 12" />
     </svg>
 );
+
+/** Lines of writing — a note the user typed. */
+export const NoteIcon: React.FC<IconProps> = ({ size = 16, strokeWidth = 2, className }) => (
+    <svg {...base(size, className)} strokeWidth={strokeWidth}>
+        <path d="M5 7h14M5 12h14M5 17h9" />
+    </svg>
+);
+
+/** Notebook — the notebook page. */
+export const NotebookIcon: React.FC<IconProps> = ({ size = 16, strokeWidth = 1.5, className }) => (
+    <svg {...base(size, className)} strokeWidth={strokeWidth}>
+        <path d="M6 3.5h11a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H6z" />
+        <path d="M6 3.5v17M3.5 8h2.5M3.5 12h2.5M3.5 16h2.5" />
+        <path d="M10 8.5h5" />
+    </svg>
+);

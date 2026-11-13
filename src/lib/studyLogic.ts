@@ -6,10 +6,21 @@ import { thirdMarkHint, thirdMarkLabel, type RecordingKind } from "./recordingKi
 
 // ── Markers ─────────────────────────────────────────────────────────────
 
-/** Stored kinds, the same for every recording type. */
+/** The mark kinds, the same for every recording type. */
 export type MarkerKind = "important" | "question" | "test";
 
 export const MARKER_KINDS: MarkerKind[] = ["important", "question", "test"];
+
+/**
+ * How a row is stored: one of the marks, or `note`, a line the user typed
+ * while listening (docs/design/FADELL_V2.md §6). A note is kept beside the
+ * marks but is never one of them: not in the Marks list, its filter or its
+ * count, and not a kind a mark can be changed to.
+ */
+export type StoredKind = MarkerKind | "note";
+
+/** A typed note is one line, at most this long (marks' notes keep 280). */
+export const MAX_TYPED_NOTE_CHARS = 1000;
 
 export interface MarkerMeta {
     symbol: string;
@@ -37,16 +48,57 @@ export function markerLabel(kind: MarkerKind, rec: RecordingKind): string {
     return markerMeta(kind, rec).label;
 }
 
-export interface Marker {
+/** A row as the backend returns it: a mark or a typed note. */
+export interface StoredMarker {
     id: string;
     meeting_id: string;
     /** Wall clock, RFC 3339 */
     ts: string;
-    kind: MarkerKind;
+    kind: StoredKind;
     note: string | null;
     created_at: string;
     /** ms from the meeting start (the Recordings timeline's clock) */
     offset_ms: number;
+}
+
+/** One of the three marks. */
+export interface Marker extends StoredMarker {
+    kind: MarkerKind;
+}
+
+/** A line the user typed while listening, at the moment it was typed. */
+export interface TypedNote {
+    id: string;
+    meeting_id: string;
+    /** Wall clock, RFC 3339 */
+    ts: string;
+    text: string;
+    created_at: string;
+    offset_ms: number;
+}
+
+const byTime = <T extends { offset_ms: number; created_at: string }>(a: T, b: T) =>
+    a.offset_ms - b.offset_ms || a.created_at.localeCompare(b.created_at);
+
+/** The marks and the typed notes in a recording's stored rows, each in time order. */
+export function splitMarkers(rows: StoredMarker[]): { marks: Marker[]; notes: TypedNote[] } {
+    const marks: Marker[] = [];
+    const notes: TypedNote[] = [];
+    for (const r of rows) {
+        if (r.kind === "note") {
+            const text = (r.note ?? "").trim();
+            if (text) notes.push({ id: r.id, meeting_id: r.meeting_id, ts: r.ts, text, created_at: r.created_at, offset_ms: r.offset_ms });
+        } else if (isMarkerKind(r.kind)) {
+            marks.push(r as Marker);
+        }
+    }
+    return { marks: marks.sort(byTime), notes: notes.sort(byTime) };
+}
+
+/** What the note field keeps: one line, spaces closed up; null when empty or too long. */
+export function cleanTypedNote(text: string): string | null {
+    const t = text.split(/\s+/).filter(Boolean).join(" ");
+    return t && [...t].length <= MAX_TYPED_NOTE_CHARS ? t : null;
 }
 
 export type MarkerFilter = "all" | MarkerKind;
@@ -83,14 +135,14 @@ export function clock(ms: number): string {
  * the mark was made (the last line that starts at or before it), or before
  * the first line when the mark came first.
  */
-export function placeMarkers(
+export function placeMarkers<T extends { offset_ms: number; created_at: string }>(
     lines: { id: string; timestamp_ms: number }[],
-    markers: Marker[],
-): { before: Marker[]; after: Map<string, Marker[]> } {
+    markers: T[],
+): { before: T[]; after: Map<string, T[]> } {
     const sorted = lines.slice().sort((a, b) => a.timestamp_ms - b.timestamp_ms);
-    const before: Marker[] = [];
-    const after = new Map<string, Marker[]>();
-    for (const m of filterMarkers(markers, "all")) {
+    const before: T[] = [];
+    const after = new Map<string, T[]>();
+    for (const m of markers.slice().sort(byTime)) {
         let host: string | null = null;
         for (const l of sorted) {
             if (l.timestamp_ms <= m.offset_ms) host = l.id;
@@ -104,7 +156,7 @@ export function placeMarkers(
 
 /** Markers inside any of the spans (ms, both ends included): what a
  *  time-range Delete removes when it commits. */
-export function markersInSpans(markers: Marker[], spans: [number, number][]): Set<string> {
+export function markersInSpans(markers: { id: string; offset_ms: number }[], spans: [number, number][]): Set<string> {
     return new Set(markers.filter((m) => spans.some(([a, b]) => m.offset_ms >= a && m.offset_ms <= b)).map((m) => m.id));
 }
 

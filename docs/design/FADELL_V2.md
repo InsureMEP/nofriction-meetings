@@ -244,17 +244,24 @@ So the Mac and the iPhone build the same thing.
 
 **The routine (pure function, same on both)**
 
-- Input: recordings of the last 42 days with a notebook, and now.
-- A notebook is suggested when at least 2 of its recordings started on
-  today's weekday with a start time within 25 minutes of now (window: from
-  10 minutes before the earliest such start to 25 minutes after the
-  latest), and none of its recordings started today.
-- Tie: the notebook with more matches, then the most recent.
-- The suggestion carries the notebook, its usual type (the type of its
-  latest recording) and its usual length (the median of the matches,
-  rounded up to 15/30/60/90, or none).
+All times are local, as minutes of the day (no wrap past midnight).
+
+- Candidates for a notebook: its recordings that started in the last 42
+  days, on the same weekday as today, and not today.
+- A candidate that started at `s` matches now when now is in
+  `[s − 10 min, s + 25 min]`.
+- The notebook is suggested when at least 2 candidates match now and none
+  of its recordings started today.
+- Tie: the notebook with more matches, then the one recorded most recently.
+- The suggestion carries the notebook (its most recent spelling), its usual
+  type (the type of its latest recording) and its usual length (the median
+  length of the matches, rounded up to 15/30/60/90; longer or unknown is no
+  limit).
 - Priority of sources: calendar event now → routine → (Mac) call app.
 - **Not now** hides that suggestion until the next local day.
+- iPhone reminder: at the median start time of a weekday's cluster (at
+  least 2 of the notebook's recordings on that weekday, within 35 minutes
+  of each other, last 42 days).
 
 **The notebook page**
 

@@ -74,6 +74,8 @@ pub mod notifications;
 // Record sheet: "What is it?" (recording type), "How long?" (timed
 // recording) and the optional notebook
 pub mod notebooks;
+pub mod notebook_page;
+pub mod up_next;
 pub mod recording_kind;
 pub mod timed_recording;
 pub mod power_manager;
@@ -488,6 +490,8 @@ pub fn run() {
             markers::register_hotkey(&handle);
             // Notification clicks (app activation) bring the window back
             notifications::init(&handle);
+            // Up next: the calendar, the user's routine and call apps (up_next.rs)
+            up_next::live::start_monitor(handle.clone());
             // StoreKit: start the Transaction.updates listener and load the
             // current entitlement (no-op outside the `mas` build).
             store::start(handle.clone());
@@ -952,6 +956,11 @@ pub fn run() {
             timed_recording::remove_timed_recording_limit,
             notebooks::set_meeting_notebook,
             notebooks::list_recent_notebooks,
+            notebook_page::commands::get_notebook_overview,
+            notebook_page::commands::get_notebook_review,
+            notebook_page::commands::set_notebook_item_done,
+            up_next::live::get_up_next,
+            up_next::live::dismiss_up_next,
             recording_kind::set_meeting_recording_kind,
             // Interactive education (docs/LESSONS.md). Make lesson (§13) goes
             // through ai::client::complete like every AI feature (Pro gate,

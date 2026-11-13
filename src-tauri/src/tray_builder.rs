@@ -20,6 +20,14 @@ pub fn set_start_recording_label<R: Runtime>(_app: &AppHandle<R>, what: &str) {
     }
 }
 
+/// The Start item's whole text: "Record BIO 101" while something is up
+/// next (up_next.rs); clicking it then starts that.
+pub fn set_start_item_text<R: Runtime>(_app: &AppHandle<R>, text: &str) {
+    if let Some(item) = START_ITEM.get() {
+        let _ = item.set_text(text);
+    }
+}
+
 /// Tray menu item IDs
 pub mod tray_ids {
     pub const START_RECORDING: &str = "tray_start_recording";
@@ -96,7 +104,12 @@ fn show_window<R: Runtime>(app: &AppHandle<R>) {
 fn handle_tray_event(app: &AppHandle, id: &str) {
     log::info!("Tray menu event: {}", id);
     match id {
-        tray_ids::START_RECORDING => emit_to_frontend(app, "tray:start_recording"),
+        // What is up next, if anything is; else the remembered type and length
+        tray_ids::START_RECORDING => {
+            if !crate::up_next::live::start_from_tray(app) {
+                emit_to_frontend(app, "tray:start_recording")
+            }
+        }
         tray_ids::STOP_RECORDING => emit_to_frontend(app, "tray:stop_recording"),
         tray_ids::PAUSE_RECORDING => emit_to_frontend(app, "tray:pause_recording"),
         tray_ids::RESUME_RECORDING => emit_to_frontend(app, "tray:resume_recording"),

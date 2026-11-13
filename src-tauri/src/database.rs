@@ -1083,6 +1083,8 @@ impl DatabaseManager {
         // Moment markers and study guides (docs/STUDY_TOOLS.md)
         crate::markers::ensure_schema(&mut conn).await?;
         crate::study::ensure_schema(&mut conn).await?;
+        // The notebook page's ticks (hashes only; notebook_page.rs)
+        crate::notebook_page::ensure_schema(&mut conn).await?;
         // Interactive education: lesson catalog + learner records (docs/LESSONS.md)
         crate::lessons::ensure_schema(&mut conn).await?;
         // Topics and chat with your recordings (docs/TOPICS_AND_CHAT.md)

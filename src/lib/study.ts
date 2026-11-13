@@ -3,7 +3,7 @@
 // Pure logic lives in studyLogic.ts.
 
 import { invoke } from "@tauri-apps/api/core";
-import type { Marker, MarkerKind, StudyPart } from "./studyLogic";
+import type { Marker, MarkerKind, StoredMarker, StudyPart } from "./studyLogic";
 
 export interface StoredMaterial {
     kind: StudyPart;
@@ -23,7 +23,8 @@ export interface StudyGuide {
     duration_ms: number;
     has_transcript: boolean;
     materials: Partial<Record<StudyPart, StoredMaterial>>;
-    markers: Marker[];
+    /** Marks and typed notes (split them with `splitMarkers`) */
+    markers: StoredMarker[];
 }
 
 export interface GenerateResult {
@@ -42,6 +43,8 @@ export interface StudyProgress {
 /** Events from the backend */
 export const MARKER_ADDED_EVENT = "marker_added";
 export const MARKER_FAILED_EVENT = "marker_failed";
+/** A typed note was saved in the recording in progress (payload: the row) */
+export const NOTE_ADDED_EVENT = "note_added";
 export const STUDY_PROGRESS_EVENT = "study_progress";
 
 /** Fired in the window after any marker change, so open views refresh. */
@@ -62,7 +65,15 @@ export const markersApi = {
             ? invoke<Marker>("update_marker", { id, kind: null, note, clearNote: false })
             : invoke<Marker>("update_marker", { id, kind: null, note: null, clearNote: true }),
     remove: (id: string) => invoke<void>("delete_marker", { id }),
-    list: (meetingId: string) => invoke<Marker[]>("list_markers", { meetingId }),
+    /** Marks and typed notes, in time order */
+    list: (meetingId: string) => invoke<StoredMarker[]>("list_markers", { meetingId }),
+    /** Keep a typed line, stamped now, in the recording in progress */
+    addNote: (text: string) => invoke<StoredMarker>("add_note", { text }),
+    /** Add a typed note at a moment of a recorded meeting (ms from its start) */
+    addNoteAt: (meetingId: string, offsetMs: number, text: string) =>
+        invoke<StoredMarker>("add_marker", { meetingId, offsetMs: Math.max(0, Math.round(offsetMs)), kind: "note", note: text }),
+    /** Change a typed note's text (it can't be emptied: remove it instead) */
+    setNoteText: (id: string, text: string) => invoke<StoredMarker>("update_marker", { id, kind: null, note: text, clearNote: false }),
 };
 
 export const studyApi = {
