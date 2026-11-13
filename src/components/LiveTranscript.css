@@ -160,32 +160,34 @@
 
 /* ── What the user typed, where they typed it ────────────────── */
 
+/* Neutral on purpose: yellow is for actions and focus (DESIGN.md). The
+   lighter surface and the glyph say "you wrote this". */
 .lt-note {
-  padding: 6px 0;
+  padding: 8px 0;
 }
 
 .lt-note__body {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: 12px;
   width: fit-content;
   max-width: 100%;
   padding: 8px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(250, 204, 21, 0.2);
-  background: rgba(250, 204, 21, 0.06);
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #262626);
+  background: var(--tactical-gray, #171717);
 }
 
 .lt-note__glyph {
   flex: none;
-  padding-top: 3px;
-  color: var(--hazard-yellow, #facc15);
+  padding-top: 7px;
+  color: var(--text-secondary, #a3a3a3);
 }
 
 .lt-note__text {
   margin: 0;
-  font-size: 15px;
-  line-height: 1.5;
+  font-size: 16px;
+  line-height: 1.65;
   color: var(--text-primary, #f5f5f5);
   overflow-wrap: anywhere;
 }
@@ -212,5 +214,5 @@
 .lt-empty.has-suggestion .nf-promise {
   width: min(440px, 100%);
   max-width: none;
-  margin-top: 2px;
+  margin-top: 0;
 }

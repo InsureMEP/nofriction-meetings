@@ -180,20 +180,24 @@
 /* ── What you wrote: the user's own lines, then what was said ───────── */
 
 .mn-wrote {
-  padding: 14px 16px 6px;
-  border: 1px solid rgba(250, 204, 21, 0.2);
+  padding: 16px 16px 8px;
+  border: 1px solid var(--border-color, #262626);
   border-radius: 12px;
-  background: rgba(250, 204, 21, 0.04);
+  background: var(--bg-card, #0d0d0d);
 }
 
 .mn-wrote__title {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin: 0 0 6px;
-  font-size: 12px;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--hazard-yellow, #facc15);
+  color: var(--text-primary, #f5f5f5);
+}
+
+.mn-wrote__title svg {
+  color: var(--text-secondary, #a3a3a3);
 }
 
 .mn-wrote__list {
@@ -205,7 +209,7 @@
 .mn-wrote__row {
   display: grid;
   grid-template-columns: 52px minmax(0, 1fr) 28px;
-  gap: 10px;
+  gap: 12px;
   align-items: start;
   padding: 8px 0;
 }
@@ -228,7 +232,7 @@
 }
 
 .mn-wrote__time:hover:not(:disabled) {
-  color: var(--hazard-yellow, #facc15);
+  color: var(--text-primary, #f5f5f5);
   text-decoration: underline;
 }
 
@@ -247,9 +251,9 @@
   border: none;
   background: none;
   font: inherit;
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 1.5;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.6;
   text-align: left;
   color: var(--text-primary, #f5f5f5);
   overflow-wrap: anywhere;
@@ -261,13 +265,13 @@
 }
 
 .mn-wrote__input {
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .mn-wrote__detail {
-  margin: 3px 0 0;
+  margin: 4px 0 0;
   font-size: 14px;
-  line-height: 1.55;
+  line-height: 1.6;
   color: var(--text-secondary, #a3a3a3);
   max-width: 72ch;
 }
@@ -309,8 +313,8 @@
 .mn-busy {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 16px 18px;
+  gap: 16px;
+  padding: 16px;
   border: 1px solid var(--border-color, #262626);
   border-radius: 12px;
 }
