@@ -819,3 +819,23 @@ async fn markdown_export_of_a_saved_guide() {
     let csv = flashcards_csv(&cards_of(&g.materials["flashcards"].data));
     assert_eq!(csv, "\"What makes ATP?\",\"Mitochondria\"\r\n");
 }
+
+#[tokio::test]
+async fn background_work_waits_for_the_recording_to_stop() {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::time::Duration;
+    let step = Duration::from_millis(1);
+    // Nothing recording: no wait
+    let looks = AtomicU32::new(0);
+    assert!(wait_while(|| { looks.fetch_add(1, Ordering::SeqCst); false }, step, Duration::from_secs(1)).await);
+    assert_eq!(looks.load(Ordering::SeqCst), 1);
+    // A recording that stops after three looks: waited, then went ahead
+    let looks = AtomicU32::new(0);
+    assert!(wait_while(|| looks.fetch_add(1, Ordering::SeqCst) < 3, step, Duration::from_secs(1)).await);
+    assert_eq!(looks.load(Ordering::SeqCst), 4);
+    // One that never stops: gives up at the limit and says so
+    assert!(!wait_while(|| true, step, Duration::from_millis(5)).await);
+    // Before the app is up there is no recording to wait for
+    assert!(!recording_now());
+}
+

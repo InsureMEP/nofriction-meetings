@@ -689,7 +689,6 @@ pub async fn start_recording(
     let frames_dir_clone = frames_dir.clone();
     let state_builder = state.state_builder.clone();
     let metrics_collector = state.metrics_collector.clone();
-    let settings_for_frames = state.settings.clone();
     let app_for_frames = app.clone();
 
     // Estimated bytes per frame (for savings calculation)
@@ -701,7 +700,6 @@ pub async fn start_recording(
         let dir = frames_dir_clone.clone();
         let builder = state_builder.clone();
         let metrics = metrics_collector.clone();
-        let settings = settings_for_frames.clone();
         let app_handle = app_for_frames.clone();
 
         // Process frame through StateBuilder (stateful dedup)
@@ -818,23 +816,8 @@ pub async fn start_recording(
 
                             log::debug!("📺 New state: {} → {:?}", new_state_id, keyframe_path);
 
-                            // Queue frame for VLM analysis if enabled
-                            if let Ok(app_settings) = settings.get_all().await {
-                                if app_settings.queue_frames_for_vlm {
-                                    if let Err(e) = db
-                                        .queue_frame(
-                                            None, // frame_id - using screen state
-                                            keyframe_path.to_str().unwrap_or(""),
-                                            frame.timestamp,
-                                        )
-                                        .await
-                                    {
-                                        log::warn!("Failed to queue frame for VLM: {}", e);
-                                    } else {
-                                        log::debug!("📸 Queued frame for VLM: {}", new_state_id);
-                                    }
-                                }
-                            }
+                            // Screens are never queued for an AI here: one goes to an
+                            // AI only on the user's click (docs/AI_PROVIDERS.md)
                         }
                     }
                 }
@@ -1951,186 +1934,6 @@ pub async fn get_capture_settings(state: State<'_, AppState>) -> Result<serde_js
 // VLM Processing Commands (Phase 4)
 // ============================================
 
-use crate::database::ActivityLogEntry;
-
-/// Result of VLM analysis batch
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct AnalysisResult {
-    pub frames_processed: usize,
-    pub activities_created: usize,
-    pub errors: Vec<String>,
-}
-
-/// Analyze pending frames with VLM
-#[tauri::command(rename_all = "camelCase")]
-pub async fn analyze_pending_frames(
-    limit: Option<i32>,
-    state: State<'_, AppState>,
-) -> Result<AnalysisResult, String> {
-    let limit = limit.unwrap_or(10);
-
-    // Check if VLM is available
-    if !crate::vlm_client::vlm_is_available().await {
-        // Resolve again to return the precise reason (consent, no vision model, …)
-        return Err(crate::ai::client::resolve(crate::ai::Kind::Vision)
-            .err()
-            .map(|e| e.to_string())
-            .unwrap_or_else(|| "No vision model is set up (Settings → AI Engine).".to_string()));
-    }
-
-    // Get pending frames
-    let pending = state
-        .database
-        .get_pending_frames(limit)
-        .await
-        .map_err(|e| format!("Failed to get pending frames: {}", e))?;
-
-    if pending.is_empty() {
-        return Ok(AnalysisResult {
-            frames_processed: 0,
-            activities_created: 0,
-            errors: vec![],
-        });
-    }
-
-    // Get active theme and prompt (with fallback logic similar to Scheduler)
-    let mut frames_processed = 0;
-    let mut activities_created = 0;
-    let mut errors = Vec::new();
-
-    let active_theme = state
-        .settings
-        .get_active_theme()
-        .await
-        .unwrap_or_else(|_| "prospecting".to_string());
-    let prompt_key = format!("{}_context_analysis", active_theme);
-
-    let prompt = match state.prompt_manager.get_prompt(&prompt_key).await {
-        Ok(Some(p)) => p.system_prompt,
-        Ok(None) => {
-            // Try fallback to generic frame_analysis
-            match state.prompt_manager.get_prompt("frame_analysis").await {
-                Ok(Some(p)) => p.system_prompt,
-                _ => {
-                    // Hard fallback
-                    r#"Analyze this screenshot and describe what the user is doing. 
-                    Respond in JSON format with these fields:
-                    {
-                      "app_name": "name of the main application visible",
-                      "window_title": "title of the window or document",
-                      "category": "one of: development, communication, research, writing, design, media, browsing, system, other",
-                      "summary": "brief description of what the user is doing",
-                      "focus_area": "specific task or project",
-                      "visible_files": [],
-                      "confidence": 0.8
-                    }
-                    Only respond with valid JSON."#.to_string()
-                }
-            }
-        }
-        Err(e) => {
-            return Err(format!("Failed to retrieve prompt: {}", e));
-        }
-    };
-
-    for frame in pending {
-        // Analyze frame with VLM (standalone function)
-        match crate::vlm_client::vlm_analyze_frame(&frame.frame_path, &prompt).await {
-            Ok(context) => {
-                frames_processed += 1;
-
-                // Create activity log entry
-                let activity = ActivityLogEntry {
-                    id: None,
-                    start_time: frame.captured_at,
-                    end_time: None,
-                    duration_seconds: None,
-                    app_name: context.app_name,
-                    window_title: context.window_title,
-                    category: context.category,
-                    summary: context.summary,
-                    focus_area: context.focus_area,
-                    visible_files: if context.visible_files.is_empty() {
-                        None
-                    } else {
-                        Some(context.visible_files.join(", "))
-                    },
-                    confidence: Some(context.confidence),
-                    frame_ids: Some(frame.id.to_string()),
-                };
-
-                // Store in activity_log
-                match state.database.add_activity(&activity).await {
-                    Ok(activity_id) => {
-                        activities_created += 1;
-
-                        // Phase 3: Extract and store entities (Identical logic to Scheduler)
-                        if let Some(entities_json) = context.entities {
-                            if let Some(obj) = entities_json.as_object() {
-                                for (entity_type, list) in obj {
-                                    if let Some(items) = list.as_array() {
-                                        for item in items {
-                                            if let Some(name) =
-                                                item.get("name").and_then(|s| s.as_str())
-                                            {
-                                                let conf = item
-                                                    .get("confidence")
-                                                    .and_then(|c| c.as_f64())
-                                                    .or_else(|| {
-                                                        item.get("confidence")
-                                                            .and_then(|s| s.as_str().map(|_| 0.8))
-                                                    })
-                                                    .map(|f| f as f32)
-                                                    .unwrap_or(context.confidence);
-
-                                                let _ = state
-                                                    .database
-                                                    .add_entity(
-                                                        activity_id,
-                                                        entity_type,
-                                                        name,
-                                                        Some(item),
-                                                        conf,
-                                                        Some(&active_theme),
-                                                    )
-                                                    .await;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Mark frame as analyzed
-                        let _ = state.database.mark_frame_analyzed(frame.id).await;
-                    }
-                    Err(e) => {
-                        errors.push(format!("Failed to store activity: {}", e));
-                    }
-                }
-            }
-            Err(e) => {
-                errors.push(format!(
-                    "VLM analysis failed for {}: {}",
-                    frame.frame_path, e
-                ));
-            }
-        }
-    }
-
-    log::info!(
-        "🔍 VLM Analysis: {} frames processed, {} activities created",
-        frames_processed,
-        activities_created
-    );
-
-    Ok(AnalysisResult {
-        frames_processed,
-        activities_created,
-        errors,
-    })
-}
-
 /// Get pending frame count
 #[tauri::command(rename_all = "camelCase")]
 pub async fn get_pending_frame_count(state: State<'_, AppState>) -> Result<i64, String> {
@@ -2838,12 +2641,8 @@ pub async fn set_vlm_auto_process(enabled: bool, state: State<'_, AppState>) -> 
         .await
         .map_err(|e| format!("Failed to save setting: {}", e))?;
 
-    // Update scheduler
-    state.vlm_scheduler.set_enabled(enabled);
-
-    if enabled {
-        state.vlm_scheduler.start();
-    }
+    // The scheduler is retired (vlm_scheduler.rs): nothing starts
+    state.vlm_scheduler.set_enabled(false);
 
     log::info!("VLM auto-processing set to: {}", enabled);
     Ok(())

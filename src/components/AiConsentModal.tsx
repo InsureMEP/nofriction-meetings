@@ -110,9 +110,9 @@ export function AiConsentModal() {
                     <p className="ai-consent-copy">
                         Destination: <strong style={{ overflowWrap: "anywhere" }}>{endpoint || "Unavailable"}</strong>
                         {destination && destination.name !== "Custom (OpenAI-compatible)" ? ` (${destination.name})` : ""}.
-                        If you allow it, noFriction sends transcripts, titles, attendee names,
-                        email/company details and selected screenshots needed for AI features directly to this endpoint,
-                        using your optional API key. Its operator's privacy policy and terms apply.
+                        If you allow it, noFriction sends the transcripts, your marks and typed notes, titles,
+                        attendee names and email/company details needed for AI features directly to this endpoint,
+                        using your optional API key. No screenshot or photo is sent. Its operator's privacy policy and terms apply.
                         This is optional. You can use Apple on-device or a local endpoint instead.
                         noFriction offers no hosted models and receives none of this content.
                     </p>

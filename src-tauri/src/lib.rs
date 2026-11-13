@@ -285,24 +285,17 @@ impl AppState {
         let database = Arc::new(database);
         let settings = Arc::new(settings);
 
-        // Initialize VLM scheduler
-        log::info!("Initializing VLM Scheduler...");
-        let _ = emitter.emit("init-step", "Starting VLM Scheduler...");
+        // The retired background analyzer: built for the old status commands, never started
         let vlm_scheduler = vlm_scheduler::VLMScheduler::new(
             database.clone(),
             settings.clone(),
             prompt_manager.clone(),
         );
 
-        // Load VLM scheduler settings and start if enabled
-        if saved_settings.vlm_auto_process {
-            vlm_scheduler.set_enabled(true);
-            vlm_scheduler.set_interval(saved_settings.vlm_process_interval_secs);
-            vlm_scheduler.start();
-            log::info!(
-                "VLM Scheduler started with {}s interval",
-                saved_settings.vlm_process_interval_secs
-            );
+        // The scheduler is retired and never started (vlm_scheduler.rs). A
+        // database from an old version may still carry its switch.
+        if saved_settings.vlm_auto_process || saved_settings.queue_frames_for_vlm {
+            log::warn!("An old screenshot-analysis switch is set in this database; it is ignored");
         }
 
         log::info!("AppState initialization complete.");
@@ -649,8 +642,6 @@ pub fn run() {
             // Knowledge Base Commands
             commands::check_vlm,
             commands::check_vlm_vision,
-            commands::analyze_frame,
-            commands::analyze_frames_batch,
             // Assistant chat (active AI provider)
             commands::capture_accessibility_snapshot,
             commands::assistant_chat,
@@ -665,7 +656,6 @@ pub fn run() {
             commands::set_capture_system_audio,
             commands::set_capture_screen,
             commands::set_always_on_capture,
-            commands::set_queue_frames_for_vlm,
             commands::set_frame_capture_interval,
             // Capture sources (displays / windows) + on-demand snapshots
             commands::list_capture_sources,
@@ -705,7 +695,6 @@ pub fn run() {
             ai::commands::ai_revoke_consent,
             ai::commands::ai_status,
             // VLM Processing Commands (Phase 4)
-            commands::analyze_pending_frames,
             commands::get_pending_frame_count,
             commands::get_activity_stats,
             // Search Commands (Phase 6)
@@ -768,8 +757,6 @@ pub fn run() {
             #[cfg(not(feature = "mas"))]
             commands::delete_video_storage,
             // VLM Scheduler Commands
-            commands::set_vlm_auto_process,
-            commands::set_vlm_process_interval,
             commands::get_vlm_scheduler_status,
             // AI Chat Model Commands
             commands::set_ai_chat_model,

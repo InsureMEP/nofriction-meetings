@@ -255,10 +255,6 @@ export async function checkVlmVision(): Promise<boolean> {
 }
 
 // Knowledge Base Processing
-export async function analyzePendingFrames(limit?: number): Promise<{ frames_processed: number; activities_created: number }> {
-    return invoke("analyze_pending_frames", { limit });
-}
-
 export async function getPendingFrameCount(): Promise<number> {
     return invoke<number>("get_pending_frame_count");
 }

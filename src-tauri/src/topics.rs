@@ -753,15 +753,17 @@ pub async fn find_and_save(pool: &Pool<Sqlite>, c: &dyn Completer, meeting_id: &
 }
 
 /// After notes are written for a recording: find its topics in the
-/// background with the user's AI (the same gates as the notes). Failures
-/// are logged, never surfaced; the notes don't depend on this.
+/// background with the user's AI (the same gates as the notes). Nobody
+/// clicked for this, so it waits while a recording is running
+/// (`BackgroundCompleter`). Failures are logged, never surfaced; the notes
+/// don't depend on this.
 pub fn find_after_notes(db: std::sync::Arc<crate::database::DatabaseManager>, meeting_id: String) {
     tokio::spawn(async move {
         if !commands::begin(&meeting_id) {
             return;
         }
         let _guard = commands::RunGuard(meeting_id.clone());
-        match find_and_save(db.pool(), &LiveCompleter, &meeting_id).await {
+        match find_and_save(db.pool(), &crate::study::BackgroundCompleter, &meeting_id).await {
             Ok(t) => log::info!("Topics: {} stored after notes", t.len()),
             Err(e) => log::warn!("Topics after notes not found: {}", e.chars().take(160).collect::<String>()),
         }
