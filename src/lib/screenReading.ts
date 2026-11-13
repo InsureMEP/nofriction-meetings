@@ -26,6 +26,8 @@ export interface PlanItem {
     image_path: string;
     /** A capture of a whole display: it shows everything that was on it */
     whole_display: boolean;
+    /** A screenshot from the iPhone */
+    iphone_screen: boolean;
 }
 
 /** What Read the screens would do right now (looking sends nothing) */
@@ -39,6 +41,8 @@ export interface ScreenPlan {
     more: number;
     /** Pictures that are never sent because they look private */
     left_out: number;
+    /** Pictures the AI answered about with nothing to keep (they count as read) */
+    skipped: number;
     /** The host the pictures would go to */
     destination: string | null;
     model: string | null;
@@ -130,6 +134,7 @@ export function confirmScope(plan: ScreenPlan): string {
 export function pictureSource(item: PlanItem): string | null {
     if (item.app_name) return item.app_name;
     if (item.whole_display) return "Whole display";
+    if (item.iphone_screen) return "iPhone screen";
     return null;
 }
 
@@ -138,21 +143,30 @@ export function pictureSource(item: PlanItem): string | null {
  * whole display shows everything that was on it, and a photo anything.
  */
 export function lookFirstLine(plan: ScreenPlan): string | null {
-    const displays = plan.send.filter((s) => s.whole_display).length;
+    // A whole display or an iPhone screen: everything that was on it
+    const screens = plan.send.filter((s) => s.whole_display || s.iphone_screen).length;
     const photos = plan.send.filter((s) => s.kind === "Photo").length;
-    if (displays === 0 && photos === 0) return null;
+    if (screens === 0 && photos === 0) return null;
     const what =
-        displays > 0 && photos > 0
-            ? "A whole display shows everything that was on it, and a photo can show anything"
-            : displays > 0
-              ? "A whole display shows everything that was on it, not one app"
+        screens > 0 && photos > 0
+            ? "A whole screen shows everything that was on it, and a photo can show anything"
+            : screens > 0
+              ? "A whole screen shows everything that was on it, not one app"
               : "A photo can show anything";
     return `${what}. Open each picture and untick any you wouldn't show your AI.`;
 }
 
 /** Pictures that are never sent, and why. */
 export function leftOutLine(n: number): string {
-    return `${n} ${n === 1 ? "is" : "are"} never sent because ${n === 1 ? "it looks" : "they look"} private (mail, messages, passwords or a terminal).`;
+    return `${n} ${n === 1 ? "is" : "are"} never sent because ${n === 1 ? "it looks" : "they look"} private (mail, messages, passwords, a terminal or private browsing).`;
+}
+
+/**
+ * Pictures the AI kept nothing from, and the offer to send them again: a
+ * model that couldn't read them says "nothing to keep" too.
+ */
+export function skippedLine(n: number): string {
+    return `${n} ${n === 1 ? "picture" : "pictures"} had nothing to keep.`;
 }
 
 /** Nothing is left for another click. */

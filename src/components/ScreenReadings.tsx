@@ -24,6 +24,7 @@ import {
     nothingLeft,
     pictureSource,
     readingParts,
+    skippedLine,
     summaryLine,
     tickedIds,
     trapTab,
@@ -37,7 +38,13 @@ import "./ScreenReadings.css";
 
 function failure(e: unknown): string {
     if (isNoProviderError(e)) return "Reading a screen needs an AI that can read images. Set one up under Settings → AI.";
-    switch (aiErrorClass(e)) {
+    const cls = aiErrorClass(e);
+    // Words in an endpoint's error are not the app's own "ask first" answer:
+    // a picture may have gone, so it must not read "Nothing was sent"
+    if ((cls === "consent_required" || cls === "pro_required") && !isOwnGateError(e)) {
+        return e instanceof Error ? e.message : String(e);
+    }
+    switch (cls) {
         case "pro_required":
             return "Reading screens is part of noFriction Pro.";
         case "consent_required":
@@ -83,6 +90,8 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
     /** The confirmation is open: what it lists must not change under it */
     const open = useRef(false);
     open.current = confirming;
+    /** The latest `unzoom`, for the key handler */
+    const unzoomRef = useRef<() => void>(() => {});
 
     // Only the latest read is shown
     const request = useRef(0);
@@ -160,7 +169,7 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
         const onKey = (e: KeyboardEvent) => {
             if (e.key === "Escape") {
                 // From one picture back to all of them, then out
-                if (zoomed) setZoomed(null);
+                if (zoomed) unzoomRef.current();
                 else close();
                 return;
             }
@@ -265,6 +274,27 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
         }
     };
 
+    const offerSkippedAgain = async () => {
+        setMessage(null);
+        try {
+            await invoke<number>("forget_skipped_screen_readings", { meetingId });
+        } catch (e) {
+            setMessage({ text: failure(e), error: true });
+        }
+        await load();
+    };
+
+    /** Back from one picture to all of them, with the keyboard on its tile */
+    const unzoom = () => {
+        const id = zoomed?.state_id;
+        setZoomed(null);
+        if (!id) return;
+        requestAnimationFrame(() => {
+            const tile = Array.from(dialog.current?.querySelectorAll<HTMLElement>("[data-pick]") ?? []).find((el) => el.dataset.pick === id);
+            tile?.focus();
+        });
+    };
+
     const forget = async (stateId: string) => {
         setMessage(null);
         try {
@@ -275,6 +305,7 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
         await load();
     };
 
+    unzoomRef.current = unzoom;
     const done = nothingLeft(plan);
     const proNote = proSuffix(caps?.pro_gating, isPro);
     const count = tickedIds(plan, ticked).length;
@@ -286,7 +317,7 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
             {readings.length === 0 ? (
                 <p className="sr__empty">
                     {plan.total === 0
-                        ? `This recording's screens look private (mail, messages, passwords or a terminal), so they are never sent to an AI.`
+                        ? `This recording's screens look private (mail, messages, passwords, a terminal or private browsing), so they are never sent to an AI.`
                         : done
                           ? "The screens were read and had nothing to keep."
                           : "Slides, documents, whiteboards and photos from this recording can be read by your AI and kept here as text. Nothing is sent until you choose to."}
@@ -348,6 +379,19 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
                     {message.text}
                 </p>
             )}
+            {!running && plan.skipped > 0 && (
+                <p className="sr__status">
+                    {skippedLine(plan.skipped)}{" "}
+                    <button
+                        type="button"
+                        className="sr__forget sr__forget--inline"
+                        onClick={() => void offerSkippedAgain()}
+                        title="If your AI couldn't read them, this lets you send them again."
+                    >
+                        Offer them again
+                    </button>
+                </p>
+            )}
             {running ? (
                 <div className="sr__running">
                     <p className="sr__status" role="status" aria-live="polite">
@@ -390,7 +434,7 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
                                             <span>Send this picture</span>
                                         </label>
                                         <span className="sr-confirm__app">{describe(zoomed)}</span>
-                                        <button type="button" className="btn-secondary" onClick={() => setZoomed(null)} autoFocus>
+                                        <button type="button" className="btn-secondary" onClick={unzoom} autoFocus>
                                             All pictures
                                         </button>
                                     </div>
@@ -412,6 +456,7 @@ export function ScreenReadings({ meetingId, onJump }: Props) {
                                                     <button
                                                         type="button"
                                                         className="sr-pick__view"
+                                                        data-pick={s.state_id}
                                                         onClick={() => setZoomed(s)}
                                                         aria-label={`Look at the ${describe(s)}`}
                                                     >

@@ -53,6 +53,13 @@
   cursor: pointer;
 }
 
+.sr__forget--inline {
+  margin-left: 0;
+  padding: 0;
+  font-size: inherit;
+  text-decoration: underline;
+}
+
 .sr__forget:hover:not(:disabled) {
   color: var(--text-primary, #f5f5f5);
   text-decoration: underline;

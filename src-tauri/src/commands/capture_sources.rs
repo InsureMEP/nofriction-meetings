@@ -75,7 +75,7 @@ pub async fn snap_capture_target(
     // it, as the recording's own captures do (capture_engine.rs)
     let ((image, label, app_name, _), front) = tokio::task::spawn_blocking(move || {
         let front = match t {
-            CaptureTarget::Display { .. } => crate::privacy_filter::front_window(),
+            CaptureTarget::Display { id } => crate::privacy_filter::front_window_on(id),
             CaptureTarget::Window { .. } => None,
         };
         CaptureEngine::capture_target(&t).map(|shot| (shot, front))

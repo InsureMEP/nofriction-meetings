@@ -595,11 +595,13 @@ function screenPlan(id: string) {
             app_name,
             image_path: demoPicture(kind, text),
             whole_display: kind === "Screen" && !app_name,
+            iphone_screen: false,
         })),
         total: readable.length,
         already: readable.length - unread.length,
         more: unread.length - send.length,
         left_out: all.length - readable.length,
+        skipped: [...read.values()].filter((t) => !t).length,
         destination: !AI_NONE ? SCREEN_HOST : null,
         model: !AI_NONE ? SCREEN_MODEL : null,
         local: false,
@@ -664,6 +666,14 @@ function readScreens(id: string, confirmed: ScreensConfirmed) {
 
 function forgetScreenReading(id: string, stateId: string): boolean {
     return screensRead.get(id)?.delete(stateId) ?? false;
+}
+
+function forgetSkippedScreenReadings(id: string): number {
+    const read = screensRead.get(id);
+    if (!read) return 0;
+    const empty = [...read.entries()].filter(([, t]) => !t).map(([k]) => k);
+    empty.forEach((k) => read.delete(k));
+    return empty.length;
 }
 
 function stopScreenReading(id: string): boolean {
@@ -1199,6 +1209,8 @@ function handle(cmd: string, args: Args): unknown {
             return stopScreenReading(a.meetingId);
         case "forget_screen_reading":
             return forgetScreenReading(a.meetingId, a.stateId);
+        case "forget_skipped_screen_readings":
+            return forgetSkippedScreenReadings(a.meetingId);
         case "generate_meeting_report":
         case "fill_in_notes":
         case "draft_followup_email":

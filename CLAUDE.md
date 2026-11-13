@@ -207,14 +207,18 @@ these rules apply.
     key files, noFriction's own window);
     that is decided on the Mac, not left to the model. It works from the
     window a screen was captured from; a whole-display capture is judged
-    by the window that was in front (`screen_states.front_app` /
-    `front_title`, set at capture, never sent). A private window that was
+    by the window that was in front on that display, never one of
+    noFriction's own (`privacy_filter::front_window_on`, stored in
+    `screen_states.front_app` / `front_title` at capture, never sent).
+    Screens recorded before that have no such note. A private window that was
     only visible behind another can't be recognised, so the confirmation
     shows every picture whole and enlargeable: don't crop those tiles and
     don't claim more than this in user-facing text. The run and its
     sender are private to `screen_reading.rs`; only the confirmation's
-    command reaches them. An endpoint error stops the run and leaves the
-    screen unread; only an answer marks a screen read.
+    command reaches them. Only an answer marks a screen read. An endpoint
+    that refuses or fails stops the run and leaves the screen unread (once
+    it has read a picture in that run, one rejection is skipped as the
+    picture's own problem; a second in a row stops it).
     Captions and picture picks still send text about a picture, never the
     picture. The policy guard lists every file allowed to build an image
     message; add to that list on purpose, with the click that leads there.

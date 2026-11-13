@@ -36,9 +36,10 @@ pub struct CapturedFrame {
     /// Owning app for window captures
     pub app_name: Option<String>,
     /// Whole-display captures: the app and title of the window that was in
-    /// front when the picture was taken. Never shown and never sent; it lets
-    /// Read the screens leave out a display that had Mail, a password app
-    /// or a terminal in front.
+    /// front on that display when the picture was taken (never one of
+    /// noFriction's own). Never shown and never sent; it lets Read the
+    /// screens leave out a display that had Mail, a password app or a
+    /// terminal in front.
     pub front: Option<(String, String)>,
 }
 
@@ -796,23 +797,27 @@ impl CaptureEngine {
             let captured = tokio::task::spawn_blocking(move || {
                 current
                     .iter()
-                    .map(|t| (t.clone(), Self::capture_target(t)))
+                    .map(|t| {
+                        // A whole display: which window was in front of it,
+                        // read just before the picture is taken
+                        let front = match t {
+                            CaptureTarget::Display { id } => crate::privacy_filter::front_window_on(*id),
+                            CaptureTarget::Window { .. } => None,
+                        };
+                        (t.clone(), Self::capture_target(t), front)
+                    })
                     .collect::<Vec<_>>()
             })
             .await
             .unwrap_or_default();
 
             let timestamp = chrono::Utc::now();
-            for (target, result) in captured {
+            for (target, result, front) in captured {
                 match result {
                     Ok((image, label, app_name, mon_id)) => {
                         missing_logged.remove(&target.key());
                         let num = frame_number.fetch_add(1, Ordering::SeqCst);
                         frame_count.fetch_add(1, Ordering::SeqCst);
-                        let front = match target {
-                            CaptureTarget::Display { .. } => crate::privacy_filter::front_window(),
-                            CaptureTarget::Window { .. } => None,
-                        };
                         let frame = CapturedFrame {
                             timestamp,
                             image: Arc::new(image),

@@ -602,7 +602,7 @@ impl DatabaseManager {
         // Which display/window a state came from (multi-source capture)
         ensure_columns(&mut conn, "screen_states", &[("source_key", "TEXT")]).await?;
         // Whole-display captures: the app and window that were in front
-        // (privacy_filter::front_window). On the screen's own row, so every
+        // (privacy_filter::front_window_on). On the screen's own row, so every
         // screen purge removes them with the screen (docs/REDACTION.md).
         ensure_columns(&mut conn, "screen_states", &[("front_app", "TEXT"), ("front_title", "TEXT")]).await?;
 

@@ -674,10 +674,16 @@ next picture.
     Lecture 4" in Keynote is a slide); a title decides only for a browser
     tab or an unknown app.
   - A capture of a whole display, which is the default, has no app. The
-    capture records which app and window were in front
-    (`screen_states.front_app`, `front_title`; never sent), and the display
+    capture records which app and window were in front on that display,
+    never one of noFriction's own (`privacy_filter::front_window_on`;
+    `screen_states.front_app`, `front_title`; never sent), and the display
     is left out when that one is private. Something private that was only
-    visible behind another window is not recognised.
+    visible behind another window is not recognised; nor is anything in a
+    whole-display screen recorded before this was added, a screenshot from
+    the iPhone, or a photo.
+  - Words in a file's name (credentials, payslip, id_rsa) leave a window
+    out in any app but a slide app; words about a page (inbox, sign in,
+    bank) only in a browser tab or an unknown app.
   - So the confirmation shows every picture whole (never cropped), each
     can be opened large, whole displays and photos are named as such, and
     a line asks the user to look at them first.
@@ -780,6 +786,18 @@ eight low defects. Fixed:
 | Docs promised more than the code | Reworded to what the lists do |
 | A consent retry could be started by words in an endpoint's error | Only the app's own answer starts it |
 
+**Third review (2026-11-13).** A check of those fixes confirmed the
+destination fix and again found no way to send an unconfirmed picture. It
+found three medium defects, two of them made by the fixes themselves:
+noFriction's own window counted as "in front" (so the screens captured
+while the user typed notes were left out, with the wrong reason shown);
+file-name words (credentials, payslip) had stopped leaving out files open
+in known apps; and "in front" was the front window of any display, not the
+one captured. All three are fixed, with the smaller ones: an endpoint's
+failure on the first picture now names the screen, pictures the AI kept
+nothing from can be offered again, iPhone screenshots are named, a call
+app's chat view is left out, and the guard's checks are pinned to counts.
+
 **Verified.** Unit tests: the library (one prompt per kind, the kind from
 app and window, the shared rules in every prompt, the prompt carrying
 nothing from the recording), what is left out as private and what is not,
@@ -800,10 +818,9 @@ pictures, the large view, tick boxes, progress, Stop, the list, Remove.
 from a real slide, whether it honours `skip` on a private screen, and what
 twelve requests cost are untested. Not run in the real app, so these were
 never seen working there: the pictures in the confirmation (they use the
-app's asset scope, as the capture bar's do), what macOS reports as the
-window in front during a real recording (with several displays it may be
-on another display than the one captured; the display is then judged by
-it all the same, which errs toward leaving out), and whether a private
-Safari window says so in its title. The website's privacy page doesn't
+app's asset scope, as the capture bar's do), and what macOS reports as
+the window in front of a display during a real recording (a slideshow in
+play mode, Stage Manager, helper windows of other apps). A private Safari
+window doesn't say so in its title, so it is not recognised. The website's privacy page doesn't
 mention pictures yet; it must before a build with this feature ships.
 

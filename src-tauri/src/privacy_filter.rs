@@ -232,13 +232,97 @@ pub fn should_skip_capture() -> bool {
     false
 }
 
-/// The app and title of the window in front right now, for a capture of a
-/// whole display (which has no app of its own). Kept beside the screen so a
-/// private one can be left out of Read the screens (screen_prompts.rs
-/// `never_sent`). None when the window server can't say; the title is empty
-/// without Screen Recording permission.
-pub fn front_window() -> Option<(String, String)> {
-    on_screen_windows()?.into_iter().next()
+/// A window counts as being on a display when its centre is inside the
+/// display and it is big enough to be a window someone is looking at
+/// (helper windows of a few points are skipped). Rectangles are
+/// (x, y, width, height) in the window server's global points.
+fn window_is_on(window: (f64, f64, f64, f64), display: (f64, f64, f64, f64)) -> bool {
+    let (x, y, w, h) = window;
+    let (dx, dy, dw, dh) = display;
+    if w < 80.0 || h < 60.0 {
+        return false;
+    }
+    let (cx, cy) = (x + w / 2.0, y + h / 2.0);
+    cx >= dx && cx < dx + dw && cy >= dy && cy < dy + dh
+}
+
+/// The app and title of the frontmost window on one display, for a capture
+/// of that whole display (which has no app of its own). Kept beside the
+/// screen so a display with a private app in front can be left out of Read
+/// the screens (screen_prompts.rs `never_sent`).
+///
+/// "In front" is the first normal window, front to back, that is on this
+/// display, visible, and not one of noFriction's own: the user's notes
+/// window being in front says nothing about what else the display showed.
+/// None when there is no such window or the window server can't say; the
+/// title is empty without Screen Recording permission.
+#[cfg(target_os = "macos")]
+pub fn front_window_on(display_id: u32) -> Option<(String, String)> {
+    use core_foundation::base::{CFType, TCFType};
+    use core_foundation::dictionary::{CFDictionary, CFDictionaryRef};
+    use core_foundation::number::CFNumber;
+    use core_foundation::string::CFString;
+    use core_graphics::display::CGDisplay;
+    use core_graphics::geometry::CGRect;
+    use core_graphics::window::{
+        copy_window_info, kCGNullWindowID, kCGWindowAlpha, kCGWindowBounds, kCGWindowLayer,
+        kCGWindowListExcludeDesktopElements, kCGWindowListOptionOnScreenOnly, kCGWindowName, kCGWindowOwnerName,
+        kCGWindowOwnerPID,
+    };
+
+    let screen = CGDisplay::new(display_id).bounds();
+    let display = (screen.origin.x, screen.origin.y, screen.size.width, screen.size.height);
+    let windows = copy_window_info(
+        kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
+        kCGNullWindowID,
+    )?;
+    let (k_layer, k_name, k_owner, k_pid, k_alpha, k_bounds) = unsafe {
+        (
+            CFString::wrap_under_get_rule(kCGWindowLayer),
+            CFString::wrap_under_get_rule(kCGWindowName),
+            CFString::wrap_under_get_rule(kCGWindowOwnerName),
+            CFString::wrap_under_get_rule(kCGWindowOwnerPID),
+            CFString::wrap_under_get_rule(kCGWindowAlpha),
+            CFString::wrap_under_get_rule(kCGWindowBounds),
+        )
+    };
+    let me = std::process::id() as i64;
+    for raw in windows.get_all_values() {
+        if raw.is_null() {
+            continue;
+        }
+        let dict: CFDictionary<CFString, CFType> =
+            unsafe { CFDictionary::wrap_under_get_rule(raw as CFDictionaryRef) };
+        let num = |k: &CFString| dict.find(k).and_then(|v| v.downcast::<CFNumber>());
+        // A normal window (not a menu, the Dock or an overlay), of another app, that can be seen
+        if num(&k_layer).and_then(|n| n.to_i64()) != Some(0) || num(&k_pid).and_then(|n| n.to_i64()) == Some(me) {
+            continue;
+        }
+        if num(&k_alpha).and_then(|n| n.to_f64()).is_some_and(|a| a < 0.05) {
+            continue;
+        }
+        let bounds = dict.find(&k_bounds).and_then(|v| {
+            let d: CFDictionary = unsafe { CFDictionary::wrap_under_get_rule(v.as_CFTypeRef() as CFDictionaryRef) };
+            CGRect::from_dict_representation(&d)
+        });
+        let Some(b) = bounds else { continue };
+        if !window_is_on((b.origin.x, b.origin.y, b.size.width, b.size.height), display) {
+            continue;
+        }
+        let text = |k: &CFString| {
+            dict.find(k)
+                .and_then(|v| v.downcast::<CFString>())
+                .map(|s| s.to_string())
+                .unwrap_or_default()
+        };
+        return Some((text(&k_owner), text(&k_name)));
+    }
+    None
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn front_window_on(_display_id: u32) -> Option<(String, String)> {
+    None
 }
 
 /// A stored window title says private or incognito browsing
@@ -275,6 +359,46 @@ mod tests {
         assert!(is_blocked_app("1Password 8"));
         assert!(is_blocked_app("Keychain Access"));
         assert!(!is_blocked_app("Visual Studio Code"));
+    }
+
+    #[test]
+    fn a_window_is_on_the_display_its_centre_is_in() {
+        let main = (0.0, 0.0, 1512.0, 982.0);
+        let projector = (1512.0, 0.0, 1920.0, 1080.0);
+        // A window in the middle of the main display
+        assert!(window_is_on((200.0, 100.0, 900.0, 600.0), main));
+        assert!(!window_is_on((200.0, 100.0, 900.0, 600.0), projector));
+        // Full screen on the projector
+        assert!(window_is_on((1512.0, 0.0, 1920.0, 1080.0), projector));
+        assert!(!window_is_on((1512.0, 0.0, 1920.0, 1080.0), main));
+        // Dragged across the edge: it belongs to the display its centre is on
+        assert!(window_is_on((1000.0, 100.0, 800.0, 600.0), main));
+        assert!(window_is_on((1200.0, 100.0, 800.0, 600.0), projector));
+        // A display above the main one has negative coordinates
+        assert!(window_is_on((100.0, -900.0, 800.0, 600.0), (0.0, -1080.0, 1920.0, 1080.0)));
+        // A helper window of a few points isn't something on screen
+        assert!(!window_is_on((10.0, 10.0, 1.0, 1.0), main));
+        assert!(!window_is_on((10.0, 10.0, 300.0, 20.0), main));
+    }
+
+    /// The lookup runs on every captured frame of a whole display, so it
+    /// is run here for real: against the window server, for the main
+    /// display and for a display that doesn't exist. It reads which windows
+    /// are open (their names only with Screen Recording permission), takes
+    /// no picture and shows no prompt. Nothing it returns is printed.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_front_window_lookup_runs_against_the_window_server() {
+        let main = core_graphics::display::CGDisplay::main().id;
+        for _ in 0..50 {
+            let front = front_window_on(main);
+            // Whatever is in front, it is never this process
+            if let Some((app, _)) = &front {
+                assert!(app.len() < 400);
+            }
+        }
+        // A display that isn't connected has no bounds, so nothing is on it
+        assert_eq!(front_window_on(0xFFFF_FFF0), None);
     }
 
     #[test]

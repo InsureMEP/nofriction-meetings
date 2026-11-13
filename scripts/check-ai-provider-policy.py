@@ -315,6 +315,11 @@ def audit(root):
     need(re.search(r'^    struct Live;', reading_rs, re.M) is not None and not re.search(r'\bpub(?:\([a-z:]+\))?\s+struct Live\b', reading_rs),
          'screen_reading.rs: the live sender must stay private to its commands module')
     need(reading_rs.count('Msg::user_with_image(') == 1, 'screen_reading.rs: exactly one place builds an image message')
+    need('vec![Msg::user_with_image(prompt.to_string(), &mime, b64)],' in reading_rs,
+         'screen_reading.rs: the request is one message, the fixed prompt and the picture, and nothing else')
+    need(reading_rs.count('&Live') == 1, 'screen_reading.rs: the live sender is used once, by the confirmation\'s command')
+    need(reading_rs.count('delete_waiting(pool, meeting_id)') == 2,
+         'screen_reading.rs: a waiting Delete is checked when the plan is made and before every picture')
     need('confirmed: Confirmed' in reading_rs and 'expect: usize' not in reading_rs,
          'Read the screens must send the confirmed ids, never a count worked out again')
     for needle, why in (
@@ -344,7 +349,7 @@ def audit(root):
     for path in sorted((root / 'src').rglob('*.ts*')):
         if path.name.endswith('.test.ts'):
             continue
-        ui_calls += [path.relative_to(root).as_posix()] * len(re.findall(r'["\']read_screens["\']', path.read_text()))
+        ui_calls += [path.relative_to(root).as_posix()] * len(re.findall(r'["\'`]read_screens["\'`]', path.read_text()))
     need(ui_calls == ['src/components/ScreenReadings.tsx'],
          f'Read the screens is invoked from one place in the UI (the confirmation), found: {ui_calls}')
     # Readers of on-screen text. What the AI read from a picture lives in the
@@ -360,16 +365,21 @@ def audit(root):
         rel = path.relative_to(root).as_posix()
         if '/tests' in rel or rel.endswith('_tests.rs') or rel in snapshot_readers:
             continue
-        if re.search(r'FROM text_snapshots\b', path.read_text()):
+        if re.search(r'(?:FROM|JOIN)\s+text_snapshots\b', path.read_text()):
             errors.append(f'{rel} reads text_snapshots: leave out source = \'screen_reading\' (an AI\'s words), then list the file in the guard')
-    for rel, needle in (
-        ('src-tauri/src/meeting_links.rs', "COALESCE(source, '') != ?2"),
-        ('src-tauri/src/data_editor.rs', "COALESCE(source, '') != 'screen_reading'"),
+    for rel, needle, times in (
+        ('src-tauri/src/meeting_links.rs', "COALESCE(source, '') != ?2", 1),
+        ('src-tauri/src/data_editor.rs', "COALESCE(source, '') != 'screen_reading'", 2),
     ):
-        need(needle in (root / rel).read_text(), f'{rel} must leave what the AI read from a screen out of what it lists')
+        text = (root / rel).read_text()
+        need(text.count(needle) == times and len(re.findall(r'(?:FROM|JOIN)\s+text_snapshots\b', text)) == times,
+             f'{rel}: every read of text_snapshots must leave out what the AI read from a screen')
     database_rs = (root / 'src-tauri/src/database.rs').read_text()
     need("AND COALESCE(source, '') != '{}'" in database_rs and "WHERE meeting_id = ? AND COALESCE(source, '') != 'screen_reading'" in database_rs,
          'database.rs: chat search and get_text_snapshots_by_meeting must leave what the AI read from a screen out')
+    # The third read is get_latest_snapshot, by episode: a reading has none
+    need(len(re.findall(r'(?:FROM|JOIN)\s+text_snapshots\b', database_rs)) == 3,
+         'database.rs: a new read of text_snapshots must leave out source = \'screen_reading\'; then update this count')
     for path in sorted((root / 'src-tauri/src').rglob('*.rs')):
         rel = path.relative_to(root).as_posix()
         if rel == 'src-tauri/src/screen_reading.rs':

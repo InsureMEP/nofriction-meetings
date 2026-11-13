@@ -43,10 +43,13 @@
 //     leave these rows out: they are the AI's words, not text captured from
 //     the screen.
 //   - A screen counts as read only when the AI answered about it: a reading,
-//     or a plain "nothing to keep". An endpoint error stops the run and
-//     leaves the screen unread; an answer that can't be used leaves it
-//     unread too. What was read can be removed again (`forget`), and the
-//     screen is then unread.
+//     or a plain "nothing to keep". An endpoint that refuses or fails
+//     stops the run and leaves the screen unread (once it has read a
+//     picture in this run, one rejection is skipped as that picture's own
+//     problem; a second in a row stops the run). An answer that can't be
+//     used leaves its screen unread too. What was read can be removed
+//     again (`forget`, and `forget_skipped` for the ones with nothing to
+//     keep), and those screens are then unread.
 //   - The answer is untrusted: parsed tolerantly, capped, and never logged.
 
 use crate::ai::{AiError, Kind};
@@ -94,6 +97,8 @@ pub struct Screen {
     pub photo: bool,
     /// A capture of a whole display: everything that was on it
     pub whole_display: bool,
+    /// A screenshot from the iPhone (it arrived by sync, with no app)
+    pub iphone_screen: bool,
     /// Whole-display captures: the app and title of the window in front
     pub front_app: Option<String>,
     pub front_title: Option<String>,
@@ -335,6 +340,8 @@ async fn pictures(pool: &Pool<Sqlite>, meeting_id: &str, only: Option<&str>) -> 
                 keyframe_path: path,
                 photo: r.get::<Option<String>, _>("state_type").as_deref() == Some("photo"),
                 whole_display: r.get::<Option<String>, _>("source_key").is_some_and(|k| k.starts_with("display:")),
+                iphone_screen: r.get::<Option<String>, _>("source_key").as_deref() == Some("sync")
+                    && r.get::<Option<String>, _>("state_type").as_deref() != Some("photo"),
                 front_app: r.get("front_app"),
                 front_title: r.get("front_title"),
             })
@@ -383,6 +390,8 @@ pub struct PlanItem {
     pub image_path: String,
     /// A capture of a whole display: it shows everything that was on it
     pub whole_display: bool,
+    /// A screenshot from the iPhone
+    pub iphone_screen: bool,
 }
 
 /// What Read the screens would do right now. Nothing is sent to make it.
@@ -398,6 +407,9 @@ pub struct Plan {
     pub more: usize,
     /// Pictures that are never sent because they look private
     pub left_out: usize,
+    /// Pictures the AI answered about with nothing to keep. They count as
+    /// read; `forget_skipped` makes them unread again.
+    pub skipped: usize,
     /// Where the pictures would go (the host), when an image model is set up
     pub destination: Option<String>,
     pub model: Option<String>,
@@ -462,6 +474,7 @@ pub async fn plan(pool: &Pool<Sqlite>, meeting_id: &str) -> Result<Plan, String>
                 app_name: s.app_name.clone(),
                 image_path: s.keyframe_path.clone(),
                 whole_display: s.whole_display,
+                iphone_screen: s.iphone_screen,
             }
         })
         .collect();
@@ -478,7 +491,17 @@ pub async fn plan(pool: &Pool<Sqlite>, meeting_id: &str) -> Result<Plan, String>
     } else {
         dest.blocked
     };
+    let skipped: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM text_snapshots WHERE source = ?1 AND TRIM(text) = '' AND state_id IN \
+         (SELECT state_id FROM screen_states WHERE meeting_id = ?2)",
+    )
+    .bind(SOURCE)
+    .bind(meeting_id)
+    .fetch_one(pool)
+    .await
+    .map_err(err("Couldn't read the screens"))?;
     Ok(Plan {
+        skipped: skipped.max(0) as usize,
         more: total - read - send.len(),
         send,
         total,
@@ -642,6 +665,15 @@ async fn still_sendable(pool: &Pool<Sqlite>, meeting_id: &str, state_id: &str) -
     Ok(read.is_none().then_some(screen))
 }
 
+/// The error was raised by the app before a request was made: nothing was
+/// sent for it.
+fn before_sending(e: &AiError) -> bool {
+    matches!(
+        e,
+        AiError::ConsentRequired(_) | AiError::ProRequired | AiError::NoProvider | AiError::NoKey(_) | AiError::VisionUnavailable | AiError::BadUrl(_)
+    )
+}
+
 /// Send the confirmed screens, one request each, and keep what was read.
 ///
 /// Exactly `confirmed.state_ids` are considered, in that order: the list is
@@ -650,11 +682,12 @@ async fn still_sendable(pool: &Pool<Sqlite>, meeting_id: &str, state_id: &str) -
 /// run, the destination is still the one confirmed, no Delete is waiting,
 /// and the screen may still be sent.
 ///
-/// An AI error on the first request is returned as the error (nothing was
-/// kept; for consent and Pro nothing was sent either, and the caller may
-/// ask and call again with the same confirmation). After that, an error
-/// ends the run with `stopped` set, and what was read is kept: a partly
-/// completed run is never repeated by itself.
+/// If the app itself refuses the first request (Pro, consent, no model),
+/// that is returned as the error: nothing was sent, and the caller may ask
+/// the user and call again with the same confirmation. Any failure of the
+/// endpoint ends the run with `stopped` and the screen it stopped at, and
+/// what was read is kept: a run that has made a request is never repeated
+/// by itself.
 async fn read_screens(
     reader: &dyn Reader,
     pool: &Pool<Sqlite>,
@@ -767,12 +800,13 @@ async fn read_screens(
                 summary.failed += 1;
                 doubtful = true;
             }
+            // The app itself said no before anything was sent (Pro, consent,
+            // no model): the caller may ask the user and call again
+            Err(e) if requests == 1 && before_sending(&e) => return Err(e.to_string()),
             // The endpoint refused or failed: the next picture would meet the
-            // same, so none is sent. This screen stays unread.
+            // same, so none is sent. This screen stays unread, and the
+            // summary says which one it was.
             Err(e) => {
-                if requests == 1 {
-                    return Err(e.to_string());
-                }
                 summary.stopped = Some(e.to_string());
                 summary.stopped_at_ms = Some(screen.ms);
                 break;
@@ -797,6 +831,22 @@ pub async fn forget(pool: &Pool<Sqlite>, meeting_id: &str, state_id: &str) -> Re
     .await
     .map_err(err("Couldn't remove what was read"))?;
     Ok(done.rows_affected() > 0)
+}
+
+/// Forget that the AI looked at the screens it kept nothing from, so they
+/// can be sent again. For a model that answered "nothing to keep" about
+/// pictures it couldn't read. Readings with text are not touched.
+pub async fn forget_skipped(pool: &Pool<Sqlite>, meeting_id: &str) -> Result<usize, String> {
+    let done = sqlx::query(
+        "DELETE FROM text_snapshots WHERE source = ?1 AND TRIM(text) = '' \
+         AND state_id IN (SELECT state_id FROM screen_states WHERE meeting_id = ?2)",
+    )
+    .bind(SOURCE)
+    .bind(meeting_id)
+    .execute(pool)
+    .await
+    .map_err(err("Couldn't offer the screens again"))?;
+    Ok(done.rows_affected() as usize)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -829,8 +879,9 @@ pub mod commands {
     }
 
     /// The user's image model: the only sender of a picture in the app.
-    /// `ai::complete_vision` checks Pro, consent and the endpoint policy,
-    /// and refuses Apple's on-device model.
+    /// `ai::complete_vision_if` checks Pro, consent and the endpoint
+    /// policy, refuses Apple's on-device model, and sends only on the
+    /// target it compared to the confirmed destination.
     struct Live;
 
     #[async_trait::async_trait]
@@ -906,7 +957,7 @@ pub mod commands {
             }
             running.insert(meeting_id.clone(), cancel.clone());
         }
-        let _guard = RunGuard(meeting_id.clone());
+        let guard = RunGuard(meeting_id.clone());
         let emit = {
             let app = app.clone();
             let id = meeting_id.clone();
@@ -915,10 +966,22 @@ pub mod commands {
             }
         };
         let outcome = super::read_screens(&Live, state.database.pool(), &meeting_id, &confirmed, &cancel, &emit).await;
+        // The run is over before anyone is told so: a view that reloads on
+        // the event must not still see it as running
+        drop(guard);
         // However it ended: a view that didn't start this run (the user left
         // and came back) learns here that it is over
         let _ = app.emit(PROGRESS_EVENT, serde_json::json!({ "meetingId": meeting_id, "finished": true }));
         outcome
+    }
+
+    /// Offer again the screens the AI kept nothing from.
+    #[tauri::command(rename_all = "camelCase")]
+    pub async fn forget_skipped_screen_readings(state: State<'_, AppState>, meeting_id: String) -> Result<usize, String> {
+        if RUNNING.lock().contains_key(&meeting_id) {
+            return Err(ALREADY_RUNNING.into());
+        }
+        forget_skipped(state.database.pool(), &meeting_id).await
     }
 
     /// Remove what was read from one screen, so it can be read again.
@@ -967,6 +1030,7 @@ mod tests {
             keyframe_path: format!("/tmp/{id}.png"),
             photo: false,
             whole_display: false,
+            iphone_screen: false,
             front_app: None,
             front_title: None,
         }
@@ -1336,8 +1400,10 @@ mod tests {
         // The endpoint can't take a picture: one request, an error, nothing marked
         let f = fx(3).await;
         let m = Mock::new(vec![Err(AiError::Other("HTTP 400: this model does not support image input".into()))]);
-        let e = run(&m, &f, &["s0", "s1", "s2"]).await.unwrap_err();
-        assert!(e.contains("does not support image input"), "{e}");
+        let s = run(&m, &f, &["s1", "s0", "s2"]).await.unwrap();
+        assert!(s.stopped.as_deref().is_some_and(|w| w.contains("does not support image input")), "{:?}", s.stopped);
+        assert_eq!(s.stopped_at_ms, Some(60_000), "it says which screen, so the user can leave that one out");
+        assert_eq!((s.read, s.skipped, s.failed, s.gone), (0, 0, 0, 0));
         assert_eq!(m.sent.lock().len(), 1, "the other pictures are not uploaded to an endpoint that just refused one");
         assert!(looked(&f).await.is_empty(), "a screen the AI never answered about is not read");
         assert_eq!(plan(f.db.pool(), "m1").await.unwrap().send.len(), 3, "all three can still be read");
@@ -1428,6 +1494,12 @@ mod tests {
         let offered: Vec<(&str, &str)> = p.send.iter().map(|i| (i.state_id.as_str(), i.kind)).collect();
         assert_eq!(offered, vec![("s0", "Slide"), ("s3", "Photo")]);
         assert_eq!((p.total, p.left_out, p.more), (2, 2, 0));
+        assert!(!p.send[1].iphone_screen && !p.send[1].whole_display, "a photo is a photo");
+        // A screenshot from the iPhone is named as one: nothing on the Mac can judge it
+        sqlx::query("UPDATE screen_states SET state_type = 'screen' WHERE state_id = 's3'").execute(pool).await.unwrap();
+        let again = plan(pool, "m1").await.unwrap();
+        assert_eq!((again.send[1].kind, again.send[1].iphone_screen, again.send[1].whole_display), ("Screen", true, false));
+        sqlx::query("UPDATE screen_states SET state_type = 'photo' WHERE state_id = 's3'").execute(pool).await.unwrap();
 
         // A caller that names a private screen anyway: it is not sent
         let m = Mock::new(vec![Ok(SLIDE), Ok(r#"{"kind": "whiteboard", "title": "The pump", "points": ["3 Na+ out, 2 K+ in"]}"#)]);
@@ -1525,6 +1597,22 @@ mod tests {
         assert!(!forget(pool, "m1", "s0").await.unwrap());
         let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM text_snapshots WHERE snapshot_id = 'ocr1'").fetch_one(pool).await.unwrap();
         assert_eq!(n, 1);
+
+        // A model that couldn't read the pictures says "nothing to keep" about
+        // both: they count as read, with no reading to remove
+        let s = run(&Mock::new(vec![Ok(r#"{"skip": true}"#), Ok("{}")]), &f, &["s0", "s1"]).await.unwrap();
+        assert_eq!(s, Summary { skipped: 2, ..Default::default() });
+        let p = plan(pool, "m1").await.unwrap();
+        assert_eq!((p.send.len(), p.already, p.skipped), (0, 2, 2));
+        // They can be offered again, in one step; captured text and real readings stay
+        assert_eq!(forget_skipped(pool, "m2").await.unwrap(), 0);
+        assert_eq!(forget_skipped(pool, "m1").await.unwrap(), 2);
+        let p = plan(pool, "m1").await.unwrap();
+        assert_eq!((p.send.len(), p.already, p.skipped), (2, 0, 0));
+        assert_eq!(n, 1);
+        run(&Mock::new(vec![Ok(SLIDE)]), &f, &["s0"]).await.unwrap();
+        assert_eq!(forget_skipped(pool, "m1").await.unwrap(), 0, "a reading with text is not a skip");
+        assert_eq!(readings(pool, "m1").await.unwrap().len(), 1);
     }
 
     #[tokio::test]
@@ -1536,7 +1624,8 @@ mod tests {
             .execute(pool)
             .await
             .unwrap();
-        // In front: Keynote, Mail, a private browser window, and (an older capture) nothing recorded
+        // In front: Keynote, Mail, a private browser window, and (an older capture) nothing recorded.
+        // noFriction's own window is never recorded as "in front" (privacy_filter::front_window_on)
         for (id, app, title) in [("s0", "Keynote", "Lecture 7"), ("s1", "Mail", "Inbox"), ("s2", "Safari", "Private Browsing")] {
             f.db.set_screen_state_front(id, app, title).await.unwrap();
         }

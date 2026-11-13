@@ -467,8 +467,11 @@ UI in `src/components/redaction/Redaction.tsx`.
     and `front_title`, an app name and a window title) is on the screen's
     own row, so it goes with the row in every screen purge, in the live
     database and in backups. It is never sent anywhere and never synced.
-  - **Remove** in Notes (`screen_reading::forget`) deletes one screen's
-    reading row and nothing else; the screen is then unread.
+  - **Remove** in Notes (`screen_reading::forget`, and `forget_skipped`
+    for empty ones) deletes reading rows from the live database and nothing
+    else; the screen is then unread. It is not a purge: a backup made
+    earlier keeps that reading until the screen itself is deleted or
+    struck, which removes it everywhere. The user guide says so.
   - Readings are deliberately not given to Make notes or Fill in the
     blanks: notes would then quote a screen, and a screen's purge doesn't
     clean notes. Don't feed them to any AI prompt without first making the

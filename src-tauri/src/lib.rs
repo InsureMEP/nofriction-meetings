@@ -863,6 +863,7 @@ pub fn run() {
             screen_reading::commands::read_screens,
             screen_reading::commands::stop_screen_reading,
             screen_reading::commands::forget_screen_reading,
+            screen_reading::commands::forget_skipped_screen_readings,
             screen_reading::commands::get_screen_readings,
             commands::get_ai_automation,
             commands::draft_followup_email,

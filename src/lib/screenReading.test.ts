@@ -14,6 +14,7 @@ import {
     nothingLeft,
     pictureSource,
     readingParts,
+    skippedLine,
     summaryLine,
     tickedIds,
     trapTab,
@@ -29,6 +30,7 @@ const item = (over: Partial<PlanItem>): PlanItem => ({
     app_name: "Keynote",
     image_path: "/frames/s0.png",
     whole_display: false,
+    iphone_screen: false,
     ...over,
 });
 
@@ -38,6 +40,7 @@ const plan = (over: Partial<ScreenPlan>): ScreenPlan => ({
     already: 0,
     more: 28,
     left_out: 0,
+    skipped: 0,
     destination: "api.example.com",
     model: "vision-1",
     local: false,
@@ -97,9 +100,9 @@ test("the confirmation says what is left out", () => {
     // Private ones are counted apart and said plainly
     assert.equal(
         confirmScope(plan({ total: 1, more: 0, left_out: 3 })),
-        "This recording has 1 picture that can be read. 3 are never sent because they look private (mail, messages, passwords or a terminal).",
+        "This recording has 1 picture that can be read. 3 are never sent because they look private (mail, messages, passwords, a terminal or private browsing).",
     );
-    assert.equal(leftOutLine(1), "1 is never sent because it looks private (mail, messages, passwords or a terminal).");
+    assert.equal(leftOutLine(1), "1 is never sent because it looks private (mail, messages, passwords, a terminal or private browsing).");
 });
 
 test("the button goes away only when nothing readable is left", () => {
@@ -155,10 +158,16 @@ test("a whole display and a photo are named, and the user is asked to look first
     const photo = item({ state_id: "p", app_name: null, kind: "Photo" });
     assert.equal(
         lookFirstLine(plan({ send: [item({}), display] })),
-        "A whole display shows everything that was on it, not one app. Open each picture and untick any you wouldn't show your AI.",
+        "A whole screen shows everything that was on it, not one app. Open each picture and untick any you wouldn't show your AI.",
     );
+    // A screenshot from the iPhone is a whole screen too, and is named
+    const phone = item({ state_id: "i", app_name: null, iphone_screen: true, kind: "Screen" });
+    assert.equal(pictureSource(phone), "iPhone screen");
+    assert.ok((lookFirstLine(plan({ send: [phone] })) ?? "").startsWith("A whole screen shows everything that was on it, not one app."));
+    assert.equal(skippedLine(1), "1 picture had nothing to keep.");
+    assert.equal(skippedLine(12), "12 pictures had nothing to keep.");
     assert.equal(lookFirstLine(plan({ send: [photo] })), "A photo can show anything. Open each picture and untick any you wouldn't show your AI.");
-    assert.match(lookFirstLine(plan({ send: [display, photo] })) ?? "", /^A whole display shows everything that was on it, and a photo can show anything\./);
+    assert.match(lookFirstLine(plan({ send: [display, photo] })) ?? "", /^A whole screen shows everything that was on it, and a photo can show anything\./);
 });
 
 test("only the app's own ask-first answers are retried, never an endpoint's words", () => {

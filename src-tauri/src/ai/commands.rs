@@ -347,6 +347,9 @@ pub async fn ai_status() -> Result<AiStatus, String> {
 /// on-device model for text and a remote endpoint for Read the screens.
 fn what_leaves(text: Option<&ActiveInfo>, vision: Option<&ActiveInfo>) -> String {
     let words = match text {
+        None if vision.is_some_and(|v| v.provider != providers::APPLE_PROVIDER) => {
+            "No AI is set up for transcripts and notes, so they stay on this Mac.".to_string()
+        }
         None => "No AI provider set up. Nothing leaves this device.".to_string(),
         Some(t) if t.provider == providers::APPLE_PROVIDER => {
             "AI runs on Apple's on-device model. Transcripts and notes never leave this Mac.".to_string()
@@ -427,6 +430,10 @@ mod what_leaves_tests {
         let s = what_leaves(Some(&remote), Some(&lan));
         assert!(s.contains("are sent to api.example.com with your API key"), "{s}");
         assert!(s.contains("go to ollama.local on your own machine or network, only when you press Read the screens"), "{s}");
+        // Only an image model is set up: the text stays, and the line doesn't say nothing leaves
+        let s = what_leaves(None, Some(&remote));
+        assert!(!s.contains("Nothing leaves"), "{s}");
+        assert!(s.starts_with("No AI is set up for transcripts and notes") && s.contains("are sent to api.example.com only when"), "{s}");
         // It no longer says screenshots go with every screen feature
         assert!(!what_leaves(Some(&remote), Some(&remote)).contains("screenshots"));
     }

@@ -248,16 +248,29 @@ const PRIVATE_APPS: &[&str] = &[
     "terminal", "iterm", "iterm2", "warp", "kitty", "alacritty", "ghostty", "hyper", "wezterm", "tabby", "termius",
 ];
 
-/// Window titles (whole words) that say the same about a browser tab, or
-/// about a window of an app this library doesn't know.
-const PRIVATE_TITLE_WORDS: &[&str] = &[
+/// Words in a browser tab's title, or in the title of a window of an app
+/// this library doesn't know, that say the page is mail, chat, a sign-in
+/// page or a bank. Whole words. Not applied to an app that shows one kind
+/// of thing: "World Bank report.pdf" in Preview is a document.
+const PRIVATE_PAGE_WORDS: &[&str] = &[
     "gmail", "inbox", "mail", "webmail", "outlook", "proton mail", "protonmail", "fastmail",
     "whatsapp", "messenger", "telegram", "messages", "slack", "discord", "chat",
-    "password", "passwords", "1password", "bitwarden", "lastpass", "dashlane",
+    "1password", "bitwarden", "lastpass", "dashlane",
     "sign in", "log in", "login", "two factor", "verification code",
-    "bank", "banking", "paypal", "venmo", "tax return", "payslip", "pay stub",
-    "private key", "api key", "api keys", "secrets", "credentials", "id rsa", "id ed25519",
+    "bank", "banking", "paypal", "venmo",
 ];
+
+/// Words in a file's or document's name that say it holds secrets or money
+/// matters. Whole words, in any app except one that shows slides (a
+/// lecture may be about passwords; a file called credentials.json in an
+/// editor is not a lecture).
+const PRIVATE_FILE_WORDS: &[&str] = &[
+    "password", "passwords", "credentials", "secrets", "private key", "api key", "api keys", "id rsa", "id ed25519",
+    "tax return", "payslip", "pay stub",
+];
+
+/// A call app showing its chat or activity list instead of a call.
+const CALL_APP_CHAT_WORDS: &[&str] = &["chat", "chats", "activity"];
 
 /// Files that hold keys or secrets, whatever app shows them.
 const PRIVATE_EXTENSIONS: &[&str] = &[".pem", ".p8", ".p12", ".pfx", ".keychain", ".env", ".kdbx", ".ovpn"];
@@ -274,10 +287,12 @@ const PRIVATE_EXTENSIONS: &[&str] = &[".pem", ".p8", ".p12", ".pfx", ".keychain"
 /// every picture and lets the user leave any out, and the shared rules
 /// tell the AI to skip private content.
 ///
-/// A window's title is trusted to say what it shows only for a browser tab
-/// or an app this library doesn't know: "Password hashing — Lecture 4" in
-/// Keynote is a slide, in a browser it is left out. A file that holds keys
-/// is left out in any app.
+/// What a title is trusted to say depends on the app. Words about a page
+/// (inbox, sign in, bank) count only for a browser tab or an app this
+/// library doesn't know. Words in a file's name (credentials, payslip,
+/// id_rsa) count in every app except one that shows slides: "Password
+/// hashing — Lecture 4" in Keynote is a slide, "passwords.txt" in an editor
+/// is left out. A file with a key's extension is left out in any app.
 pub fn never_sent(app_name: Option<&str>, window_title: Option<&str>) -> bool {
     let app_raw = app_name.unwrap_or("").trim();
     let title_raw = window_title.unwrap_or("").trim();
@@ -298,9 +313,18 @@ pub fn never_sent(app_name: Option<&str>, window_title: Option<&str>) -> bool {
     if has_ext(&title, ".key") && !is_app(&app, &["keynote"]) {
         return true;
     }
+    let title_words = words(&title);
+    // A file or document named for what it holds
+    if !is_app(&app, SLIDE_APPS) && is_app(&title_words, PRIVATE_FILE_WORDS) {
+        return true;
+    }
+    // A call app on its chat, not on a call
+    if is_app(&app, CALL_APPS) && is_app(&title_words, CALL_APP_CHAT_WORDS) {
+        return true;
+    }
     // Private browsing, and tabs on mail, messages, sign-in pages and banks
     let title_says = app_kind(&app).is_none();
-    title_says && (crate::privacy_filter::is_private_title(title_raw) || is_app(&words(&title), PRIVATE_TITLE_WORDS))
+    title_says && (crate::privacy_filter::is_private_title(title_raw) || is_app(&title_words, PRIVATE_PAGE_WORDS))
 }
 
 /// What kind of screen this is, from the app and window it came from.
@@ -479,6 +503,14 @@ mod tests {
             (Some("Safari"), Some("Password hashing — Lecture 4")),
             // An app this library doesn't know: its title is all there is
             (Some("Some Viewer"), Some("Inbox — 3 unread")),
+            // A file named for what it holds, in an app that would otherwise be trusted
+            (Some("Visual Studio Code"), Some("credentials.json")),
+            (Some("Xcode"), Some("id_rsa")),
+            (Some("Preview"), Some("Payslip October.pdf")),
+            (Some("Notes"), Some("Passwords")),
+            (Some("Microsoft Word"), Some("Tax return 2026.docx")),
+            // A call app on its chat
+            (Some("Microsoft Teams"), Some("Chat | Microsoft Teams")),
             // Files that hold keys, in any app
             (Some("Visual Studio Code"), Some("server.key")),
             (Some("TextEdit"), Some("deploy.pem")),
@@ -502,6 +534,8 @@ mod tests {
             (Some("Preview"), Some("World Bank report.pdf")),
             (Some("Microsoft PowerPoint"), Some("Login flow redesign")),
             (Some("Xcode"), Some("LoginViewController.swift")),
+            (Some("Microsoft Teams"), Some("Weekly sync | Microsoft Teams")),
+            (Some("zoom.us"), Some("Zoom Meeting")),
             // Whole words only: not every title with "bank" or "line" in it
             (Some("Preview"), Some("Riverbank ecology.pdf")),
             (Some("Safari"), Some("Riverbank ecology")),
