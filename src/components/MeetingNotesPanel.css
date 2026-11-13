@@ -331,8 +331,9 @@
 
 .mn-busy .loading-spinner {
   flex: none;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
+  border-width: 2px;
 }
 
 .mn-busy__title {

@@ -28,7 +28,7 @@ iPhone side is listed where it differs.
   usually record is due, or a call app takes the microphone, the Record
   screen shows one card whose button starts it with the answers filled in.
   **Remind me when something starts** (on) sends it as a notification;
-  **Start by itself** (off) starts the recording. The tray's first item
+  **Record by itself** (off) starts the recording. The tray's first item
   starts what is up next.
 - **Notes are ready.** A notification when automatic notes finish and the
   app isn't in front, and a live **Making notes…** state in Notes.

@@ -134,7 +134,7 @@ function RecordingSettings({ showToast }: { showToast: (text: string, error?: bo
                 ]);
                 setRemind(r !== "false");
                 setAutoStart(a === "true");
-            } catch { /* defaults: remind on, start by itself off */ }
+            } catch { /* defaults: remind on, record by itself off */ }
         })();
     }, []);
 
@@ -282,9 +282,9 @@ function RecordingSettings({ showToast }: { showToast: (text: string, error?: bo
                 </div>
                 <div className="settings-row">
                     <div className="settings-label">
-                        <span className="label-main">Start by itself</span>
+                        <span className="label-main">Record by itself</span>
                         <span className="label-sub">
-                            Starts recording instead of asking, and tells you it did. Tell people you're recording.
+                            Records instead of asking, and tells you it did. Tell people you're recording.
                         </span>
                     </div>
                     <div
@@ -292,7 +292,7 @@ function RecordingSettings({ showToast }: { showToast: (text: string, error?: bo
                         onClick={() => saveStarting(AUTO_START_SETTING, !autoStart, setAutoStart)}
                         role="switch"
                         aria-checked={autoStart}
-                        aria-label="Start by itself"
+                        aria-label="Record by itself"
                         tabIndex={0}
                         onKeyDown={(e) => (e.key === " " || e.key === "Enter") && saveStarting(AUTO_START_SETTING, !autoStart, setAutoStart)}
                     >

@@ -83,6 +83,15 @@ export function itemsEmpty(kind: RecordingKind, anyNotes: boolean): string {
           : "No action items were found in the notes so far.";
 }
 
+/**
+ * The marks section holds the ✎ marks and the questions (not every ★), so
+ * it is named for them: "On the test and questions" for a class.
+ */
+export function markedTitle(kind: RecordingKind): string {
+    const third = kind === "class" ? "On the test" : kind === "personal" ? "To remember" : "Follow ups";
+    return `${third} and questions`;
+}
+
 export function markedEmpty(kind: RecordingKind): string {
     const third = kind === "class" ? "On the test" : kind === "personal" ? "Remember" : "Follow up";
     return `Nothing marked yet. While you record, Mark a moment and choose ${third} or Question: it shows up here.`;

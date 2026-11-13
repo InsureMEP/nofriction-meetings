@@ -10,7 +10,7 @@
 //!
 //! The suggestion is shown on the idle Record screen and in the tray. With
 //! the window away it is also a notification ("Remind me when something
-//! starts", on by default), and with "Start by itself" on (off by default:
+//! starts", on by default), and with "Record by itself" on (off by default:
 //! recording people is the user's act) it starts the recording.
 //!
 //! Everything is computed on this Mac from what is already stored. Nothing
@@ -41,7 +41,7 @@ pub const DISMISSED_SETTING: &str = "up_next_dismissed";
 
 /// Emitted when the suggestion changes (payload: `UpNext` or null).
 pub const CHANGED_EVENT: &str = "up_next";
-/// Emitted to start the suggested recording (tray item, Start by itself).
+/// Emitted to start the suggested recording (tray item, Record by itself).
 pub const START_EVENT: &str = "up_next_start";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -280,7 +280,7 @@ pub fn reminder(s: &UpNext) -> (String, String) {
     (title, "Click to record it.".to_string())
 }
 
-/// The notification when Start by itself began a recording.
+/// The notification when Record by itself began a recording.
 pub fn started_notice(s: &UpNext) -> (String, String) {
     let what = if s.source == "call" { "this call".to_string() } else { s.title.clone() };
     (format!("Recording {}", what), "Tell people you're recording. Click to open noFriction.".to_string())

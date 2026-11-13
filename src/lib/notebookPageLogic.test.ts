@@ -8,6 +8,7 @@ import {
     itemsEmpty,
     itemsTitle,
     markedEmpty,
+    markedTitle,
     reviewSummary,
     shortDate,
     splitItems,
@@ -41,6 +42,9 @@ test("empty sections say what fills them", () => {
     assert.match(markedEmpty("class"), /On the test or Question/);
     assert.match(markedEmpty("meeting"), /Follow up or Question/);
     assert.match(markedEmpty("personal"), /Remember or Question/);
+    assert.equal(markedTitle("class"), "On the test and questions");
+    assert.equal(markedTitle("meeting"), "Follow ups and questions");
+    assert.equal(markedTitle("personal"), "To remember and questions");
 });
 
 test("the headline counts recordings and time", () => {

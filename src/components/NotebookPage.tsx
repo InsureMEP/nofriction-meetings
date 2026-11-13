@@ -14,6 +14,7 @@ import {
     itemsEmpty,
     itemsTitle,
     markedEmpty,
+    markedTitle,
     reviewSummary,
     shortDate,
     splitItems,
@@ -221,7 +222,7 @@ export function NotebookPage({ notebook, refreshKey, isRecording, onOpenNotes, o
                     {reviewText ? reviewCard : null}
                     <section className="nb-card" aria-labelledby="nb-marked-title">
                         <h3 id="nb-marked-title" className="nb-card__title">
-                            Marked
+                            {markedTitle(kind)}
                             {page.marked.length > 0 && <span className="nb-card__count">{page.marked.length}</span>}
                         </h3>
                         {page.marked.length === 0 ? (

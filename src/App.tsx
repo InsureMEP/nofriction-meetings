@@ -111,7 +111,7 @@ function App() {
           await recording.pauseRecording();
         }
       }));
-      // Up next (up_next.rs): the tray's "Record BIO 101" and Start by itself
+      // Up next (up_next.rs): the tray's "Record BIO 101" and Record by itself
       // start what is suggested, with its type, length and notebook
       add(await listen<UpNext>(UP_NEXT_START_EVENT, async (e) => {
         if (!recording.isRecording && e.payload) {

@@ -113,7 +113,7 @@ moment.
   notification (**Settings → Recording → Remind me when something starts**,
   on). On the iPhone the notification is scheduled ahead from the routine,
   so it fires with the app closed.
-- **Start by itself** (Mac, off by default). When on, the same three
+- **Record by itself** (Mac, off by default). When on, the same three
   signals start the recording and a notification says so. It is opt-in
   because recording people is the user's act; the setting says "Tell people
   you're recording."
@@ -198,7 +198,7 @@ wrote.
 
 | Journey | v1 | v2 |
 |---|---|---|
-| Returning user, class is starting → recording (Mac) | Open app, Record, 3 answers, Start: 3 clicks min | 1 click on **Record BIO 101**, or 0 with Start by itself |
+| Returning user, class is starting → recording (Mac) | Open app, Record, 3 answers, Start: 3 clicks min | 1 click on **Record BIO 101**, or 0 with Record by itself |
 | Stop → reading notes (Mac) | Stop, Notes tab, (Make notes): 2–3 clicks | Stop: 1 click |
 | Stop → reading notes (iPhone) | Stop, Recordings, recording, scroll, Make notes: 4 taps | Stop: 1 tap |
 | "What's due in BIO 101?" | Open each lecture → Notes → scroll | Click **BIO 101** |
@@ -284,4 +284,4 @@ All times are local, as minutes of the day (no wrap past midnight).
 | The suggestion | **Up next**; button **Record \<name\>** | Smart start, auto-detect |
 | Dismissing it | **Not now** | Dismiss, Snooze |
 | The notebook's page | the notebook's name; sections **Due / Action items / To-dos**, **Marked**, **Review everything** | Dashboard, Course home, Hub |
-| The settings | **Remind me when something starts**, **Start by itself**, **Make notes automatically** | Auto-detect, Ambient, Smart |
+| The settings | **Remind me when something starts**, **Record by itself**, **Make notes automatically** | Auto-detect, Ambient, Smart |

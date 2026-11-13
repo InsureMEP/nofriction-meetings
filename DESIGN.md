@@ -213,7 +213,7 @@ Every async operation MUST have an error state that includes:
 | View | Purpose |
 |------|---------|
 | **Record** (⌘1) | Idle: a title, the privacy promise, one Record button; when something is starting, one **Up next** card whose button has the answer on it (**Record BIO 101**) and the plain button becomes **Record something else**. Recording: the capture bar (time left, Mark, Capture screen), the live transcript with the notes you type into it (one field under it: **Type a note**), the screens. No AI runs here. |
-| **Recordings** (⌘2) | One search field (⌘K), Notebook chips, the list by day; the open recording's title block and **Rewind · Notes · Links · Review guide**. Picking a Notebook chip opens the notebook's page beside the list: **Due / Action items / To-dos**, **Marked**, **Review everything**, **Record** and **Ask**. After Stop the recording opens on **Notes**, which starts with **What you wrote**. |
+| **Recordings** (⌘2) | One search field (⌘K), Notebook chips, the list by day; the open recording's title block and **Rewind · Notes · Links · Review guide**. Picking a Notebook chip opens the notebook's page beside the list: **Due / Action items / To-dos**, the ✎ marks and questions, **Review everything**, **Record** and **Ask**. After Stop the recording opens on **Notes**, which starts with **What you wrote**. |
 | **Lessons** (⌘3) | The local library of lesson sets (non-empty on first run: the built-in Stoichiometry course), **Import a lesson…**, and **Make lesson** (a Class recording → a lesson, with your AI; also on a Class recording in Recordings). A course opens to its lessons, mastery dashboard, final exam and certificate. Taking a lesson is fully offline and free. |
 | **Chat** (⌘4) | Ask your recordings, scoped to all, a notebook, a topic or one recording, with citations. |
 
@@ -258,8 +258,8 @@ Settings has six sections: Recording, Transcription, AI, Sync, Subscription
 | Their lines in the Notes view | **What you wrote** | My notes, user notes |
 | The suggestion to record | **Up next**; button **Record \<name\>**; the other button **Record something else** | Smart start, Auto-detect, Suggested |
 | Declining it | **Not now** | Dismiss, Snooze |
-| A notebook's page | the notebook's name; sections **Due** (class) / **Action items** (meeting) / **To-dos** (personal), **Marked**, **Review everything** | Dashboard, Course home, Hub |
-| The settings | **Remind me when something starts**, **Start by itself**, **Make notes automatically** | Auto-detect, Ambient, Smart |
+| A notebook's page | the notebook's name; sections **Due** (class) / **Action items** (meeting) / **To-dos** (personal), **On the test and questions** / **Follow ups and questions** / **To remember and questions**, **Review everything** | Dashboard, Course home, Hub |
+| The settings | **Remind me when something starts**, **Record by itself**, **Make notes automatically** | Auto-detect, Ambient, Smart |
 | A unit of study | lesson | module, chapter |
 | A course | lesson set / course | class (that is a recording type) |
 | Make one from a recording | **Make lesson** (verb and button, Lessons and a Class recording in Recordings; owner decision 2026-10-10); **Make again** to replace it | Generate |

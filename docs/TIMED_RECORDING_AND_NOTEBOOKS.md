@@ -66,7 +66,7 @@ Only a click or tap on a Record button shows it. Every other start uses the reme
 | ⌘N (File → Record). The Mac app has no global record hotkey; this is the shortcut | No: remembered |
 | Tray **Start Recording (Meeting, 60 min)** | No: remembered |
 | "Start New Segment" (75-minute prompt) | No: keeps the type, the notebook and the time that was left |
-| **Up next** card, the tray's **Record \<name\>**, **Start by itself** (`up_next.rs`) | No: the suggestion carries its own type, length and notebook (`planFor` in `src/lib/upNextLogic.ts`, `remember: false`, so the sheet's remembered answers stay the user's). It still goes through `start_recording` |
+| **Up next** card, the tray's **Record \<name\>**, **Record by itself** (`up_next.rs`) | No: the suggestion carries its own type, length and notebook (`planFor` in `src/lib/upNextLogic.ts`, `remember: false`, so the sheet's remembered answers stay the user's). It still goes through `start_recording` |
 | A notebook page's **Record** | No: that notebook, its usual type, the remembered length |
 
 On iOS the Record button shows the sheet (after the one-time recording notice the first time). The `-NFAutoRecord` test start uses the remembered length.

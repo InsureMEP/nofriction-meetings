@@ -6,7 +6,7 @@ import type { UpNext } from "./upNextLogic";
 
 /** The suggestion changed (payload: `UpNext` or null) */
 export const UP_NEXT_EVENT = "up_next";
-/** Start the suggested recording (the tray's first item, Start by itself) */
+/** Start the suggested recording (the tray's first item, Record by itself) */
 export const UP_NEXT_START_EVENT = "up_next_start";
 
 /** Settings keys (Settings → Recording) */

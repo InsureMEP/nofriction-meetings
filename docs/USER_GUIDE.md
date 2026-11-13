@@ -86,7 +86,7 @@ item becomes **Record BIO 101** too.
 - **Remind me when something starts** (**Settings → Recording → Starting**,
   on): with the window closed or behind other apps, the same suggestion
   arrives as a notification. Click it to open the Record screen.
-- **Start by itself** (off): starts the recording instead of asking, and
+- **Record by itself** (off): starts the recording instead of asking, and
   posts a notification saying it did. Recording other people is your
   decision, so this is something you turn on. A call that was already going
   when you pressed Stop doesn't start a new recording.
@@ -286,9 +286,10 @@ project**). The list narrows to it and its page opens beside it:
   newest first, each with the date or owner that was said. Tick one when
   it's done; **Show done** brings them back. Click the recording's name to
   read where it came from.
-- **Marked**: every ✎ (**On the test**, **Follow up**, **Remember**) and
-  every **? Question** you marked in the notebook, with your note. Click one
-  to open that recording at that moment.
+- **On the test and questions** (**Follow ups and questions** for
+  meetings, **To remember and questions** for personal): every ✎ and every
+  **? Question** you marked in the notebook, with your note. Click one to
+  open that recording at that moment.
 - **Review everything**: the flashcards and practice questions of every
   study or review guide in the notebook, as one deck and one quiz, oldest
   recording first. A quiz answer's **Jump to this moment** opens the
@@ -758,7 +759,7 @@ Full policy: [nofriction.io/privacy](https://nofriction.io/privacy).
 | "Pair again" | The Mac forgot this iPhone, or was reinstalled. Pair again from **Settings → Sync** on both. |
 | Can't reach a local server | Check the address and that the server is running. Plain `http://` only works for this device, your local network or Tailscale. On iPhone/iPad, allow Local Network access, and use the computer's network address, not `localhost`. |
 | It keeps offering to record something | **Not now** hides it until tomorrow. To stop the notifications: **Settings → Recording → Remind me when something starts**. A notebook stops being offered when you haven't recorded it at that time for six weeks. |
-| A recording started by itself (Mac) | **Start by itself** is on: **Settings → Recording → Starting**. |
+| A recording started by itself (Mac) | **Record by itself** is on: **Settings → Recording → Starting**. |
 | Notes cover only part of a long recording | Notes made by an earlier version read only the start. Open the recording → **Notes** → **Make again**. |
 | Recording stopped by itself | That's the time limit you chose or automatic stop; see [What is it, how long, and notebook](#what-is-it-how-long-and-notebook) and [Automatic stop](#automatic-stop). |
 | Notes are in the wrong style | Change the recording's type (Mac: the type row under the recording's title), then **Make again** on the notes. |
