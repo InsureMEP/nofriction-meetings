@@ -137,7 +137,6 @@ pub async fn extract_action_items(
 // Knowledge Base Commands (VLM)
 // ============================================
 
-use crate::vlm_client::ActivityContext;
 
 /// Check if VLM API is available
 #[tauri::command(rename_all = "camelCase")]
@@ -149,47 +148,6 @@ pub async fn check_vlm(_state: State<'_, AppState>) -> Result<bool, String> {
 #[tauri::command(rename_all = "camelCase")]
 pub async fn check_vlm_vision(_state: State<'_, AppState>) -> Result<bool, String> {
     crate::vlm_client::vlm_has_vision_model().await
-}
-
-/// Analyze a frame with VLM
-#[tauri::command(rename_all = "camelCase")]
-pub async fn analyze_frame(
-    frame_path: String,
-    _state: State<'_, AppState>,
-) -> Result<ActivityContext, String> {
-    // Use default prompt for manual analysis
-    let prompt = r#"Analyze this screenshot and describe what the user is doing. 
-Respond in JSON format with these fields:
-{
-  "app_name": "name of the main application visible",
-  "window_title": "title of the window or document",
-  "category": "one of: development, communication, research, writing, design, media, browsing, system, other",
-  "summary": "brief description of what the user is doing",
-  "focus_area": "specific task or project",
-  "visible_files": [],
-  "confidence": 0.8
-}
-Only respond with valid JSON."#;
-
-    crate::vlm_client::vlm_analyze_frame(&frame_path, prompt).await
-}
-
-/// Analyze multiple frames (batch)
-#[tauri::command(rename_all = "camelCase")]
-pub async fn analyze_frames_batch(
-    frame_paths: Vec<String>,
-    _state: State<'_, AppState>,
-) -> Result<Vec<ActivityContext>, String> {
-    let prompt = r#"Analyze this screenshot. Respond in JSON with: app_name, category, summary, confidence."#;
-    let frames: Vec<(String, String)> = frame_paths
-        .into_iter()
-        .map(|p| (p, prompt.to_string()))
-        .collect();
-
-    let results = crate::vlm_client::vlm_analyze_frames_batch(frames).await;
-
-    // Collect successful results
-    Ok(results.into_iter().filter_map(|r| r.ok()).collect())
 }
 
 /// Capture text from the current focused window using accessibility APIs

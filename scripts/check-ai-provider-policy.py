@@ -291,6 +291,25 @@ def audit(root):
                 if not PLACEHOLDER.search(m.group(1)):
                     errors.append(f'{kind} in {rel}:{text[:m.start()].count(chr(10)) + 1}')
 
+    # --- Images go to an AI only on a click ---------------------------------
+    # An image leaves the device only from a function a click reaches. Every
+    # file that builds an image message is listed here; a new one is added on
+    # purpose, with the click that leads to it (docs/AI_PROVIDERS.md).
+    image_senders = {'src-tauri/src/vlm_client.rs', 'src-tauri/src/ai/client.rs'}
+    for path in sorted((root / 'src-tauri/src').rglob('*.rs')):
+        rel = path.relative_to(root).as_posix()
+        if rel in image_senders:
+            continue
+        if re.search(r'\bMsg::user_with_image\(|\bvlm_analyze_frame\(|\bvlm_analyze_frames_batch\(|Part::Image\s*\{', path.read_text()):
+            errors.append(f'Image sent to an AI outside the listed senders: {rel}')
+    scheduler_rs = (root / 'src-tauri/src/vlm_scheduler.rs').read_text()
+    need('tokio::spawn' not in scheduler_rs and 'vlm_analyze' not in scheduler_rs and 'run_loop' not in scheduler_rs,
+         'The background screenshot analyzer must stay retired (no loop, no AI call in vlm_scheduler.rs)')
+    need('vlm_scheduler.start()' not in (root / 'src-tauri/src/lib.rs').read_text(),
+         'Startup must not start the background screenshot analyzer')
+    need('queue_frame(' not in (root / 'src-tauri/src/commands/mod.rs').read_text(),
+         'Screens must not be queued for an AI when they are captured')
+
     # --- Bundled environment files; watch app ------------------------------
     for name in ('tauri.conf.json', 'tauri.mas.conf.json'):
         config = json.loads((root / 'src-tauri' / name).read_text())

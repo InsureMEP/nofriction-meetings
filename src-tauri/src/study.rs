@@ -340,6 +340,54 @@ pub trait Completer: Send + Sync {
     fn context_tokens(&self) -> usize;
 }
 
+/// Wait until `recording()` is false, looking every `step`, for at most
+/// `max`. True when it stopped (or never was on); false when it is still on
+/// after `max`.
+pub async fn wait_while(mut recording: impl FnMut() -> bool, step: std::time::Duration, max: std::time::Duration) -> bool {
+    let mut waited = std::time::Duration::ZERO;
+    while recording() {
+        if waited >= max {
+            return false;
+        }
+        tokio::time::sleep(step).await;
+        waited += step;
+    }
+    true
+}
+
+/// Whether a recording is running right now. False before the app is up.
+pub fn recording_now() -> bool {
+    use tauri::Manager;
+    crate::notifications::app()
+        .and_then(|app| app.try_state::<crate::AppState>().map(|s| s.capture_engine.read().is_recording()))
+        .unwrap_or(false)
+}
+
+/// The user's AI for work nobody clicked for (automatic notes, the topics
+/// that follow notes). No AI runs while a recording does, so every request
+/// waits for the recording to stop first: a long recording's notes are
+/// several requests, and a new recording can start between any two.
+pub struct BackgroundCompleter;
+
+impl BackgroundCompleter {
+    const STEP: std::time::Duration = std::time::Duration::from_secs(5);
+    /// A recording has no limit, so this is only a bound on a stuck state
+    const MAX: std::time::Duration = std::time::Duration::from_secs(6 * 3600);
+}
+
+#[async_trait::async_trait]
+impl Completer for BackgroundCompleter {
+    async fn complete(&self, msgs: Vec<Msg>, opts: Opts) -> Result<String, AiError> {
+        if !wait_while(recording_now, Self::STEP, Self::MAX).await {
+            return Err(AiError::Other("A recording is still running; try again after it stops.".into()));
+        }
+        crate::ai::complete_text(msgs, opts).await
+    }
+    fn context_tokens(&self) -> usize {
+        LiveCompleter.context_tokens()
+    }
+}
+
 /// The user's configured text AI. `ai::complete_text` checks consent, the
 /// endpoint policy and (Mac App Store build) noFriction Pro.
 pub struct LiveCompleter;

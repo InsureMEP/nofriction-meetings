@@ -652,12 +652,15 @@ pub mod run {
 
     /// Make and save the notes in a slot already taken, telling the window
     /// what the run is doing and when it ends.
+    /// `automatic`: nobody clicked for this run, so each of its requests
+    /// waits while a recording is running.
     async fn run_reserved(
         app: &AppHandle,
         state: &AppState,
         meeting_id: &str,
         meeting_prompt: &str,
         meeting_label: &str,
+        automatic: bool,
     ) -> Result<GeneratedNotes, String> {
         let emit = {
             let app = app.clone();
@@ -672,7 +675,13 @@ pub mod run {
                 );
             }
         };
-        generate_and_save(&crate::study::LiveCompleter, &state.database, meeting_id, meeting_prompt, meeting_label, &emit).await
+        if automatic {
+            let c = crate::study::BackgroundCompleter;
+            generate_and_save(&c, &state.database, meeting_id, meeting_prompt, meeting_label, &emit).await
+        } else {
+            let c = crate::study::LiveCompleter;
+            generate_and_save(&c, &state.database, meeting_id, meeting_prompt, meeting_label, &emit).await
+        }
     }
 
     /// Make and save the notes, one run per recording at a time (Make notes
@@ -688,7 +697,7 @@ pub mod run {
             return Err(STILL_RECORDING.into());
         }
         let guard = reserve(app, meeting_id)?;
-        let result = run_reserved(app, state, meeting_id, meeting_prompt, meeting_label).await;
+        let result = run_reserved(app, state, meeting_id, meeting_prompt, meeting_label, false).await;
         drop(guard);
         let _ = app.emit(DONE_EVENT, serde_json::json!({ "meetingId": meeting_id, "ok": result.is_ok() }));
         result
@@ -751,7 +760,7 @@ pub mod run {
                     return;
                 }
             }
-            let result = run_reserved(&app, &state, &meeting_id, &settings.meeting_report_prompt, "auto-report").await;
+            let result = run_reserved(&app, &state, &meeting_id, &settings.meeting_report_prompt, "auto-report", true).await;
             drop(guard);
             let _ = app.emit(DONE_EVENT, serde_json::json!({ "meetingId": meeting_id, "ok": result.is_ok() }));
             match result {

@@ -188,6 +188,19 @@ these rules apply.
     wait until no recording is running (`meeting_notes::run::after_stop`;
     iPhone `AutoNotes`, which checks before every request); only the
     user's own **Make notes** may run during another recording.
+  - **A picture reaches an AI only on a click that says so.** No feature
+    sends an image today (audited 2026-11-13): captions and picture picks
+    send text about each picture. The policy guard lists every file
+    allowed to build an image message; add to that list on purpose, with
+    the click that leads there. `vlm_scheduler.rs` (a timer that sent
+    queued screenshots) is retired; don't start it, queue screens for it
+    or bring back a timer that calls the AI.
+  - **Nothing automatic asks the AI while a recording runs.** Work nobody
+    clicked for (automatic notes, the topics that follow notes) goes
+    through `study::BackgroundCompleter`, which waits for the recording
+    to stop before every request. A Meeting's notes use
+    `settings.meeting_report_prompt` however they are made; the old
+    prompt library's themes are not read.
   - **Notes are saved in one transaction with their check**
     (`meeting_notes::save_checked`: `BEGIN IMMEDIATE`, then "no pending
     delete and every line read is still there", then the insert). A check

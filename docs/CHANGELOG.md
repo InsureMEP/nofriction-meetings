@@ -118,6 +118,21 @@ On the Mac, unless marked.
   office", a birthday), and when two events overlap the one that started
   most recently is matched, not the longer block around it.
 - A note typed while the previous one was still being kept is never lost.
+- **No screenshot can be sent to an AI in the background (Mac).** An old
+  analyzer could send one screenshot per request, up to ten every two
+  minutes, recording or not, if an admin switch from an early version was
+  still set in the database. No screen could turn it on any more. The
+  timer, its queue and its three unused commands are removed, and the
+  release check now lists every file allowed to send an image.
+- **A Meeting's notes are written the same way however they are made
+  (Mac).** **Make notes** could pick up an old "prospecting" prompt while
+  automatic notes used the normal one.
+- **Nothing automatic asks the AI while a recording runs (Mac).** The
+  topics that follow notes had no check, and automatic notes for a long
+  recording only checked before their first request. Each request now
+  waits for the recording to stop.
+- The consent dialog said it sends "selected screenshots". No feature sends
+  a picture; it now says so.
 - Up next's usual length no longer creeps up. A recording that stopped at
   its 60-minute limit ends a second or two after the hour; counted as 61
   minutes it was offered as 90 the next time, then with no limit.

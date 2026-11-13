@@ -313,26 +313,13 @@ pub async fn generate_meeting_report(
         .await
         .map_err(|e| format!("Failed to load settings: {}", e))?;
 
-    // Resolve persona-specific report prompt from PromptManager, fallback to settings
-    let active_theme = state
-        .settings
-        .get_active_theme()
-        .await
-        .unwrap_or_else(|_| "personal".to_string());
-
-    let report_prompt_name = format!("meeting_report_{}", active_theme);
-    let prompt_text = match state
-        .prompt_manager
-        .get_prompt_by_name(&report_prompt_name, Some(&active_theme))
-        .await
-        .ok()
-        .flatten()
-    {
-        Some(db_prompt) => db_prompt.system_prompt,
-        None => settings.meeting_report_prompt.clone(),
-    };
-
-    let notes = crate::meeting_notes::run::make(&app, &state, &meeting_id, &prompt_text, "auto-report").await?;
+    // The same prompt automatic notes use. This used to look up
+    // "meeting_report_{theme}" in the old prompt library first, and the
+    // theme no screen can change defaults to "prospecting": a Meeting's
+    // notes came out written for sales calls when made by hand, and not
+    // when made automatically.
+    let notes =
+        crate::meeting_notes::run::make(&app, &state, &meeting_id, &settings.meeting_report_prompt, "auto-report").await?;
 
     Ok(serde_json::json!({
         "summary": notes.summary,

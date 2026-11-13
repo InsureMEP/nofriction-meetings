@@ -1,6 +1,8 @@
-//! VLM Scheduler - Background worker for automatic frame analysis
+//! The retired background screenshot analyzer.
 //!
-//! Runs on a configurable timer and processes pending frames with VLM.
+//! It ran on a timer and sent queued screenshots to the user's AI. It was
+//! retired on 2026-11-13: `start` does nothing and the loop is gone. What is
+//! left is the status the old settings commands report.
 
 use chrono::{DateTime, Utc};
 use parking_lot::RwLock;
@@ -32,7 +34,9 @@ pub struct VLMScheduler {
     frames_processed: Arc<AtomicU64>,
     last_run: Arc<RwLock<Option<DateTime<Utc>>>>,
     database: Arc<DatabaseManager>,
+    #[allow(dead_code)]
     settings: Arc<SettingsManager>,
+    #[allow(dead_code)]
     prompt_manager: Arc<PromptManager>,
 }
 
@@ -90,256 +94,20 @@ impl VLMScheduler {
         }
     }
 
-    /// Start the scheduler loop
+    /// Retired 2026-11-13. This used to start a timer that sent queued
+    /// screenshots to the user's AI every couple of minutes, recording or
+    /// not, if an old admin switch (`vlm_auto_process`) had been left on.
+    /// No screen could turn that switch on any more, but a database from an
+    /// old version could still carry it. A screenshot now goes to an AI only
+    /// when the user clicks something that says so (docs/AI_PROVIDERS.md),
+    /// so this does nothing and there is no loop to start.
     pub fn start(&self) {
-        if self.running.load(Ordering::SeqCst) {
-            log::info!("VLM Scheduler already running");
-            return;
-        }
-
-        self.running.store(true, Ordering::SeqCst);
-        log::info!("VLM Scheduler starting...");
-
-        let running = self.running.clone();
-        let enabled = self.enabled.clone();
-        let interval_secs = self.interval_secs.clone();
-        let frames_processed = self.frames_processed.clone();
-        let last_run = self.last_run.clone();
-        let database = self.database.clone();
-        let settings = self.settings.clone();
-
-        let prompt_manager = self.prompt_manager.clone();
-
-        tokio::spawn(async move {
-            Self::run_loop(
-                running,
-                enabled,
-                interval_secs,
-                frames_processed,
-                last_run,
-                database,
-                settings,
-                prompt_manager,
-            )
-            .await;
-        });
+        log::warn!("The background screenshot analyzer is retired; nothing was started");
     }
 
     /// Stop the scheduler loop
     pub fn stop(&self) {
         self.running.store(false, Ordering::SeqCst);
         log::info!("VLM Scheduler stopped");
-    }
-
-    /// Main processing loop
-    #[allow(clippy::too_many_arguments)]
-    async fn run_loop(
-        running: Arc<AtomicBool>,
-        enabled: Arc<AtomicBool>,
-        interval_secs: Arc<RwLock<u32>>,
-        frames_processed: Arc<AtomicU64>,
-        last_run: Arc<RwLock<Option<DateTime<Utc>>>>,
-        database: Arc<DatabaseManager>,
-        settings: Arc<SettingsManager>,
-        prompt_manager: Arc<PromptManager>,
-    ) {
-        log::info!("VLM Scheduler loop started");
-
-        // Consecutive "endpoint unreachable" checks. Drives exponential backoff
-        // so a machine without Ollama isn't probed (and logged) every cycle.
-        let mut unavailable_streak: u32 = 0;
-
-        while running.load(Ordering::SeqCst) {
-            // Sleep for the configured interval, backing off (max 30 min)
-            // while the AI endpoint is unreachable
-            let interval = *interval_secs.read() as u64;
-            let backoff = interval.saturating_mul(1u64 << unavailable_streak.min(4));
-            tokio::time::sleep(std::time::Duration::from_secs(backoff.min(1800))).await;
-
-            // Check if still running and enabled
-            if !running.load(Ordering::SeqCst) {
-                break;
-            }
-
-            if !enabled.load(Ordering::SeqCst) {
-                continue;
-            }
-
-            // Load settings to get VLM config
-            let app_settings = match settings.get_all().await {
-                Ok(s) => s,
-                Err(e) => {
-                    log::error!("VLM Scheduler: Failed to load settings: {}", e);
-                    continue;
-                }
-            };
-
-            // Check if VLM processing is enabled in settings
-            if !app_settings.vlm_auto_process {
-                // Still update last_run so UI shows we checked
-                *last_run.write() = Some(Utc::now());
-                continue;
-            }
-
-            // Get pending frames
-            let pending = match database.get_pending_frames(10).await {
-                Ok(p) => p,
-                Err(e) => {
-                    log::error!("VLM Scheduler: Failed to get pending frames: {}", e);
-                    continue;
-                }
-            };
-
-            if pending.is_empty() {
-                log::debug!("VLM Scheduler: No pending frames");
-                *last_run.write() = Some(Utc::now());
-                continue;
-            }
-
-            log::info!("VLM Scheduler: Processing {} frames...", pending.len());
-
-            // Check VLM availability (centralized API)
-            if !crate::vlm_client::vlm_is_available().await {
-                if unavailable_streak == 0 {
-                    log::warn!(
-                        "VLM Scheduler: AI endpoint not available — frame analysis paused, retrying with backoff"
-                    );
-                }
-                unavailable_streak = unavailable_streak.saturating_add(1);
-                continue;
-            }
-            if unavailable_streak > 0 {
-                log::info!("VLM Scheduler: AI endpoint available again");
-                unavailable_streak = 0;
-            }
-
-            // Determine active theme and load prompt
-            let active_theme = app_settings.active_theme;
-            // The prompt key convention is "{theme}_context_analysis"
-            // Fallback to "frame_analysis" if specific theme prompt not found
-            let prompt_key = format!("{}_context_analysis", active_theme);
-
-            let prompt_text = match prompt_manager.get_prompt(&prompt_key).await {
-                Ok(Some(p)) => {
-                    log::info!(
-                        "VLM Scheduler: Using prompt '{}' for theme '{}'",
-                        p.name,
-                        active_theme
-                    );
-                    p.system_prompt
-                }
-                Ok(None) => {
-                    // Try fallback
-                    log::warn!(
-                        "VLM Scheduler: Prompt '{}' not found, falling back to 'frame_analysis'",
-                        prompt_key
-                    );
-                    match prompt_manager.get_prompt("frame_analysis").await {
-                        Ok(Some(p)) => p.system_prompt,
-                        _ => {
-                            log::error!("VLM Scheduler: Fallback prompt 'frame_analysis' not found. Using hardcoded default.");
-                            r#"Analyze this screenshot and describe what the user is doing. 
-                            Respond in JSON format with these fields:
-                            {
-                              "app_name": "name of the main application visible",
-                              "window_title": "title of the window or document",
-                              "category": "one of: development, communication, research, system, other",
-                              "summary": "brief description of what the user is doing",
-                              "focus_area": "specific task or project",
-                              "visible_files": [],
-                              "confidence": 0.5
-                            }
-                            Only respond with valid JSON."#.to_string()
-                        }
-                    }
-                }
-                Err(e) => {
-                    log::error!("VLM Scheduler: Failed to get prompt: {}", e);
-                    continue;
-                }
-            };
-
-            // Process frames
-            let mut processed = 0;
-            for frame in pending {
-                match crate::vlm_client::vlm_analyze_frame(&frame.frame_path, &prompt_text).await {
-                    Ok(context) => {
-                        // Create activity log entry
-                        let activity = crate::database::ActivityLogEntry {
-                            id: None,
-                            start_time: frame.captured_at,
-                            end_time: None,
-                            duration_seconds: None,
-                            app_name: context.app_name,
-                            window_title: context.window_title,
-                            category: context.category,
-                            summary: context.summary,
-                            focus_area: context.focus_area,
-                            visible_files: if context.visible_files.is_empty() {
-                                None
-                            } else {
-                                Some(context.visible_files.join(", "))
-                            },
-                            confidence: Some(context.confidence),
-                            frame_ids: Some(frame.id.to_string()),
-                        };
-
-                        if let Ok(activity_id) = database.add_activity(&activity).await {
-                            // Phase 3: Extract and store entities
-                            if let Some(entities_json) = context.entities {
-                                if let Some(obj) = entities_json.as_object() {
-                                    for (entity_type, list) in obj {
-                                        // Only process arrays as entity lists (skip single fields like app_name)
-                                        if let Some(items) = list.as_array() {
-                                            for item in items {
-                                                // Item must have a 'name' field to be a valid entity
-                                                if let Some(name) =
-                                                    item.get("name").and_then(|s| s.as_str())
-                                                {
-                                                    // Extract confidence if present, else use context confidence
-                                                    let conf = item
-                                                        .get("confidence")
-                                                        .and_then(|c| c.as_f64()) // Handle number
-                                                        .or_else(|| {
-                                                            item.get("confidence").and_then(|s| {
-                                                                s.as_str().map(|_| 0.8)
-                                                            })
-                                                        }) // Handle string (high/med/low) - simplified
-                                                        .map(|f| f as f32)
-                                                        .unwrap_or(context.confidence);
-
-                                                    let _ = database
-                                                        .add_entity(
-                                                            activity_id,
-                                                            entity_type,
-                                                            name,
-                                                            Some(item),
-                                                            conf,
-                                                            Some(&active_theme),
-                                                        )
-                                                        .await;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            let _ = database.mark_frame_analyzed(frame.id).await;
-                            processed += 1;
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!("VLM Scheduler: Failed to analyze frame {}: {}", frame.id, e);
-                    }
-                }
-            }
-
-            frames_processed.fetch_add(processed, Ordering::SeqCst);
-            *last_run.write() = Some(Utc::now());
-            log::info!("VLM Scheduler: Processed {} frames", processed);
-        }
-
-        log::info!("VLM Scheduler loop stopped");
     }
 }
