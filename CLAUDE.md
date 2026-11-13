@@ -251,7 +251,12 @@ these rules apply.
     `redact_ai_outputs`, by a typed note it was made beside changing
     (`typed_notes_changed`) and by Make again. The two headings and their
     bullet forms are the same on both platforms (`fill::markdown`),
-    because they cross in the notes' Markdown.
+    because they cross in the notes' Markdown. iPhone: the request is in
+    `FillInTheBlanks.swift`, the save is the synchronous
+    `NotesStore.saveFill` (no `await` between its check and its write),
+    and every removal calls `FillInTheBlanks.removed(from:)`. Neither
+    Make notes nor Fill in the blanks sends anything while a Delete is in
+    its undo window, on either platform.
   - **Notes read the whole recording.** Never truncate a transcript for a
     prompt; condense it in parts (`study::condense_to_budget`,
     `MeetingAI`'s condense step). Prompts carry marks and typed notes by

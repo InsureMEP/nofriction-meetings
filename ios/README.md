@@ -83,6 +83,7 @@ Pro bypass.
 | Keys (Keychain, this device only) / non-secret AI config | `AI/KeychainStore.swift`, `AI/AISettings.swift` |
 | Meeting prompts | `AI/MeetingAI.swift` |
 | Notes: the whole recording (condensed in parts when long), built on what was marked and typed; "What you wrote"; automatic notes after Stop (spec: `docs/design/FADELL_V2.md`) | `AI/NotesAI.swift` |
+| Fill in the blanks: on the user's tap, a second pass over the whole recording that adds **What you missed** and **More detail** at the end of the notes. Same prompts, answer rules and Markdown as the Mac (`src-tauri/src/meeting_notes/fill.rs`); removed by a Delete or Strike of transcript text, a changed or deleted typed note, and Make again | `AI/FillInTheBlanks.swift`; saved by `NotesStore.saveFill` (`AI/NotesAI.swift`) |
 | Typed notes while recording ("Type a note"): a mark of kind `note` | `Shared/RecordingVocabulary.swift`, `Study/StudyModels.swift`, the note line in `Views/LiveView.swift` |
 | Up next on the idle Record tab: the routine (pure), the calendar rules, Not now | `Capture/Routine.swift` |
 | "Remind me when something starts": local notifications planned from the routine | `Capture/RoutineReminders.swift` |
@@ -163,6 +164,12 @@ xcodebuild test -project NoFriction.xcodeproj -scheme NoFrictionWatch \
   numbered typed notes, no ids, stricken text), condensing a long transcript without the client trimming,
   "What you wrote" parsing, saving (refused only when a line that was read is gone), automatic notes, sync of a
   note, and redaction of the section. The AI is a mock.
+- `NoFrictionTests/FillInTheBlanksTests` — Fill in the blanks: the three prompts (only a Class may get background, and it
+  is marked), the Mac's answer fixture parsed to the same result and written as the same Markdown, the two sections taken
+  out and replaced wherever they sit, a long recording condensed without the client trimming, nothing asked while that
+  recording runs or a Delete is waiting, the save refused when the transcript, the notes or a typed note changed
+  meanwhile, and the sections removed by a typed-note edit or delete (here or on the Mac), a Delete or Strike of
+  transcript text, and Make again. The AI is a mock. `V2FlowTests` has the button and its paywall.
 - `NoFrictionTests/NotebookPageTests` — the items parser for the three note styles and the Mac's Markdown, ticks
   kept as a hash, Review everything and "Start from", and the store migration.
 - `NoFrictionUITests/V2FlowTests` — Up next (one tap, Not now, the recording notice first), the note line with the

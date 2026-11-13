@@ -141,9 +141,12 @@ On the Mac, unless marked.
   waits for the recording to stop.
 - The consent dialog said it sends "selected screenshots". No feature sends
   a picture; it now says so.
-- **Make notes doesn't send text that is about to be deleted (Mac).** A run
+- **Make notes doesn't send text that is about to be deleted.** A run
   started inside a Delete's five-second undo window read the transcript as
-  it still was. It now waits to be asked again.
+  it still was. It now waits to be asked again (Mac and iPhone).
+- iPhone: **Make notes** is refused for a recording that is still running
+  (it could be opened from People); a quiz answer number far out of range
+  in a model's reply no longer stops the app.
 - Up next's usual length no longer creeps up. A recording that stopped at
   its 60-minute limit ends a second or two after the hour; counted as 61
   minutes it was offered as 90 the next time, then with no limit.

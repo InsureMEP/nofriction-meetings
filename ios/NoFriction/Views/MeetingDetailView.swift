@@ -27,6 +27,10 @@ struct MeetingDetailView: View {
     @State private var player = AudioPlayback()
     @State private var aiWorking: String?
     @State private var aiError: String?
+    /// Something to tell the user that isn't an error (Fill in the blanks found nothing to add)
+    @State private var aiNotice: String?
+    /// The recording that is running now: its own notes aren't filled in until it stops
+    @Environment(RecordingSession.self) private var session
     @State private var email: String?
     @Environment(Store.self) private var store
     @Environment(AISettings.self) private var aiSettings
@@ -54,12 +58,13 @@ struct MeetingDetailView: View {
     /// Topics (docs/TOPICS_AND_CHAT.md): why the last Find topics failed
     @State private var topicsError: String?
 
-    enum AIAction { case notes, email, study, topics }
+    enum AIAction { case notes, email, study, topics, fill }
 
     /// The paywall names the action that opened it.
     private func proFeature(_ action: AIAction) -> ProFeature {
         switch action {
-        case .notes: .notes
+        // Fill in the blanks is part of Notes: no Pro key of its own
+        case .notes, .fill: .notes
         case .email: .followUp
         case .study: .reviewGuide
         case .topics: .topics
@@ -310,21 +315,22 @@ struct MeetingDetailView: View {
                     Label(aiError, systemImage: "exclamationmark.triangle")
                         .font(.footnote).foregroundStyle(.orange)
                 }
+                if let aiNotice, aiError == nil, aiWorking == nil {
+                    // Not an error: neutral
+                    Label(aiNotice, systemImage: "checkmark.circle")
+                        .font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("ai-notice")
+                }
                 if hasTranscript {
-                    HStack(spacing: 10) {
-                        Button(meeting.aiNotes == nil ? "Make notes" : "Make again", systemImage: "sparkles") {
-                            requestAI(.notes)
+                    // One row where it fits (iPad, or two buttons); on an iPhone a meeting's
+                    // email goes under the two notes buttons; at the largest text sizes one each
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 10) { makeNotesButton; fillButton; emailButton }
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 10) { makeNotesButton; fillButton }
+                            emailButton
                         }
-                        .accessibilityHint(notesHint)
-                        .accessibilityIdentifier("ai-summarize")
-                        // A follow-up email is about a meeting's attendees
-                        if meeting.kind == .meeting {
-                            Button("Follow-up email", systemImage: "envelope") {
-                                requestAI(.email)
-                            }
-                            .accessibilityHint("Drafts a follow-up email with your AI")
-                            .accessibilityIdentifier("ai-email")
-                        }
+                        VStack(alignment: .leading, spacing: 8) { makeNotesButton; fillButton; emailButton }
                     }
                     .buttonStyle(.bordered)
                     .tint(Theme.ai)
@@ -337,6 +343,44 @@ struct MeetingDetailView: View {
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+    }
+
+    private var makeNotesButton: some View {
+        Button(meeting.aiNotes == nil ? "Make notes" : "Make again", systemImage: "sparkles") {
+            requestAI(.notes)
+        }
+        .accessibilityHint(notesHint)
+        .accessibilityIdentifier("ai-summarize")
+    }
+
+    /// Fill in the blanks: once there are notes to complete. Only this tap
+    /// ever runs it. It reads **Fill again** when the notes already have
+    /// either section (also when they arrived from the Mac that way).
+    @ViewBuilder
+    private var fillButton: some View {
+        if let made = meeting.aiNotes, !made.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let again = FillInTheBlanks.has(made)
+            Button(FillInTheBlanks.buttonTitle(notes: made), systemImage: "text.badge.plus") {
+                requestAI(.fill)
+            }
+            .accessibilityLabel(again ? "Fill in the blanks again" : "Fill in the blanks")
+            .accessibilityHint(again
+                ? "Reads the recording again with your AI and replaces What you missed and More detail at the end of the notes"
+                : "Reads the recording again with your AI and adds what the notes missed, and more detail on their key ideas")
+            .accessibilityIdentifier("ai-fill")
+        }
+    }
+
+    /// A follow-up email is about a meeting's attendees
+    @ViewBuilder
+    private var emailButton: some View {
+        if meeting.kind == .meeting {
+            Button("Follow-up email", systemImage: "envelope") {
+                requestAI(.email)
+            }
+            .accessibilityHint("Drafts a follow-up email with your AI")
+            .accessibilityIdentifier("ai-email")
         }
     }
 
@@ -353,6 +397,13 @@ struct MeetingDetailView: View {
     /// sheet and resumes the action when the sheet closes.
     private func requestAI(_ action: AIAction) {
         pendingAI = nil
+        // The recording that is still running: refused before anything is asked for
+        // (it can be opened from People while it runs)
+        if action == .fill || action == .notes, session.meeting?.id == meeting.id {
+            aiNotice = nil
+            aiError = action == .fill ? FillInTheBlanks.Failure.stillRecording.errorDescription : NotesStore.stillRecording
+            return
+        }
         guard store.isPro else {
             pendingAI = action
             paywallFor = proFeature(action)
@@ -378,6 +429,19 @@ struct MeetingDetailView: View {
                 }
                 // Same hook as the Mac: topics are named with the notes
                 await findTopics(endpoint)
+            }
+        case .fill:
+            // A second pass over the whole recording, beside the notes and the typed lines.
+            // The store checks again that this recording isn't the one running
+            runAI(FillInTheBlanks.working) {
+                let filled = try await NotesStore.fill(meeting, contextTokens: endpoint.contextTokens,
+                                                       complete: MeetingAI.liveComplete(endpoint), context: context,
+                                                       recording: session.meeting?.id) { label in
+                    await MainActor.run { aiWorking = label }
+                }
+                if filled.isEmpty { aiNotice = FillInTheBlanks.nothingToAdd }
+                // The notes grew above the button, or didn't: VoiceOver says which
+                AccessibilityNotification.Announcement(FillInTheBlanks.announcement(filled)).post()
             }
         case .topics:
             runAI("Finding topics with \(aiName(endpoint))…") { await findTopics(endpoint) }
@@ -469,6 +533,7 @@ struct MeetingDetailView: View {
     private func runAI(_ label: String, _ work: @escaping @MainActor () async throws -> Void) {
         aiWorking = label
         aiError = nil
+        aiNotice = nil
         Task { @MainActor in
             defer { aiWorking = nil }
             do { try await work() } catch { aiError = error.localizedDescription }

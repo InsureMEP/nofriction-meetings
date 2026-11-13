@@ -313,4 +313,26 @@ final class V2FlowTests: XCTestCase {
         link.tap()
         XCTAssertTrue(app.buttons["notebook-ask"].firstMatch.waitForExistence(timeout: 5), "the notebook label didn't open its page")
     }
+
+    /// Fill in the blanks sits with the notes of a recording that has them.
+    /// It is part of Notes: without Pro its tap opens the paywall, named for Notes.
+    func testFillInTheBlanksSitsWithTheNotesAndAsksForProFirst() {
+        let app = launch()
+        app.buttons["Recordings"].firstMatch.tap()
+        let lecture = app.staticTexts["Lecture 6: Enzymes"].firstMatch
+        scrollTo(lecture, in: app)
+        XCTAssertTrue(lecture.waitForExistence(timeout: 10))
+        lecture.tap()
+        XCTAssertTrue(element(app, "what-you-wrote").waitForExistence(timeout: 5))
+        let fill = app.buttons["ai-fill"].firstMatch
+        scrollTo(fill, in: app)
+        XCTAssertTrue(fill.exists && fill.isHittable, "Fill in the blanks is missing under the notes")
+        XCTAssertEqual(fill.label, "Fill in the blanks")
+        XCTAssertTrue(app.buttons["ai-summarize"].firstMatch.isHittable, "Make again stays beside it")
+        saveShot("v2-14-fill-in-the-blanks")
+        fill.tap()
+        XCTAssertTrue(app.staticTexts["Notes are part of noFriction Pro"].firstMatch.waitForExistence(timeout: 5), "the paywall should name Notes")
+        app.buttons["Close"].firstMatch.tap()
+        XCTAssertTrue(fill.waitForExistence(timeout: 5))
+    }
 }

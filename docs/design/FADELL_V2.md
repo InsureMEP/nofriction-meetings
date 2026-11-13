@@ -583,7 +583,23 @@ and adds two sections:
 
 **Where it lives.** Mac: `meeting_notes/fill.rs`, `meeting_notes.filled`
 (JSON), the `fill_in_notes` command, the button in `MeetingNotesPanel.tsx`.
-iPhone and iPad: the two sections at the end of `aiNotes`.
+iPhone and iPad: `AI/FillInTheBlanks.swift` (the same three prompts,
+character for character, and the same parsing rules), `NotesStore.fill` and
+the synchronous `NotesStore.saveFill`, the two sections at the end of
+`aiNotes`, and one helper every removal calls
+(`FillInTheBlanks.removed(from:)`).
+
+**Where the iPhone differs.**
+
+- The result lives in the notes' Markdown, so there is no time to click:
+  a missed point shows its time as text.
+- An empty answer on **Fill again** keeps the sections that were there;
+  the Mac replaces them with "Nothing to add".
+- The Mac removes sections that came from the iPhone when a typed note is
+  added, changed or deleted (it can't tell which notes they were made
+  beside); the iPhone removes them when one is changed or deleted.
+- A Delete or Strike of only photos or screens keeps the sections on the
+  iPhone: no transcript text changed.
 
 **Not in yet.** For notes made on the Mac, Export, Chat and the Obsidian
 export read the notes' own columns and don't carry the two sections.
@@ -599,7 +615,7 @@ iPhone is involved:
 
 | # | Finding | Outcome |
 |---|---|---|
-| 1 | A Strike or Delete made on the iPhone left the two sections on the iPhone | The iPhone half removes them in its own purge (it is the device that made the edit) |
+| 1 | A Strike or Delete made on the iPhone left the two sections on the iPhone | Fixed in the iPhone half: `redactAIOutputs` (and the Delete finished at the next launch) removes them |
 | 2 | Sections inside notes that came from the iPhone were outside every removal on the Mac | Fixed: Delete, Strike, a typed-note change and this Mac's own fill all strip them from that text too |
 | 3 | A typed note edited on the iPhone didn't remove what the Mac had filled in | Fixed: a typed note arriving by sync goes through `typed_notes_changed` |
 | 4 | Background was recognised only by a few spellings, so "textbook" or "outside knowledge" passed as said | Fixed: an entry counts as said only when it says so, or gives its time and says nothing else; everything else is background |
@@ -612,7 +628,9 @@ iPhone is involved:
 
 **Not verified.** No real AI was asked: the quality of what a model writes
 for a real lecture, and how well a small model keeps to "mark background",
-are untested. Not run in the real app. The two devices filling in and
-syncing with each other is covered by unit tests on each side, not by a
-run between a real iPhone and Mac.
+are untested. Not run in the real app or on a device. On iPhone the gate
+order was driven only as far as the paywall, VoiceOver and iPad were not
+looked at. The two devices filling in and syncing with each other is
+covered by unit tests on each side, not by a run between a real iPhone and
+Mac.
 

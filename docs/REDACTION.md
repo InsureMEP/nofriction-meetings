@@ -441,8 +441,10 @@ UI in `src/components/redaction/Redaction.tsx`.
   the `## What you missed` and `## More detail` sections of `aiNotes` on
   iPhone) paraphrases the recording, so word matching can't clean it: any
   Delete or Strike of that recording's transcript text removes it outright
-  (`meeting_notes::fill::clear_for_meeting`, called from
-  `redact_ai_outputs`). It also goes when a typed note it was made beside
+  (Mac: `meeting_notes::fill::clear_for_meeting`, called from
+  `redact_ai_outputs`; iPhone: `FillInTheBlanks.removed(from:)`, called
+  from `redactAIOutputs`, from the Delete finished at the next launch, and
+  from `TypedNoteStore`). It also goes when a typed note it was made beside
   is changed or deleted (`typed_notes_changed`, also when the change arrives
   by sync), and notes made again start without it. Notes that came from the
   iPhone carry the two sections in their own Markdown: the same removals
