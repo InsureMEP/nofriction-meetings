@@ -804,7 +804,12 @@ impl CaptureEngine {
                             CaptureTarget::Display { id } => crate::privacy_filter::front_window_on(*id),
                             CaptureTarget::Window { .. } => None,
                         };
-                        (t.clone(), Self::capture_target(t), front)
+                        // A password app or a private browser window in
+                        // front of this display: no picture is taken
+                        if front.as_ref().is_some_and(|(app, title)| crate::privacy_filter::never_captured(app, title)) {
+                            return (t.clone(), Err(crate::privacy_filter::PRIVATE_IN_FRONT.to_string()), None);
+                        }
+                        (t.clone(), Self::capture_for_recording(t), front)
                     })
                     .collect::<Vec<_>>()
             })
@@ -833,7 +838,9 @@ impl CaptureEngine {
                         }
                     }
                     Err(e) => {
-                        // Closed/minimized windows are expected; log once per source
+                        // Closed or minimized windows, and a private window
+                        // in front, are expected; log once per source (the
+                        // reason only, never a title or an app)
                         if missing_logged.insert(target.key()) {
                             log::warn!("Capture of {} unavailable: {}", target.key(), e);
                         }
@@ -856,9 +863,27 @@ impl CaptureEngine {
             .and_then(|m| m.id().ok())
     }
 
-    /// Capture one target. Returns (image, label, app_name, monitor_id).
+    /// Capture one target because the user asked for this picture (the
+    /// snapshot button). Returns (image, label, app_name, monitor_id).
     pub fn capture_target(
         target: &CaptureTarget,
+    ) -> Result<(DynamicImage, String, Option<String>, u32), String> {
+        Self::capture(target, false)
+    }
+
+    /// Capture one target as part of a recording. A window that is never
+    /// captured (privacy_filter::never_captured: a password app, a private
+    /// browser window) is refused before any picture of it is taken. For a
+    /// whole display the caller checks the window in front of it.
+    fn capture_for_recording(
+        target: &CaptureTarget,
+    ) -> Result<(DynamicImage, String, Option<String>, u32), String> {
+        Self::capture(target, true)
+    }
+
+    fn capture(
+        target: &CaptureTarget,
+        skip_private: bool,
     ) -> Result<(DynamicImage, String, Option<String>, u32), String> {
         if !screen_access_granted() {
             return Err(SCREEN_PERMISSION_ERROR.to_string());
@@ -883,9 +908,12 @@ impl CaptureEngine {
                 if window.is_minimized().unwrap_or(false) {
                     return Err("window minimized".to_string());
                 }
-                let image = window.capture_image().map_err(|e| e.to_string())?;
                 let app = window.app_name().ok().filter(|a| !a.is_empty());
                 let title = window.title().unwrap_or_default();
+                if skip_private && crate::privacy_filter::never_captured(app.as_deref().unwrap_or(""), &title) {
+                    return Err(crate::privacy_filter::PRIVATE_IN_FRONT.to_string());
+                }
+                let image = window.capture_image().map_err(|e| e.to_string())?;
                 let label = match (&app, title.is_empty()) {
                     (Some(a), false) => format!("{} — {}", a, title),
                     (Some(a), true) => a.clone(),

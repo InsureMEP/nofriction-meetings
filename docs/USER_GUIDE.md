@@ -284,6 +284,16 @@ Good to know:
 - Choose what's captured: **Change** in the bar while recording, then pick any screens or
   windows. If nothing is selected, the main display is captured.
 - Save one right now: **Capture screen**.
+- **Not captured:** while a password app (1Password, Passwords, Keychain
+  Access, Bitwarden and others it knows by name) or a private browser
+  window is in front of a screen you chose, noFriction takes no screenshot
+  of that screen. It starts again when you move on. Two limits:
+  - A private browser window is recognised by its title. Chrome, Edge and
+    Firefox say Incognito, InPrivate or Private Browsing there; Safari
+    doesn't, so a Safari private window is captured like any other.
+  - It goes by the window in front. A password app that is only visible
+    behind another window is still in the screenshot.
+  **Capture screen** takes the picture you ask for whatever is in front.
 
 ---
 

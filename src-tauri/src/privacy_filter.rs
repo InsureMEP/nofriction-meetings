@@ -1,17 +1,17 @@
-// noFriction Meetings - Privacy Filter
-// CRITICAL: Ensures private/incognito browser windows are NEVER captured
+// noFriction - what is private on screen, decided on this Mac.
 //
-// Blocked content:
-// - Safari Private Browsing
-// - Chrome Incognito
-// - Firefox Private Browsing
-// - Edge InPrivate
-// - Password managers (1Password, Keychain Access, etc.)
-
-#[cfg(target_os = "macos")]
-use objc::runtime::Object;
-#[cfg(target_os = "macos")]
-use objc::{class, msg_send, sel, sel_impl};
+// Two uses:
+//   - While recording, a display or window is not captured at all while a
+//     password manager, or a browser window whose title says it is private,
+//     is in front of it (`never_captured`; capture_engine.rs).
+//   - Read the screens never sends a wider set of screens to an AI
+//     (screen_prompts.rs `never_sent`, which uses the helpers here).
+//
+// Both go by the app's name and the window's title. What that can't see:
+//   - Safari doesn't mark private windows in their titles.
+//   - A private window that is only visible behind another one.
+//   - An app that isn't on the lists below.
+// Don't describe either use as more than this in user-facing text.
 
 /// List of window title patterns that indicate private browsing
 const PRIVATE_PATTERNS: &[&str] = &[
@@ -22,7 +22,52 @@ const PRIVATE_PATTERNS: &[&str] = &[
     "Private Window",   // Generic
 ];
 
-/// Apps that should NEVER be captured
+/// Browsers, by a whole word of the app's name (lower case). A window
+/// title says "private" about a browser window; in another app it is just a
+/// word in a document's name.
+pub const BROWSERS: &[&str] = &["safari", "chrome", "chromium", "firefox", "arc", "brave", "edge", "opera", "vivaldi", "duckduckgo", "orion"];
+
+/// Password apps, by whole words of the app's name (lower case): their
+/// windows are never captured while recording.
+const PASSWORD_APPS: &[&str] = &[
+    "1password", "keychain access", "bitwarden", "lastpass", "dashlane", "keepassxc", "authy", "passwords", "enpass",
+    "nordpass", "proton pass", "strongbox", "keeper", "roboform",
+    // Apple's Passwords app under its names in other languages
+    "passwörter", "contraseñas", "mots de passe", "wachtwoorden", "senhas", "パスワード", "密码",
+];
+
+/// A name as words between single spaces (" proton pass "), so a short name
+/// matches as a whole word and never inside another ("keeper", not
+/// "Bookkeeper").
+fn spaced(name: &str) -> String {
+    let lowered = name.to_lowercase();
+    let only: String = lowered.chars().map(|c| if c.is_alphanumeric() { c } else { ' ' }).collect();
+    format!(" {} ", only.split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
+fn names(spaced_name: &str, list: &[&str]) -> bool {
+    list.iter().any(|n| spaced_name.contains(&format!(" {} ", n)))
+}
+
+/// While recording, no picture is taken of this window, or of a display
+/// this window is in front of: a password app, or a browser window whose
+/// title says it is private (Chrome, Edge and Firefox say Incognito,
+/// InPrivate or Private Browsing; Safari's titles don't say).
+///
+/// Deliberately narrower than what Read the screens never sends: mail, chat
+/// and terminals are part of many recordings and are still captured. A
+/// picture the user takes by hand (the snapshot button) is their own
+/// choice and isn't refused.
+pub fn never_captured(app_name: &str, window_title: &str) -> bool {
+    let app = spaced(app_name);
+    names(&app, PASSWORD_APPS) || (names(&app, BROWSERS) && is_private_title(window_title))
+}
+
+/// Why a capture was skipped, for the log (never a title or an app name)
+pub const PRIVATE_IN_FRONT: &str = "a private window is in front";
+
+/// Apps Read the screens never sends (screen_prompts.rs `never_sent`):
+/// password managers, and Terminal, which may show keys and tokens
 const BLOCKED_APPS: &[&str] = &[
     "1Password",
     "Keychain Access",
@@ -33,139 +78,6 @@ const BLOCKED_APPS: &[&str] = &[
     "Authy",
     "Terminal", // May contain sensitive commands
 ];
-
-/// Check if the frontmost window is a private/incognito browser window
-#[cfg(target_os = "macos")]
-pub fn is_private_window() -> bool {
-    unsafe {
-        let workspace: *mut Object = msg_send![class!(NSWorkspace), sharedWorkspace];
-        let front_app: *mut Object = msg_send![workspace, frontmostApplication];
-
-        if front_app.is_null() {
-            return false;
-        }
-
-        // Get app name
-        let name_ns: *mut Object = msg_send![front_app, localizedName];
-        if name_ns.is_null() {
-            return false;
-        }
-
-        let name_utf8: *const std::os::raw::c_char = msg_send![name_ns, UTF8String];
-        if name_utf8.is_null() {
-            return false;
-        }
-
-        let app_name = std::ffi::CStr::from_ptr(name_utf8)
-            .to_string_lossy()
-            .to_string();
-
-        // Check if it's a blocked app
-        for blocked in BLOCKED_APPS {
-            if app_name.to_lowercase().contains(&blocked.to_lowercase()) {
-                log::info!("🔒 Privacy filter: Blocked app detected - {}", app_name);
-                return true;
-            }
-        }
-
-        // Check if it's a browser (Safari, Chrome, Firefox, Edge, Arc, Brave)
-        let browser_names = [
-            "Safari", "Chrome", "Firefox", "Edge", "Arc", "Brave", "Opera",
-        ];
-        let is_browser = browser_names.iter().any(|b| app_name.contains(b));
-
-        if !is_browser {
-            return false;
-        }
-
-        // For browsers, check window title for private indicators
-        if let Some(title) = get_frontmost_window_title() {
-            for pattern in PRIVATE_PATTERNS {
-                if title.contains(pattern) {
-                    log::info!("🔒 Privacy filter: Private window detected - {}", title);
-                    return true;
-                }
-            }
-        }
-
-        false
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-pub fn is_private_window() -> bool {
-    false
-}
-
-/// Title of the frontmost window of the frontmost app, via
-/// `CGWindowListCopyWindowInfo` (m3: no AppleScript / System Events, so no
-/// Apple Events entitlement and it works in the App Sandbox). The window list
-/// is ordered front to back, so the first normal-layer window owned by the
-/// frontmost app's pid is its front window. Window names are only reported
-/// with Screen Recording permission, which the capture features need anyway.
-#[cfg(target_os = "macos")]
-fn get_frontmost_window_title() -> Option<String> {
-    let pid: i32 = unsafe {
-        let workspace: *mut Object = msg_send![class!(NSWorkspace), sharedWorkspace];
-        let front_app: *mut Object = msg_send![workspace, frontmostApplication];
-        if front_app.is_null() {
-            return None;
-        }
-        msg_send![front_app, processIdentifier]
-    };
-    front_window_title_for_pid(pid)
-}
-
-#[cfg(target_os = "macos")]
-pub fn front_window_title_for_pid(pid: i32) -> Option<String> {
-    use core_foundation::base::{CFType, TCFType};
-    use core_foundation::dictionary::{CFDictionary, CFDictionaryRef};
-    use core_foundation::number::CFNumber;
-    use core_foundation::string::CFString;
-    use core_graphics::window::{
-        copy_window_info, kCGNullWindowID, kCGWindowLayer, kCGWindowListExcludeDesktopElements,
-        kCGWindowListOptionOnScreenOnly, kCGWindowName, kCGWindowOwnerPID,
-    };
-
-    let windows = copy_window_info(
-        kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
-        kCGNullWindowID,
-    )?;
-    let (k_pid, k_layer, k_name) = unsafe {
-        (
-            CFString::wrap_under_get_rule(kCGWindowOwnerPID),
-            CFString::wrap_under_get_rule(kCGWindowLayer),
-            CFString::wrap_under_get_rule(kCGWindowName),
-        )
-    };
-    for raw in windows.get_all_values() {
-        if raw.is_null() {
-            continue;
-        }
-        let dict: CFDictionary<CFString, CFType> =
-            unsafe { CFDictionary::wrap_under_get_rule(raw as CFDictionaryRef) };
-        let num = |k: &CFString| {
-            dict.find(k)
-                .and_then(|v| v.downcast::<CFNumber>())
-                .and_then(|n| n.to_i64())
-        };
-        if num(&k_pid) != Some(pid as i64) || num(&k_layer) != Some(0) {
-            continue;
-        }
-        let title = dict
-            .find(&k_name)
-            .and_then(|v| v.downcast::<CFString>())
-            .map(|s| s.to_string())
-            .unwrap_or_default();
-        return if title.is_empty() { None } else { Some(title) };
-    }
-    None
-}
-
-#[cfg(not(target_os = "macos"))]
-fn get_frontmost_window_title() -> Option<String> {
-    None
-}
 
 /// (owner app name, window title) for every normal on-screen window, front
 /// to back. Titles are empty without Screen Recording permission, so callers
@@ -221,15 +133,6 @@ pub fn on_screen_windows() -> Option<Vec<(String, String)>> {
 #[cfg(not(target_os = "macos"))]
 pub fn on_screen_windows() -> Option<Vec<(String, String)>> {
     None
-}
-
-/// Master check: should we skip capture right now?
-pub fn should_skip_capture() -> bool {
-    if is_private_window() {
-        log::debug!("🔒 Skipping capture - private/sensitive content detected");
-        return true;
-    }
-    false
 }
 
 /// How much of a window is on a display: the width and height of the part
@@ -369,7 +272,7 @@ pub fn is_private_title(title: &str) -> bool {
     })
 }
 
-/// Check if a specific app is on the blocklist
+/// An app Read the screens never sends a window of
 pub fn is_blocked_app(app_name: &str) -> bool {
     for blocked in BLOCKED_APPS {
         if app_name.to_lowercase().contains(&blocked.to_lowercase()) {
@@ -382,6 +285,48 @@ pub fn is_blocked_app(app_name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn password_apps_and_private_browser_windows_are_never_captured() {
+        for (app, title) in [
+            ("1Password 8", ""),
+            ("1Password", "Vault — Personal"),
+            ("Keychain Access", ""),
+            ("Passwords", ""),
+            ("Bitwarden", "My vault"),
+            ("Proton Pass", ""),
+            ("Keeper Password Manager", ""),
+            ("Passwörter", ""),
+            ("Google Chrome", "New Incognito Tab - Google Chrome"),
+            ("Microsoft Edge", "InPrivate"),
+            ("Firefox", "Mozilla Firefox Private Browsing"),
+            ("Brave Browser", "Private Window"),
+        ] {
+            assert!(never_captured(app, title), "{app:?} {title:?}");
+        }
+        for (app, title) in [
+            // Ordinary windows
+            ("Keynote", "Lecture 7"),
+            ("Google Chrome", "Lecture 7 - Google Slides"),
+            ("Safari", "Cell membrane - Wikipedia"),
+            // Mail, chat and terminals are part of many recordings: captured
+            ("Mail", "Inbox"),
+            ("Slack", "#general"),
+            ("Terminal", "zsh"),
+            // "Private" in a document's name is not private browsing
+            ("Microsoft Word", "Private equity notes.docx"),
+            ("Keynote", "Private markets"),
+            ("Preview", "Incognito.pdf"),
+            // A whole word, never part of another app's name
+            ("Bookkeeper", ""),
+            ("Passwordless Demo", ""),
+            // Safari doesn't say so in the title: it can't be recognised
+            ("Safari", "Start Page"),
+            ("", ""),
+        ] {
+            assert!(!never_captured(app, title), "{app:?} {title:?}");
+        }
+    }
 
     #[test]
     fn test_blocked_apps() {

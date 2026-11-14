@@ -204,7 +204,7 @@ fn has_ext(title: &str, ext: &str) -> bool {
     title.match_indices(ext).any(|(i, _)| !title[i + ext.len()..].chars().next().is_some_and(|c| c.is_alphanumeric()))
 }
 
-const BROWSERS: &[&str] = &["safari", "chrome", "chromium", "firefox", "arc", "brave", "edge", "opera", "vivaldi", "duckduckgo", "orion"];
+use crate::privacy_filter::BROWSERS;
 
 // Apps that show one kind of thing: the app decides the kind.
 const SLIDE_APPS: &[&str] = &["keynote", "powerpoint"];

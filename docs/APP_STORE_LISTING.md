@@ -714,6 +714,36 @@ Optional attachment: a short screen recording of a recording → Make notes
 (iOS and Mac) → paywall → notes, if review asks how to reach a
 feature.
 
+#### macOS, for any build made from `main` after 2026-11-13
+
+Mac 4.0.0 (49) was built before Read the screens (#104) and the capture
+rule (#107) were merged, and the notes above are right for it. **A later
+build, including a rebuilt 4.0.0, sends pictures when the user asks**, so
+its notes must not say that no image is sent. In the block above:
+
+- Replace the last sentence of step 7 ("No screenshot or image is ever
+  sent to an AI.") with:
+
+  ```text
+  Read the screens (Pro, Notes > On the screens): a picture of a screen or photo is sent to the user's own AI only when they press it; a dialog first shows each picture and the destination, and only the ticked ones go. Nothing else sends an image.
+  ```
+
+- The replacement is 200 characters longer and the notes are at 3993 of
+  4000, so about 195 characters must come out elsewhere (the OFFLINE AI
+  PATH paragraph is the place). Count again before pasting.
+- In What's New, add:
+
+  ```text
+  • Read the screens (Pro): pick which screens and photos from a recording your AI reads, see each one first, and keep what it reads as text beside the screen
+  • While you record, no screenshot is taken while a password app or a private browser window is in front
+  ```
+
+- The description may gain one line under the AI list:
+  "• Read the screens: your AI reads the slides and whiteboards you pick".
+- The website's privacy page needs the two sentences listed in
+  `docs/RELEASE_STATUS.md` (version plan, the v2 row) when that build is
+  live, not before: the page describes the released app.
+
 ### TestFlight (external testing) Test Information
 
 Beta app description (limit 4000):
