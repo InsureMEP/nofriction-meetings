@@ -1,9 +1,9 @@
 # Release status and agent coordination
 
 Read this before starting work. Several agents work in this repo at once.
-Last updated 2026-11-13 by the release/distribution session. Update it when you change any of the facts below.
+Last updated 2026-11-14 by the release/distribution session. Update it when you change any of the facts below.
 
-## In the stores now (updated 2026-11-13)
+## In the stores now (updated 2026-11-14)
 
 | What | Version (build) | State | Notes |
 |---|---|---|---|
@@ -11,10 +11,10 @@ Last updated 2026-11-13 by the release/distribution session. Update it when you 
 | App Store, iPhone | 1.0.2 (11) | **Released** (Ready for Sale) | Search jumps to the line; new iPhone preview video |
 | App Store, iPhone | 1.1.0 (12) | **Released 2026-10-23** (Ready for Sale) | Export… (#81), one-step AI connect with Sign in with OpenRouter (#82), new description and promo text (#85) |
 | Mac App Store | 3.9.0 (48) | **Released** (Ready for Sale). First Mac release | Make lesson, Export…, one-step AI connect, ⌘E, and the Stoichiometry course inside the app (#92). The website's Mac App Store badge is on (`macLive: true`, #101) |
-| App Store Connect drafts ("v2") | iPhone/iPad 2.0.0 (14) · Mac 4.0.0 (49) | **Prepare for Submission. Not submitted.** Builds attached, store text in place | Waiting for the device pass under "Owner to-dos". Screenshots and previews are still the 1.1.0 / 3.9.0 ones |
+| App Store review ("v2") | iPhone/iPad 2.0.0 (14) · Mac 4.0.0 (49) | **Waiting for review**, both submitted 2026-11-14 (iOS submission 13b2df21, Mac ffd65ae6), release automatically on approval | The owner said to submit without the device pass ("just submit it"). Screenshots and previews are the 1.1.0 / 3.9.0 ones. Neither build has Read the screens, the capture rule or the Export fix (see "Mac 4.0.1" below) |
 | Subscriptions (Pro Monthly/Yearly) | — | **Approved** | |
 | TestFlight external (https://testflight.apple.com/join/4JnJD3Fk) | iOS 10, 11 · Mac 43, 44, 45 | In beta testing | |
-| TestFlight internal | iOS 2.0.0 (14) · Mac 4.0.0 (49) | Uploaded 2026-11-13, available to internal testers | The v2 builds. "What to Test" is set on the iPhone build |
+| TestFlight internal | iOS 2.0.0 (14) · Mac 4.0.0 (49) | Uploaded 2026-11-13 | The internal group's only tester never accepted the invite, so nobody receives these through TestFlight. The owner's own devices are on the public group below (builds up to iOS 11 / Mac 48). To put 14 and 49 there they must be added to "noFriction Beta" and pass Beta App Review |
 
 Website: App Store badges go live when the public listing URL resolves (PR #72).
 The Mac badge has been on since Mac 3.9.0 was released (`macLive: true` in
@@ -61,31 +61,24 @@ The Mac badge has been on since Mac 3.9.0 was released (`macLive: true` in
 
 ## Owner to-dos (Casey)
 
-- **The v2 device pass, before 2.0.0 and 4.0.0 are submitted.** On the iPhone,
-  open TestFlight (https://beta.itunes.apple.com/v1/app/6818838861) and install
-  noFriction 2.0.0 (14). On the Mac, install 4.0.0 (49) from the TestFlight app
-  when no recording is running. Then:
-  1. iPhone: type a note while recording (the field under the transcript), press
-     Stop. Notes should open with **What you wrote**.
-  2. iPhone: with a calendar event starting in the next 15 minutes, the Record
-     tab offers it in one tap (**Up next**). Say "Start Recording" to Siri or
-     use the Action button.
-  3. iPhone: a notebook's page (Recordings, a Notebook chip, Open): tick an
-     item, press Review everything.
-  4. iPhone and Mac, with Pro and your AI set up: in a recording's Notes press
-     **Fill in the blanks**. It adds **What you missed** with times and **More
-     detail**. For a Class, anything from a textbook is marked as not said.
-     Delete a transcript line afterwards: the added sections go.
-  5. Mac: while recording, press ⌃⌥⌘N over another app, a full-screen app and
-     with noFriction hidden (⌘H). Type a line, press Return. The line is in the
-     live transcript and under **What you wrote** after Stop. The panel is not
-     in the recording's screens.
-  6. Apple Watch: record on the watch; it arrives on the iPhone and is
-     transcribed there.
-  7. iPhone ↔ Mac sync still works on the same Wi-Fi (Pro).
-  Tell the release session what failed, or "submit": it then submits both for
-  review (https://appstoreconnect.apple.com/apps/6818838861/distribution/ios/version/inflight
-  and https://appstoreconnect.apple.com/apps/6818838861/distribution/macos/version/inflight).
+- **Run in the real Mac app on 2026-11-14** (the direct-install build made
+  from `main` that day, installed on the owner's Mac over 3.6.0, library
+  backed up first): the migration of a real library (6 recordings, same
+  counts after), both shortcuts registering, a recording with microphone
+  and screen, a typed note saved from the note field, the ⌃⌥⌘N panel
+  opening over another app (not captured, the other app staying in front),
+  Stop ending the recording and opening Notes with **What you wrote**, and
+  Read the screens refusing with no image model set up. **Still not run
+  anywhere real:** a note saved through the panel, Fill in the blanks and
+  Read the screens with a real AI, the capture rule with a password app in
+  front, and everything on iPhone, iPad and Watch.
+- **v2 was submitted on 2026-11-14 without a device pass** (owner's call).
+  Still worth five minutes on a real iPhone once 2.0.0 is on your phone
+  (after approval, or through TestFlight if 14 is put on the public group):
+  type a note while recording and press Stop (Notes opens with **What you
+  wrote**); **Up next** with a calendar event in the next 15 minutes; a
+  notebook's page; **Fill in the blanks** with your AI; a recording from
+  the Apple Watch; sync with the Mac. Tell the release session what fails.
 - **The Mac installer certificate expires 2026-12-27** ("3rd Party Mac Developer
   Installer", the one that signs the Mac App Store package; seen while building
   49). After that date `scripts/release-mas.sh` can't package a Mac build.
