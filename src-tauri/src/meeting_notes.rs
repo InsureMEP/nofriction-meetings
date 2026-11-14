@@ -1522,6 +1522,24 @@ mod tests {
     }
 
     #[test]
+    fn filled_sections_go_out_as_lines_with_their_times_and_markings() {
+        // For Export, the Obsidian export and Chat, which lay notes out themselves
+        let filled = fill::parse(FILL, RecordingKind::Class, 60_000).unwrap();
+        let (missed, more) = fill::lines(Some(&serde_json::to_string(&filled).unwrap()));
+        assert_eq!(missed[0], "[0:10] The exam covers chapters three and four.");
+        assert!(missed.contains(&"A point with no time.".to_string()), "{missed:?}");
+        assert_eq!(more[0], "Sodium-potassium pump: It moves three sodium out and two potassium in for each ATP. [0:20]");
+        // What a textbook says, and wasn't said, keeps its marking wherever it goes
+        let background = more.last().unwrap();
+        assert!(background.ends_with("against the gradient. (background, not said in the recording)"), "{background}");
+        assert_eq!(missed.len() + more.len(), filled.missed.len() + filled.more.len());
+        // Nothing filled in, or nothing readable: no lines
+        for none in [None, Some(r#"{"missed":[],"more":[]}"#), Some("not json")] {
+            assert_eq!(fill::lines(none), (Vec::new(), Vec::new()));
+        }
+    }
+
+    #[test]
     fn the_two_sections_are_taken_out_of_notes_text_cleanly() {
         let md = "## What you wrote\n- **pump**: three sodium out\n\n## Summary\nMembranes.\n\n## What you missed\n- [0:10] The exam covers chapter three.\n\n## Key concepts\n- Osmosis\n\n## More detail\n- **Osmosis**: water moves. [0:40]\n";
         assert_eq!(

@@ -601,8 +601,12 @@ the synchronous `NotesStore.saveFill`, the two sections at the end of
 - A Delete or Strike of only photos or screens keeps the sections on the
   iPhone: no transcript text changed.
 
-**Not in yet.** For notes made on the Mac, Export, Chat and the Obsidian
-export read the notes' own columns and don't carry the two sections.
+**Where the sections go (2026-11-14).** Wherever the notes go. For notes
+made on the Mac they were at first only in Notes and in the notes sent to
+the iPhone; Export, the Obsidian export and Chat read the notes' own
+columns and left them out. `fill::lines` now gives all three the same
+lines (a time where there is one, and the background marking), so a line
+a textbook supplied is never passed off as said.
 
 **Verified (Mac).** Unit tests for the prompts by type, the parsing rules,
 saving and each way it is removed; the screen in the film harness (the

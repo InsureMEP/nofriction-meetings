@@ -400,7 +400,7 @@ async fn notes_hits(conn: &mut SqliteConnection, filter: &Filter, terms: &[Strin
         return Ok(Vec::new());
     }
     let sql = format!(
-        "SELECT n.meeting_id, n.summary, n.key_topics, n.decisions, n.action_items, m.title, m.started_at, \
+        "SELECT n.meeting_id, n.summary, n.key_topics, n.decisions, n.action_items, n.filled, m.title, m.started_at, \
          m.recording_kind, m.class_name FROM meeting_notes n JOIN meetings m ON m.id = n.meeting_id \
          WHERE 1 = 1{} ORDER BY n.generated_at DESC LIMIT 60",
         filter.clause("n.meeting_id")
@@ -431,6 +431,15 @@ async fn notes_hits(conn: &mut SqliteConnection, filter: &Filter, terms: &[Strin
         let topics = note_items(r.get("key_topics"));
         if !topics.is_empty() {
             candidates.push(format!("Key points: {}", topics.join("; ")));
+        }
+        // Fill in the blanks is part of the notes: what they missed, and the
+        // ideas explained further (background keeps its marking)
+        let (missed, more) = crate::meeting_notes::fill::lines(r.get::<Option<String>, _>("filled").as_deref());
+        for m in missed {
+            candidates.push(format!("Said in the recording, added to the notes: {}", m));
+        }
+        for m in more {
+            candidates.push(format!("More detail: {}", m));
         }
         for c in candidates {
             let score = term_score(&c, terms);

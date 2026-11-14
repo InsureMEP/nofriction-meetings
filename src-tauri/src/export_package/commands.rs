@@ -169,10 +169,12 @@ fn notes_part(n: &crate::database::MeetingNotes) -> Option<NotesPart> {
         })
         .collect();
     let summary = n.summary.clone().filter(|s| !s.trim().is_empty());
-    if summary.is_none() && topics.is_empty() && decisions.is_empty() && actions.is_empty() {
+    // Fill in the blanks goes where the notes go
+    let (missed, more) = crate::meeting_notes::fill::lines(n.filled.as_deref());
+    if summary.is_none() && topics.is_empty() && decisions.is_empty() && actions.is_empty() && missed.is_empty() && more.is_empty() {
         return None;
     }
-    Some(NotesPart::Structured { summary, topics, decisions, actions })
+    Some(NotesPart::Structured { summary, topics, decisions, actions, missed, more })
 }
 
 // ─── The draft ───────────────────────────────────────────────────────────

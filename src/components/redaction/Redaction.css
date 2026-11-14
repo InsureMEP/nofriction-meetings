@@ -52,7 +52,7 @@
 }
 
 .rd-marker-caption {
-    font-family: var(--ds-font-mono, 'JetBrains Mono', monospace);
+    font-family: var(--ds-font-mono, ui-monospace, monospace);
     font-size: 0.65rem;
     color: var(--text-secondary, #a3a3a3);
 }

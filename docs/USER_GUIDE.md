@@ -613,6 +613,10 @@ strike part of the transcript, change or delete one of your typed notes, or
 make the notes again, what was filled in is removed and you can fill in
 again. Check what it wrote against the recording before relying on it.
 
+The two sections go wherever the notes go: **Export…**, the Obsidian
+export, sync to your other device, and **Chat** can find them. A line
+marked as background keeps that marking in all of them.
+
 ---
 
 ## Mark moments and review
