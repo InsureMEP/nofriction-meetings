@@ -218,6 +218,17 @@ async fn retrieval_stays_inside_the_scope_and_the_budget() {
     assert!(p.iter().any(|x| x.source == "notes" && x.excerpt.contains("Send the budget (Bo)")), "{:?}", p);
     assert!(p.iter().any(|x| x.source == "marker" && x.timestamp_ms == Some(40_000) && x.excerpt.contains("Follow up: budget")), "{:?}", p);
     assert!(p.iter().any(|x| x.source == "transcript" && x.timestamp_ms == Some(40_000)));
+    // Fill in the blanks is part of the notes: its lines are found by their
+    // words, and background keeps its marking
+    let filled = r#"{"missed":[{"at_ms":41000,"text":"The contingency is two thousand."}],"more":[{"about":"Contingency","detail":"Money set aside for surprises.","at_ms":null,"background":true}],"typed":{}}"#;
+    sqlx::query("UPDATE meeting_notes SET filled = ? WHERE meeting_id = 'm2'").bind(filled).execute(&mut *conn).await.unwrap();
+    let p = retrieve(&mut conn, &info, "how big is the contingency?", 4_000, 12).await.unwrap();
+    assert!(p.iter().any(|x| x.source == "notes" && x.excerpt.contains("[0:41] The contingency is two thousand.")), "{:?}", p);
+    assert!(
+        p.iter().any(|x| x.source == "notes" && x.excerpt.contains("Contingency: Money set aside for surprises. (background, not said in the recording)")),
+        "{:?}",
+        p
+    );
     // Topic: m1 and m3 share "cell membrane"; m2 never appears
     let info = resolve(&mut conn, &Scope::topic("cell membrane")).await.unwrap();
     assert_eq!((info.label.as_str(), info.count), ("Topic · Cell membranes", 2));

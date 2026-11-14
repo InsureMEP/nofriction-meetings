@@ -68,7 +68,7 @@
     background: rgba(0, 0, 0, 0.75);
     padding: 3px 10px;
     border-radius: 6px;
-    font-family: var(--ds-font-mono, 'JetBrains Mono', monospace);
+    font-family: var(--ds-font-mono, ui-monospace, monospace);
     font-size: 12px;
     color: var(--text-primary, #f5f5f5);
     font-variant-numeric: tabular-nums;
@@ -117,7 +117,7 @@
 .entry-time {
     font-size: 11px;
     color: var(--text-secondary, #a3a3a3);
-    font-family: var(--ds-font-mono, 'JetBrains Mono', monospace);
+    font-family: var(--ds-font-mono, ui-monospace, monospace);
     font-variant-numeric: tabular-nums;
     margin-bottom: 2px;
 }
@@ -150,7 +150,7 @@
 
 .timeline-time {
     font-size: 12px;
-    font-family: var(--ds-font-mono, 'JetBrains Mono', monospace);
+    font-family: var(--ds-font-mono, ui-monospace, monospace);
     font-variant-numeric: tabular-nums;
     color: var(--text-secondary, #a3a3a3);
     min-width: 44px;
@@ -243,7 +243,7 @@
     padding: 1px 6px;
     border-radius: 3px;
     font-size: 10px;
-    font-family: var(--ds-font-mono, 'JetBrains Mono', monospace);
+    font-family: var(--ds-font-mono, ui-monospace, monospace);
     font-variant-numeric: tabular-nums;
 }
 

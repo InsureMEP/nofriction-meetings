@@ -31,6 +31,8 @@ fn sample_input(dir: &std::path::Path) -> PackageInput {
             topics: vec!["Budget".into(), " ".into()],
             decisions: vec!["Ship beta in May".into()],
             actions: vec!["Draft the plan (Ana, Friday)".into()],
+            missed: vec!["[12:03] The beta needs a *signed* build".into()],
+            more: vec!["Beta: a release for a few testers (background, not said in the recording)".into()],
         }),
         highlights: vec![Highlight { ms: 723_000, label: "Beta date agreed".into(), quote: Some("let's ship the beta in May".into()) }],
         screens: vec![
@@ -76,7 +78,10 @@ fn markdown_has_every_part_escaped_and_in_order() {
     assert!(md.contains("Meeting · Tuesday 21 October 2026, 14:00 · 42 min"));
     assert!(md.contains("People: Ana Ruiz, Ben Ode"));
     assert!(md.contains("We agreed to ship \\*beta\\* in May."));
-    let order = ["## Summary", "## Highlights", "## Key topics", "## Decisions", "## Action items", "## Screens and photos", "## Marked moments", "## Links", "## Follow-up email", "## Also in this package"];
+    let order = ["## Summary", "## Highlights", "## Key topics", "## Decisions", "## Action items", "## What you missed", "## More detail", "## Screens and photos", "## Marked moments", "## Links", "## Follow-up email", "## Also in this package"];
+    // Fill in the blanks goes with the notes, escaped like them, with its marking
+    assert!(md.contains("The beta needs a \\*signed\\* build"), "{md}");
+    assert!(md.contains("Beta: a release for a few testers (background, not said in the recording)"), "{md}");
     let pos: Vec<usize> = order.iter().map(|h| md.find(h).unwrap_or_else(|| panic!("{} missing", h))).collect();
     assert!(pos.windows(2).all(|w| w[0] < w[1]), "sections out of order");
     assert!(md.contains("- **12:03** Beta date agreed: “let's ship the beta in May”"));
@@ -93,7 +98,7 @@ fn markdown_has_every_part_escaped_and_in_order() {
 #[test]
 fn summary_keeps_its_paragraphs_and_ai_markdown_is_inert() {
     let mut p = PackageInput { title: "T".into(), ..Default::default() };
-    p.notes = Some(NotesPart::Structured { summary: Some("First para.\nSecond line.\n\nNext para.".into()), topics: vec![], decisions: vec![], actions: vec![] });
+    p.notes = Some(NotesPart::Structured { summary: Some("First para.\nSecond line.\n\nNext para.".into()), topics: vec![], decisions: vec![], actions: vec![], missed: vec![], more: vec![] });
     assert!(markdown(&p).contains("## Summary\n\nFirst para.  \nSecond line.\n\nNext para.\n\n"));
     p.notes = Some(NotesPart::Markdown("## Plan\n<img src=\"https://x.example/t.png\">\n![pixel](https://x.example/p.png)\n- see [the doc](https://example.com)".into()));
     let md = markdown(&p);
@@ -126,6 +131,8 @@ fn html_escapes_everything_and_only_links_web_urls() {
     assert!(!h.contains("href=\"javascript"), "only http(s) links become anchors");
     assert!(h.contains("<img src=\"screens/01-screen-1-01.png\" alt=\"The roadmap slide\">"));
     assert!(!h.contains("<script"));
+    assert!(h.contains("<h2>What you missed</h2>") && h.contains("The beta needs a *signed* build"), "the filled sections are in the page");
+    assert!(h.contains("<h2>More detail</h2>") && h.contains("(background, not said in the recording)"));
     assert!(!h.contains("http://") || h.contains("https://example.com"), "no outside requests");
     std::fs::remove_dir_all(dir).ok();
 }
@@ -406,7 +413,7 @@ mod db {
         assert!(!input.transcript[1].text.contains("strickenid"), "{}", input.transcript[1].text);
         assert!(input.transcript[1].text.contains(crate::redaction::STRICKEN_PLACEHOLDER));
         match input.notes.as_ref().unwrap() {
-            build::NotesPart::Structured { summary, topics, decisions, actions } => {
+            build::NotesPart::Structured { summary, topics, decisions, actions, .. } => {
                 assert_eq!(summary.as_deref(), Some("We agreed on May."));
                 assert_eq!(topics, &vec!["Launch".to_string()]);
                 assert_eq!(decisions, &vec!["Ship in May".to_string()]);

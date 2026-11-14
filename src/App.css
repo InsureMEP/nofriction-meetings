@@ -44,7 +44,7 @@
 
   /* ─── DS: Typography ─── */
   --ds-font-primary: -apple-system, BlinkMacSystemFont, sans-serif;
-  --ds-font-mono: 'JetBrains Mono', 'SF Mono', 'Menlo', monospace;
+  --ds-font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
   --ds-text-xs: 0.6875rem;
   --ds-text-sm: 0.8125rem;
   --ds-text-base: 0.875rem;
@@ -123,7 +123,7 @@ body {
 code,
 pre,
 .mono {
-  font-family: 'JetBrains Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
+  font-family: var(--ds-font-mono);
 }
 
 /* App Container - 3 Column Layout */
@@ -189,7 +189,7 @@ img.logo-icon {
   color: var(--hazard-yellow);
   text-transform: none;
   letter-spacing: 0;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--ds-font-mono);
 }
 
 .sidebar-nav {
@@ -271,7 +271,7 @@ img.logo-icon {
   background: transparent;
   border: 2px solid var(--hazard-yellow);
   color: var(--hazard-yellow);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--ds-font-mono);
   font-size: 13px;
   font-weight: 800;
   text-transform: none;
@@ -548,7 +548,7 @@ img.logo-icon {
   background: var(--tactical-gray);
   border: 2px solid var(--border-color);
   color: var(--text-primary);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--ds-font-mono);
   font-size: 13px;
   text-transform: none;
   letter-spacing: 0;
@@ -4851,7 +4851,7 @@ img.logo-icon {
 }
 
 .genie-header span {
-  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-family: var(--ds-font-mono);
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 2.5px;
@@ -4863,7 +4863,7 @@ img.logo-icon {
 }
 
 .genie-time {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--ds-font-mono);
   font-size: 9px;
   font-weight: 400;
   letter-spacing: 0.5px;
@@ -5005,7 +5005,7 @@ img.logo-icon {
 }
 
 .genie-line-count {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--ds-font-mono);
   font-size: 9px;
   color: rgba(255, 255, 255, 0.2);
   letter-spacing: 0.5px;
@@ -5022,7 +5022,7 @@ img.logo-icon {
   color: var(--hazard-yellow, #facc15);
   cursor: pointer;
   transition: all 0.2s ease;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--ds-font-mono);
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0;
@@ -5058,7 +5058,7 @@ img.logo-icon {
   padding: 8px;
   border-radius: 8px;
   font-size: 11px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--ds-font-mono);
   cursor: pointer;
   transition: all 0.2s;
   display: flex;
@@ -5188,7 +5188,7 @@ img.logo-icon {
 }
 
 .insight-label {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--ds-font-mono);
   font-size: 8px;
   font-weight: 700;
   letter-spacing: 1.5px;
@@ -5258,7 +5258,7 @@ img.logo-icon {
   background: rgba(239, 68, 68, 0.15);
   border: 1px solid rgba(239, 68, 68, 0.3);
   color: #ef4444;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--ds-font-mono);
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 1px;
@@ -5283,7 +5283,7 @@ img.logo-icon {
   --agency-gold-glow: rgba(250, 204, 21, 0.15);
   --agency-text-primary: #ffffff;
   --agency-text-secondary: rgba(255, 255, 255, 0.45);
-  --agency-font-mono: 'JetBrains Mono', monospace;
+  --agency-font-mono: var(--ds-font-mono);
   --agency-font-sans: var(--ds-font-primary);
 }
 

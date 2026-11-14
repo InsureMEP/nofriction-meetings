@@ -226,6 +226,20 @@ pub async fn internal_export_meeting(
         intelligence_md.push_str(&ai_decisions.join("\n"));
         intelligence_md.push_str("\n\n");
     }
+    // Fill in the blanks goes where the notes go, with its markings
+    let (filled_missed, filled_more) = crate::meeting_notes::fill::lines(notes.as_ref().and_then(|n| n.filled.as_deref()));
+    for (heading, lines) in [
+        (crate::meeting_notes::fill::MISSED_HEADING, &filled_missed),
+        (crate::meeting_notes::fill::MORE_HEADING, &filled_more),
+    ] {
+        if !lines.is_empty() {
+            intelligence_md.push_str(&format!("### {}\n\n", heading));
+            for line in lines {
+                intelligence_md.push_str(&format!("- {}\n", line));
+            }
+            intelligence_md.push('\n');
+        }
+    }
     if !ai_risks.is_empty() {
         intelligence_md.push_str("### Risk Signals\n\n");
         intelligence_md.push_str(&ai_risks.join("\n"));

@@ -77,7 +77,7 @@
 :root {
   /* ─── Font Family ─── */
   --font-primary: -apple-system, BlinkMacSystemFont, sans-serif;  /* the system face */
-  --font-mono: 'JetBrains Mono', 'SF Mono', 'Menlo', monospace;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;  /* the system's mono face */
 
   /* ─── Font Sizes ─── */
   --text-xs: 0.6875rem;    /* 11px — timestamps, badges */
@@ -106,9 +106,11 @@
   `select` and `textarea` inherit it (`src/App.css`); a control never keeps
   the browser's control font. It is the system face (owner decision
   2026-11-13): the app bundles no font, so it looks the same on every Mac.
-  Don't name a face the app doesn't ship. (`--font-mono` still names
-  JetBrains Mono, which isn't bundled either; it shows where it is
-  installed.)
+  Don't name a face the app doesn't ship. Times, code and exact wording use
+  the system's mono face through `--ds-font-mono` (`ui-monospace`, SF Mono
+  on a Mac); no rule names a mono font of its own. Until 2026-11-14 the
+  rules named JetBrains Mono, which the app never bundled: it showed only
+  on Macs that happened to have it.
 - **Sentence case everywhere.** No `text-transform: uppercase`, no tracked
   all-caps labels. Caps read as a dashboard; this is a notebook.
 - Body text is 14px (`--text-base`), not 16px. This is a desktop app, not a website.

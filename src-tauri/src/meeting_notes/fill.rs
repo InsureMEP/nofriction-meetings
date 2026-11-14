@@ -656,6 +656,38 @@ pub fn markdown(filled_json: Option<&str>) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join("\n\n"))
 }
 
+/// The two sections as plain lines, (What you missed, More detail), for
+/// the places that lay notes out themselves: Export, the Obsidian export
+/// and Chat. A line carries its time when it has one, and a More detail
+/// line that is background says so, exactly as the notes view does: that
+/// marking must never be lost on the way out of the app.
+pub fn lines(filled_json: Option<&str>) -> (Vec<String>, Vec<String>) {
+    let Some(filled) = filled_json.and_then(|j| serde_json::from_str::<Filled>(j).ok()) else {
+        return (Vec::new(), Vec::new());
+    };
+    let missed = filled
+        .missed
+        .iter()
+        .map(|m| match m.at_ms {
+            Some(ms) => format!("[{}] {}", prompt::clock(ms), one_line(&m.text)),
+            None => one_line(&m.text),
+        })
+        .collect();
+    let more = filled
+        .more
+        .iter()
+        .map(|m| {
+            let tail = match (m.background, m.at_ms) {
+                (true, _) => format!(" ({})", BACKGROUND_NOTE),
+                (false, Some(ms)) => format!(" [{}]", prompt::clock(ms)),
+                (false, None) => String::new(),
+            };
+            format!("{}: {}{}", one_line(&m.about).replace("**", ""), one_line(&m.detail), tail)
+        })
+        .collect();
+    (missed, more)
+}
+
 /// Notes Markdown without the two sections (from their `## ` heading to the
 /// next heading or the end). Notes that came from the iPhone may carry
 /// them: they are taken out before this Mac's own are added, and before

@@ -34,7 +34,17 @@ On `main`, not in a build yet.
   whiteboard, document, code, table, chart, web page, call, photo),
   chosen on your Mac from the app the screen came from.
 
+### Fixed
+- **Fill in the blanks goes where the notes go (Mac).** What you missed
+  and More detail made on the Mac were shown in Notes and sent to your
+  iPhone, but left out of **Export…**, the Obsidian export and Chat. They
+  are in all three now, each line with its time, and anything from a
+  textbook still marked as not said in the recording.
+
 ### Changed
+- Times, code and exact wording use the Mac's own mono typeface. The app
+  had named a font it didn't include, so they looked different from one
+  Mac to the next (Mac).
 - Settings → AI says where pictures go apart from where text goes (they
   can differ: Apple on-device for text, another model for Read the
   screens). It no longer says screenshots go with every screen feature;

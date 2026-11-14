@@ -218,8 +218,8 @@
 .rc-md h3, .rc-md h4 { margin: 6px 0 6px; font-size: 13px; color: #facc15; letter-spacing: 0.02em; }
 .rc-md ul, .rc-md ol { margin: 0 0 8px; padding-left: 20px; }
 .rc-md li { margin: 2px 0; }
-.rc-md code { font-family: 'JetBrains Mono', monospace; font-size: 12px; background: #0d0d0d; padding: 1px 4px; border-radius: 3px; }
-.rc-md pre { font-family: 'JetBrains Mono', monospace; font-size: 12px; background: #0d0d0d; padding: 8px 10px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; }
+.rc-md code { font-family: var(--ds-font-mono); font-size: 12px; background: #0d0d0d; padding: 1px 4px; border-radius: 3px; }
+.rc-md pre { font-family: var(--ds-font-mono); font-size: 12px; background: #0d0d0d; padding: 8px 10px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; }
 
 .rc-cite {
     display: inline-block;
@@ -232,7 +232,7 @@
     border: 1px solid rgba(250, 204, 21, 0.5);
     background: rgba(250, 204, 21, 0.1);
     color: #facc15;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--ds-font-mono);
     font-size: 10px;
     font-weight: 700;
     vertical-align: 2px;
@@ -269,9 +269,9 @@
     font-family: inherit;
 }
 .rc-source:hover { border-color: rgba(250, 204, 21, 0.4); }
-.rc-source__n { font-family: 'JetBrains Mono', monospace; color: #facc15; font-weight: 700; }
+.rc-source__n { font-family: var(--ds-font-mono); color: #facc15; font-weight: 700; }
 .rc-source__title { color: #e5e5e5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
-.rc-source__when { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #737373; white-space: nowrap; }
+.rc-source__when { font-family: var(--ds-font-mono); font-size: 10px; color: #737373; white-space: nowrap; }
 .rc-source__excerpt { color: #737373; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Thinking */

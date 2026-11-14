@@ -33,6 +33,11 @@ pub enum NotesPart {
         topics: Vec<String>,
         decisions: Vec<String>,
         actions: Vec<String>,
+        /// Fill in the blanks: what the notes missed, each with its time
+        missed: Vec<String>,
+        /// Fill in the blanks: the key ideas explained further (a line that
+        /// is background says so)
+        more: Vec<String>,
     },
     /// Notes synced from the iPhone: Markdown text
     Markdown(String),
@@ -211,7 +216,7 @@ pub fn markdown(p: &PackageInput) -> String {
     }
 
     match &p.notes {
-        Some(NotesPart::Structured { summary, topics, decisions, actions }) => {
+        Some(NotesPart::Structured { summary, topics, decisions, actions, missed, more }) => {
             if let Some(s) = summary.as_deref().filter(|s| !s.trim().is_empty()) {
                 out.push_str("## Summary\n\n");
                 // Paragraphs stay paragraphs, lines stay lines
@@ -227,6 +232,8 @@ pub fn markdown(p: &PackageInput) -> String {
             list_md(&mut out, "Key topics", topics);
             list_md(&mut out, "Decisions", decisions);
             list_md(&mut out, "Action items", actions);
+            list_md(&mut out, crate::meeting_notes::fill::MISSED_HEADING, missed);
+            list_md(&mut out, crate::meeting_notes::fill::MORE_HEADING, more);
         }
         Some(NotesPart::Markdown(md)) => {
             if !p.highlights.is_empty() {
@@ -509,7 +516,7 @@ pub fn html(p: &PackageInput) -> String {
     };
 
     match &p.notes {
-        Some(NotesPart::Structured { summary, topics, decisions, actions }) => {
+        Some(NotesPart::Structured { summary, topics, decisions, actions, missed, more }) => {
             if let Some(s) = summary.as_deref().filter(|s| !s.trim().is_empty()) {
                 out.push_str("<h2>Summary</h2>\n");
                 for para in s.trim().split("\n\n") {
@@ -520,6 +527,8 @@ pub fn html(p: &PackageInput) -> String {
             list(&mut out, "Key topics", topics);
             list(&mut out, "Decisions", decisions);
             list(&mut out, "Action items", actions);
+            list(&mut out, crate::meeting_notes::fill::MISSED_HEADING, missed);
+            list(&mut out, crate::meeting_notes::fill::MORE_HEADING, more);
         }
         Some(NotesPart::Markdown(md)) => {
             highlights(&mut out);
