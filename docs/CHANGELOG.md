@@ -43,6 +43,13 @@ On `main`, not in a build yet.
   when you press **Read the screens**, which shows each one first. Its
   keyboard focus starts on **Not now**, so a stray Return never allows a
   send.
+- **While you record, no screenshot is taken while a password app or a
+  private browser window is in front** of a screen you chose (Mac). It is
+  recognised by the app's name and, for a browser, by a title that says
+  Incognito, InPrivate or Private Browsing; Safari doesn't mark private
+  windows, so those are still captured. The code for this had been in the
+  app without ever being used. **Capture screen** still takes the picture
+  you ask for.
 - A recording of your whole display now also notes which app and window
   were in front of each screen. It stays on your Mac and goes with the
   screen when you delete or strike it; Read the screens uses it to leave

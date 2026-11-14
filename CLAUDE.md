@@ -225,6 +225,16 @@ these rules apply.
     message; add to that list on purpose, with the click that leads there.
     `vlm_scheduler.rs` (a timer that sent queued screenshots) is retired;
     don't start it or queue screens for it.
+  - **While recording, a private window in front is not captured**
+    (`privacy_filter::never_captured`, checked in the capture loop before
+    any picture is taken): password apps by name, and a browser window
+    whose title says it is private. It is deliberately narrower than what
+    Read the screens never sends (mail, chat and terminals are captured).
+    A manual snapshot is the user's own choice and isn't refused. Safari
+    doesn't mark private windows in their titles, and a private window
+    behind another can't be seen: never write "private windows are never
+    captured" without those limits. The log gets the reason only, never a
+    title or an app name.
   - **What was read from a screen is a text snapshot on that screen**
     (`source = 'screen_reading'`), so the screen's purge is its purge
     (docs/REDACTION.md: no purge filters `text_snapshots` by source).
