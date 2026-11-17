@@ -279,6 +279,38 @@ Good to know:
   screen keeps them in full-quality sound and records with the iPhone's
   microphone.
 
+### Ask while you record (Mac)
+
+While a recording runs, **Ask** sits beside the transcript. Type a question
+and press Return (⌘J puts the keyboard there):
+
+- "What did I miss?" or "Sum up the last few minutes"
+- "What was just asked of me?"
+- "What does that term mean?": it says how it is being used in this
+  conversation first, then what it means in general, marked
+  **(background, not said in the recording)**
+- "What did we agree with Ana last time?"
+
+It answers from this recording and what you already have: the last few
+minutes, what was said earlier, your typed notes and marks, the people in
+the calendar event with their companies and your notes about them, and
+earlier recordings in the same Notebook or with the same people. The
+numbers in an answer are its sources: press one to see the moment.
+
+- **It asks your AI only when you send a question.** Nothing is asked by
+  itself while you record. **What it's given** in the panel lists exactly
+  what goes with a question. No email addresses, and never text you struck.
+- **Who spoke.** noFriction doesn't recognise voices. On a call it can
+  tell your microphone from the computer's audio (the other side), and
+  the answer says "you" or "someone on the call" from that. It names a
+  person only when the words themselves make it clear.
+- The conversation is kept with the recording: ask about **This
+  recording** in **Chat** and it continues. Deleting or striking part of
+  the transcript removes the answers that used it.
+- It needs an AI (Settings → AI; Apple on-device works) and is part of
+  noFriction Pro. Speech recognition gets names and numbers wrong
+  sometimes, so check before you repeat one.
+
 **Mac:** noFriction saves a screenshot of the chosen screens when they change
 (about once a second at most) while you record.
 - Choose what's captured: **Change** in the bar while recording, then pick any screens or

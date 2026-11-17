@@ -26,6 +26,7 @@
 //!   `DatabaseManager::delete_meeting`). See docs/REDACTION.md. Transcript
 //!   text and model output are never logged.
 
+pub mod live;
 pub mod prompt;
 pub mod retrieval;
 #[cfg(test)]
@@ -439,6 +440,31 @@ pub async fn ask(
     scope: &Scope,
     question: &str,
 ) -> Result<ChatTurn, String> {
+    ask_as(pool, c, thread_id, scope, question, false).await
+}
+
+/// Ask about one recording in the moment (`live::answer`): what was just
+/// said, who is there, what the user wrote. Stored like any other turn, in
+/// a thread scoped to that recording, so it is in Chat afterwards and is
+/// removed with the recording's text.
+pub async fn ask_recording(
+    pool: &Pool<Sqlite>,
+    c: &dyn Completer,
+    thread_id: Option<&str>,
+    meeting_id: &str,
+    question: &str,
+) -> Result<ChatTurn, String> {
+    ask_as(pool, c, thread_id, &Scope::meeting(meeting_id), question, true).await
+}
+
+async fn ask_as(
+    pool: &Pool<Sqlite>,
+    c: &dyn Completer,
+    thread_id: Option<&str>,
+    scope: &Scope,
+    question: &str,
+    in_the_moment: bool,
+) -> Result<ChatTurn, String> {
     let mut conn = pool.acquire().await.map_err(err("Database busy"))?;
     let (existing, hist) = match thread_id {
         Some(id) => {
@@ -448,7 +474,10 @@ pub async fn ask(
         }
         None => (None, Vec::new()),
     };
-    let ans = answer(&mut conn, c, scope, &hist, question).await?;
+    let ans = match (in_the_moment, scope.value.as_deref()) {
+        (true, Some(meeting_id)) => live::answer(&mut conn, c, meeting_id, &hist, question, Utc::now()).await?,
+        _ => answer(&mut conn, c, scope, &hist, question).await?,
+    };
     let now = Utc::now().to_rfc3339();
     let mut tx = conn.begin().await.map_err(err("Database busy"))?;
     let thread = match existing {
@@ -561,7 +590,50 @@ pub mod commands {
         message: String,
     ) -> Result<ChatTurn, String> {
         log::info!("Chat: question of {} chars, scope {}", message.chars().count(), scope.kind.as_str());
+        // One recording: answered the way Ask does, with its people, the
+        // user's notes and what came before, not by search alone
+        if let (ScopeKind::Meeting, Some(meeting_id)) = (scope.kind, scope.value.as_deref()) {
+            return ask_recording(state.database.pool(), &LiveCompleter, thread_id.as_deref(), meeting_id, &message).await;
+        }
         ask(state.database.pool(), &LiveCompleter, thread_id.as_deref(), &scope, &message).await
+    }
+
+    /// Ask about one recording in the moment, also while it is still being
+    /// recorded. Only ever on the user's own question: nothing calls this
+    /// by itself. Consent and Pro as for `chat_ask`.
+    #[tauri::command(rename_all = "camelCase")]
+    pub async fn chat_ask_recording(
+        state: State<'_, AppState>,
+        thread_id: Option<String>,
+        meeting_id: String,
+        message: String,
+    ) -> Result<ChatTurn, String> {
+        log::info!("Ask: question of {} chars about one recording", message.chars().count());
+        ask_recording(state.database.pool(), &LiveCompleter, thread_id.as_deref(), &meeting_id, &message).await
+    }
+
+    /// What a question about this recording would draw on (no AI call).
+    #[tauri::command(rename_all = "camelCase")]
+    pub async fn chat_recording_knows(state: State<'_, AppState>, meeting_id: String) -> Result<live::Knows, String> {
+        let mut conn = state.database.pool().acquire().await.map_err(err("Database busy"))?;
+        live::knows(&mut conn, &meeting_id).await
+    }
+
+    /// The newest chat about this recording, to pick the conversation up
+    /// where it was left (the Ask panel, and Notes after Stop).
+    #[tauri::command(rename_all = "camelCase")]
+    pub async fn chat_thread_for_recording(state: State<'_, AppState>, meeting_id: String) -> Result<Option<ChatThreadDetail>, String> {
+        let id: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM chat_threads WHERE scope_kind = 'meeting' AND scope_value = ? ORDER BY updated_at DESC LIMIT 1",
+        )
+        .bind(&meeting_id)
+        .fetch_optional(state.database.pool())
+        .await
+        .map_err(err("Database busy"))?;
+        match id {
+            Some(id) => Ok(Some(get_thread(state.database.pool(), &id).await?)),
+            None => Ok(None),
+        }
     }
 
     #[tauri::command(rename_all = "camelCase")]

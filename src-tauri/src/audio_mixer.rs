@@ -112,6 +112,9 @@ impl AudioMixer {
         channels: u16,
         sink: impl FnOnce(&[f32]),
     ) {
+        // Which source was loud when, so a transcript line can say which
+        // side it was said on (audio_source.rs). Loudness only, no audio.
+        crate::audio_source::note(source, samples, rate, channels);
         let mut guard = self.state.lock();
         let out = Self::mix_locked(&mut guard, source, samples, rate, channels);
         if !out.is_empty() {

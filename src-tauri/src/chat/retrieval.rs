@@ -341,7 +341,7 @@ fn usable_line(text: &str) -> Option<String> {
     Some(clip(t, EXCERPT_CHARS))
 }
 
-async fn transcript_hits(conn: &mut SqliteConnection, filter: &Filter, question: &str) -> Result<Vec<Passage>, String> {
+pub(super) async fn transcript_hits(conn: &mut SqliteConnection, filter: &Filter, question: &str) -> Result<Vec<Passage>, String> {
     let Some(fts) = crate::database::fts_or_query(question) else { return Ok(Vec::new()) };
     let sql = format!(
         "SELECT t.meeting_id, m.title, m.started_at, m.recording_kind, m.class_name, t.timestamp, t.text, \
@@ -395,7 +395,7 @@ fn note_items(json: Option<String>) -> Vec<String> {
         .collect()
 }
 
-async fn notes_hits(conn: &mut SqliteConnection, filter: &Filter, terms: &[String]) -> Result<Vec<Passage>, String> {
+pub(super) async fn notes_hits(conn: &mut SqliteConnection, filter: &Filter, terms: &[String]) -> Result<Vec<Passage>, String> {
     if terms.is_empty() {
         return Ok(Vec::new());
     }

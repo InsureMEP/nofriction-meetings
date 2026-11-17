@@ -183,11 +183,32 @@ these rules apply.
     **Record by itself** (`auto_start_recording`) is off by default and its
     setting says "Tell people you're recording." A call that was on when a
     recording stopped must not start another (`up_next::CallTracker`).
-  - **No AI runs while recording.** The note field keeps what is typed; the
-    AI works after Stop. Don't bring back live AI cards. Automatic notes
-    wait until no recording is running (`meeting_notes::run::after_stop`;
-    iPhone `AutoNotes`, which checks before every request); only the
-    user's own **Make notes** may run during another recording.
+  - **No AI runs by itself while recording.** The note field keeps what is
+    typed; notes are made after Stop. Don't bring back live AI cards or
+    anything that asks the AI on a timer or on what is said. Automatic
+    notes wait until no recording is running
+    (`meeting_notes::run::after_stop`; iPhone `AutoNotes`, which checks
+    before every request). Two things the user starts themselves may run
+    during a recording: **Make notes** for another recording, and **Ask**
+    (owner decision 2026-11-17: "i want to be able to immediately ask
+    about things that are being talked about").
+  - **Ask answers one question about the recording you are in**
+    (`chat/live.rs`, the panel beside the live transcript on the Mac;
+    docs/TOPICS_AND_CHAT.md "Ask"). One request per question the user
+    sends, never by itself. It is given, assembled on the Mac for that
+    question: the recording's facts, the people of its calendar event
+    (names, companies, the user's notes about them; no email addresses),
+    the user's typed notes and marks, the last minutes in order, earlier
+    lines, and the notes of related earlier recordings. The panel says
+    what is given ("What it's given"); keep that list true when the
+    context changes. Answers are chat messages with their sources, so
+    Delete and Strike remove them (`chat::purge_for_meeting`).
+  - **"Who is speaking" is a side, never a name.** `audio_source.rs` keeps
+    how loud the microphone and the computer's audio were and tags a
+    transcript line `mic` or `system` (`transcripts.source`) when that is
+    clear. noFriction doesn't recognise voices: never show or tell an AI
+    that a named person said a line unless the words themselves say so,
+    and never write "speaker identification" in user-facing text.
   - **A picture reaches an AI only on a click that says so.** One feature
     sends images: **Read the screens** (`screen_reading.rs`; FADELL_V2.md
     §12). Its confirmation shows every picture that would go, with a tick

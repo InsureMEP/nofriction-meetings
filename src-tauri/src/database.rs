@@ -426,6 +426,9 @@ impl DatabaseManager {
         // Word timings (JSON, nullable): [{"s":utf16_start,"e":utf16_end,"t0":ms,"t1":ms}]
         // relative to the line's text and timestamp. Offsets only, never words.
         ensure_columns(&mut conn, "transcripts", &[("word_timings", "TEXT")]).await?;
+        // Which side a line was said on: 'mic' or 'system' (audio_source.rs).
+        // Not who spoke; NULL when it couldn't be told, and for older lines.
+        ensure_columns(&mut conn, "transcripts", &[("source", "TEXT")]).await?;
 
         // Create indexes
         sqlx::query(
@@ -1406,6 +1409,12 @@ impl DatabaseManager {
     ) -> Result<i64, sqlx::Error> {
         self.add_transcript_full(meeting_id, text, speaker, is_final, confidence, timestamp, None)
             .await
+    }
+
+    /// Which side a line was said on (`audio_source::MIC` / `SYSTEM`).
+    pub async fn set_transcript_source(&self, id: i64, source: &str) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE transcripts SET source = ? WHERE id = ?").bind(source).bind(id).execute(&self.pool).await?;
+        Ok(())
     }
 
     /// Like [`add_transcript_at`], plus optional word timings JSON

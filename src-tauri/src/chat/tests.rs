@@ -387,3 +387,201 @@ async fn transcript_edits_and_meeting_delete_remove_the_answers_that_used_it() {
     f.db.delete_meeting("m3").await.unwrap();
     assert_eq!(get_thread(f.db.pool(), &scoped.thread.id).await.unwrap().thread.flag.as_deref(), Some(FLAG_REMOVED));
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Ask: a question about the recording you are in (chat/live.rs)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// m2 (Acme sync) as a call that is still being recorded, 20 minutes in:
+/// an event with two people, lines on both sides, a typed note, and an
+/// earlier recording with the same Notebook and its notes.
+async fn live_fx() -> Fx {
+    let f = fx().await;
+    let pool = f.db.pool();
+    f.db.add_meeting_attendee("m2", "Ana Ruiz", "ana@acme.example", Some("Acme Corp"), "organizer").await.unwrap();
+    f.db.add_meeting_attendee("m2", "Casey", "casey@gmail.com", None, "attendee").await.unwrap();
+    sqlx::query(
+        "INSERT INTO people (id, email, name, company, company_domain, notes, is_self) VALUES \
+         ('ana@acme.example', 'ana@acme.example', 'Ana Ruiz', 'Acme Corp', 'acme.example', 'Runs procurement. Prefers email.', 0), \
+         ('casey@gmail.com', 'casey@gmail.com', 'Casey', NULL, 'gmail.com', NULL, 1)",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO meeting_details (meeting_id, event_title, location, notes) VALUES ('m2', 'Acme renewal call', 'Zoom', 'Agenda: renewal price, rollout date')")
+        .execute(pool)
+        .await
+        .unwrap();
+    // Said long ago in this recording, on the other side
+    let old = line_at(&f, "m2", 120, "the renewal price would go up eight percent in January").await;
+    f.db.set_transcript_source(old, crate::audio_source::SYSTEM).await.unwrap();
+    // The last minutes: the other side, then the user, then the other side again
+    for (secs, text, side) in [
+        (1080, "so the rollout would start with the Denver office", crate::audio_source::SYSTEM),
+        (1090, "and we would need your security review first", crate::audio_source::SYSTEM),
+        (1110, "we can have the review done in two weeks", crate::audio_source::MIC),
+        (1190, "Casey, can you send the SOC two report by Friday", crate::audio_source::SYSTEM),
+    ] {
+        let id = line_at(&f, "m2", secs, text).await;
+        f.db.set_transcript_source(id, side).await.unwrap();
+    }
+    // A line whose side couldn't be told
+    line_at(&f, "m2", 1195, "sounds good").await;
+    crate::markers::add_at_offset(pool, "m2", 1_112_000, Some(crate::markers::NOTE_KIND), Some("review in 2 wks: ask Dana")).await.unwrap();
+    // An earlier Acme recording, with notes
+    f.db.create_meeting("m0", "Acme kickoff").await.unwrap();
+    f.db.set_meeting_notebook("m0", Some("Acme")).await.unwrap();
+    let start = start_of(&f, "m2").await;
+    sqlx::query("UPDATE meetings SET started_at = ?, ended_at = ? WHERE id = 'm0'")
+        .bind((start - chrono::Duration::days(7)).to_rfc3339())
+        .bind((start - chrono::Duration::days(7) + chrono::Duration::minutes(30)).to_rfc3339())
+        .execute(pool)
+        .await
+        .unwrap();
+    f.db.save_meeting_notes("n0", "m0", Some("Acme wants a pilot in Denver before a full rollout."), None, None, None, None, Some("test")).await.unwrap();
+    f
+}
+
+fn at_20_min(start: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<chrono::Utc> {
+    start + chrono::Duration::seconds(1200)
+}
+
+#[tokio::test]
+async fn ask_is_given_the_recording_the_people_the_notes_and_the_last_minutes() {
+    let f = live_fx().await;
+    let mut conn = f.db.pool().acquire().await.unwrap();
+    let now = at_20_min(start_of(&f, "m2").await);
+    let m = Mock::new("They asked **you** for the SOC 2 report by Friday [7].");
+    let ans = live::answer(&mut conn, &m, "m2", &[], "what did they just ask me for?", now).await.unwrap();
+    let p = m.last_prompt();
+    assert!(p.starts_with(&live::system_prompt()), "{p}");
+
+    // The context: where this is, that it is still running, who is there
+    assert!(p.contains("RECORDING: \"Acme sync\", a meeting, Notebook \"Acme\"."), "{p}");
+    assert!(p.contains("It is STILL BEING RECORDED: 20 min in."), "{p}");
+    assert!(p.contains("CALENDAR EVENT: Acme renewal call (Zoom)") && p.contains("EVENT NOTES: Agenda: renewal price, rollout date"), "{p}");
+    assert!(p.contains("- Casey (the user)"), "a personal mail domain is not a company: {p}");
+    assert!(p.contains("- Ana Ruiz (Acme Corp, organizer). The user's note about them: Runs procurement. Prefers email."), "{p}");
+    assert!(p.contains("A line tagged (mic) was picked up by the user's microphone"), "{p}");
+    // No email address goes: the name and the company are what an answer needs
+    assert!(!p.contains("ana@acme.example") && !p.contains("gmail.com"), "{p}");
+
+    // The last minutes, in order, each side tagged, the newest last
+    let last = p.split("THE LAST MINUTES OF THIS RECORDING, IN ORDER (the newest is last):\n").nth(1).unwrap();
+    let last = last.split("\n\nQUESTION:").next().unwrap();
+    let lines: Vec<&str> = last.lines().collect();
+    assert!(lines[0].contains("18:00 — (computer audio) so the rollout would start with the Denver office and we would need your security review first"), "{last}");
+    assert!(lines[1].contains("18:30 — (mic) we can have the review done in two weeks"), "{last}");
+    assert!(lines[2].contains("19:50 — (computer audio) Casey, can you send the SOC two report by Friday"), "{last}");
+    assert!(lines[3].ends_with("19:55 — sounds good"), "an untagged line has no tag: {last}");
+    assert_eq!(lines.len(), 4);
+    // What was said 18 minutes ago is not "the last minutes"
+    assert!(!last.contains("eight percent"), "{last}");
+
+    // The user's own note, with its time
+    assert!(
+        p.contains("THE USER'S OWN NOTES AND MARKS IN THIS RECORDING:\n[1] at 0:40 — ✎ Follow up: budget follow up\n[2] at 18:32 — ✍ Note: review in 2 wks: ask Dana"),
+        "{p}"
+    );
+    // What came before this recording: the earlier Acme recording's notes
+    assert!(p.contains("FROM EARLIER RECORDINGS:\n") && p.contains("Acme kickoff — ") && p.contains("Summary: Acme wants a pilot in Denver before a full rollout."), "{p}");
+    assert!(p.ends_with("QUESTION: what did they just ask me for?"), "{p}");
+
+    // Every source is numbered once, and a citation leads to its moment
+    let ns: Vec<usize> = ans.passages.iter().map(|x| x.n).collect();
+    assert_eq!(ns, (1..=ans.passages.len()).collect::<Vec<_>>());
+    let cited = ans.passages.iter().find(|x| x.excerpt.contains("SOC two report")).unwrap();
+    assert_eq!((cited.meeting_id.as_str(), cited.timestamp_ms, cited.source), ("m2", Some(1_190_000), "transcript"));
+    assert_eq!(ans.scope_label, "Recording · Acme sync");
+}
+
+#[tokio::test]
+async fn ask_finds_what_was_said_earlier_and_never_what_was_struck() {
+    let f = live_fx().await;
+    let now = at_20_min(start_of(&f, "m2").await);
+    // A word struck from a recent line
+    let text = "the discount code is Zanzibar";
+    let id = line_at(&f, "m2", 1150, text).await;
+    let b = text.find("Zanzibar").unwrap();
+    let s = text[..b].encode_utf16().count();
+    rd::strike_words(f.db.pool(), &f.env, &WordTarget { meeting_id: "m2".into(), transcript_id: id, start: s, end: s + 8, expected_text: None, whole_line: false }, None)
+        .await
+        .unwrap();
+    let mut conn = f.db.pool().acquire().await.unwrap();
+    let m = Mock::new("Eight percent, in January [2].");
+    live::answer(&mut conn, &m, "m2", &[], "what did they say about the renewal price?", now).await.unwrap();
+    let p = m.last_prompt();
+    // Matched to the question from 18 minutes earlier, with its side
+    let earlier = p.split("EARLIER IN THIS RECORDING:\n").nth(1).expect(&p);
+    let earlier = earlier.split("\n\n").next().unwrap();
+    assert!(earlier.contains("2:00 — (computer audio) the renewal price would go up eight percent in January"), "{p}");
+    assert_eq!(earlier.matches("eight percent").count(), 1, "a line is given once: {earlier}");
+    // In time order, and other lines from before the last minutes come with it
+    let times: Vec<&str> = earlier.lines().filter_map(|l| l.split("] ").nth(1)).map(|l| l.split(" — ").next().unwrap()).collect();
+    assert_eq!(times, vec!["The saved notes' summary of this recording: Launch planning sync.", "0:20", "0:40", "2:00"], "{earlier}");
+    // The struck word is nowhere; the placeholder stands in the line
+    assert!(!p.contains("Zanzibar") && !p.contains("strickenid"), "{p}");
+    assert!(p.contains("the discount code is [stricken from the record]"), "{p}");
+    // A recording that doesn't exist is an error, and nothing is asked
+    let none = Mock::new("x");
+    assert!(live::answer(&mut conn, &none, "nope", &[], "anything?", now).await.is_err());
+    assert!(live::answer(&mut conn, &none, "m2", &[], "   ", now).await.is_err());
+    assert!(none.calls.lock().is_empty());
+}
+
+#[tokio::test]
+async fn ask_fits_a_small_model_and_keeps_the_newest_line() {
+    let f = live_fx().await;
+    let start = start_of(&f, "m2").await;
+    // A long, busy stretch right before now
+    for i in 0..60 {
+        line_at(&f, "m2", 900 + i * 4, &format!("point number {i} about the rollout plan and the security review timeline")).await;
+    }
+    line_at(&f, "m2", 1199, "the very last thing said").await;
+    let mut conn = f.db.pool().acquire().await.unwrap();
+    let mut m = Mock::new("ok");
+    m.ctx = 4_096; // Apple's on-device model
+    live::answer(&mut conn, &m, "m2", &[], "what did I miss?", at_20_min(start)).await.unwrap();
+    let p = m.last_prompt();
+    assert!(p.chars().count() < 4_096 * 4, "the prompt fits the window: {} chars", p.chars().count());
+    assert!(p.contains("the very last thing said"), "the newest line is always there: {p}");
+    assert!(p.contains("STILL BEING RECORDED") && p.contains("PEOPLE IN IT:"), "{p}");
+    // With room, all of the last six minutes is given
+    let big = Mock::new("ok");
+    live::answer(&mut conn, &big, "m2", &[], "what did I miss?", at_20_min(start)).await.unwrap();
+    assert!(big.last_prompt().contains("point number 30") && big.last_prompt().contains("point number 59"));
+}
+
+#[tokio::test]
+async fn an_ask_is_kept_as_a_chat_about_that_recording_and_goes_with_its_text() {
+    let f = live_fx().await;
+    let pool = f.db.pool();
+    let m = Mock::new("Denver first [3], as agreed at kickoff [2].");
+    let turn = ask_recording(pool, &m, None, "m2", "where does the rollout start?").await.unwrap();
+    assert_eq!(turn.thread.scope, Scope::meeting("m2"));
+    assert_eq!(turn.assistant.scope_label.as_deref(), Some("Recording · Acme sync"));
+    assert!(m.last_prompt().starts_with(&live::system_prompt()));
+    // The next question in the same thread carries the first exchange
+    let m2 = Mock::new("In two weeks [4].");
+    let t2 = ask_recording(pool, &m2, Some(&turn.thread.id), "m2", "and the review?").await.unwrap();
+    assert_eq!(t2.thread.id, turn.thread.id);
+    assert_eq!(m2.calls.lock()[0].len(), 4, "system, question, answer, question");
+    // It drew on this recording and on the earlier one: both are its sources
+    let sources: Vec<String> = sqlx::query_scalar("SELECT meeting_id FROM chat_message_sources WHERE message_id = ? ORDER BY meeting_id")
+        .bind(&turn.assistant.id)
+        .fetch_all(pool)
+        .await
+        .unwrap();
+    assert_eq!(sources, vec!["m0", "m2"]);
+    // What Ask knows, without asking
+    let mut conn = pool.acquire().await.unwrap();
+    let k = live::knows(&mut conn, "m2").await.unwrap();
+    assert_eq!((k.recording, k.lines, k.tagged, k.notes, k.related), (true, 8, 5, 2, 1));
+    assert_eq!(k.people.iter().map(|w| (w.name.as_str(), w.company.as_deref(), w.you)).collect::<Vec<_>>(), vec![("Casey", None, true), ("Ana Ruiz", Some("Acme Corp"), false)]);
+    assert_eq!(k.event.as_deref(), Some("Acme renewal call"));
+    drop(conn);
+    // Deleting the earlier recording removes the answers that drew on it; the questions stay
+    f.db.delete_meeting("m0").await.unwrap();
+    assert_eq!(counts(pool, &turn.thread.id).await, (2, 0));
+    assert_eq!(get_thread(pool, &turn.thread.id).await.unwrap().thread.flag.as_deref(), Some(FLAG_REMOVED));
+}

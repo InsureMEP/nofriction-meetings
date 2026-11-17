@@ -1,0 +1,71 @@
+// Ask: what the panel says your AI is given, and the questions it offers. Run: npm test
+
+import test from "node:test";
+import assert from "node:assert/strict";
+import { askPlaceholder, givenList, knowsLine, peopleLine, suggestions, type Knows } from "./askLogic.ts";
+
+const knows = (over: Partial<Knows>): Knows => ({
+    meeting_id: "m2",
+    title: "Acme sync",
+    kind: "meeting",
+    notebook: "Acme",
+    recording: true,
+    lines: 124,
+    tagged: 80,
+    people: [
+        { name: "Casey", company: null, role: null, you: true },
+        { name: "Ana Ruiz", company: "Acme Corp", role: "organizer", you: false },
+    ],
+    event: "Acme renewal call",
+    notes: 3,
+    related: 1,
+    ...over,
+});
+
+test("one line says what it knows right now", () => {
+    assert.equal(
+        knowsLine(knows({})),
+        "Knows what has been said so far; your 3 notes and marks; who is here: Ana Ruiz (Acme Corp); 1 earlier recording.",
+    );
+    assert.equal(knowsLine(knows({ lines: 0, notes: 0, people: [], related: 0 })), "Knows nothing said yet.");
+    assert.equal(knowsLine(knows({ recording: false, notes: 1, people: [], related: 2 })), "Knows what was said; your 1 note or mark; 2 earlier recordings.");
+});
+
+test("the people line names the others and their companies, never you", () => {
+    assert.equal(peopleLine(knows({}).people), "Ana Ruiz (Acme Corp)");
+    const four = ["Ana", "Bo", "Cy", "Di"].map((name) => ({ name, company: name === "Di" ? "Zed Ltd" : "Acme Corp", role: null, you: false }));
+    assert.equal(peopleLine(four), "Ana, Bo, Cy and 1 more (Acme Corp, Zed Ltd)");
+    assert.equal(peopleLine([{ name: "Casey", company: null, role: null, you: true }]), null);
+    assert.equal(peopleLine([{ name: "Sam", company: null, role: null, you: false }]), "Sam");
+});
+
+test("what your AI is given is said plainly, with what it is not", () => {
+    const g = givenList(knows({})).join("\n");
+    assert.match(g, /The recording: "Acme sync", its type, its Notebook \(Acme\), when it started and that it is still running\./);
+    assert.match(g, /the last few minutes in order, and earlier lines that match your question \(124 lines so far\)/);
+    assert.match(g, /Never a name: noFriction doesn't recognise voices\./);
+    assert.match(g, /Your 3 typed notes and marks in this recording/);
+    assert.match(g, /the calendar event "Acme renewal call": names, companies, who organised it, and your own notes about them\. No email addresses\./);
+    assert.match(g, /up to 3 earlier recordings in the same Notebook or with the same people/);
+    // Nothing is claimed that isn't there
+    const bare = givenList(knows({ lines: 0, tagged: 0, notes: 0, people: [], event: null, related: 0, notebook: null, recording: false })).join("\n");
+    assert.match(bare, /The transcript, once something has been said\./);
+    assert.match(bare, /No people: this recording isn't linked to a calendar event\./);
+    assert.doesNotMatch(bare, /earlier recordings|typed notes|still running|Notebook/);
+});
+
+test("the questions offered fit the moment and the type", () => {
+    const live = suggestions(knows({}));
+    assert.equal(live[0], "What did I miss?");
+    assert.ok(live.includes("What was just asked of me?"));
+    assert.equal(live[live.length - 1], "What did we agree with Ana Ruiz last time?");
+    assert.ok(!suggestions(knows({ related: 0 })).some((s) => s.includes("last time")));
+    const cls = suggestions(knows({ kind: "class", people: [] }));
+    assert.ok(cls.includes("Explain the last concept simply") && cls.includes("What here is likely to be on the test?"));
+    const after = suggestions(knows({ recording: false }));
+    assert.deepEqual(after, ["What was decided?", "What did I say I would do?", "What is still open?", "What did Ana Ruiz want?"]);
+    assert.deepEqual(suggestions(null), []);
+    assert.equal(askPlaceholder(knows({})), "Ask about what's being said");
+    assert.equal(askPlaceholder(knows({ recording: false })), "Ask about this recording");
+    assert.equal(askPlaceholder(null), "Ask about what's being said");
+});

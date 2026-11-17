@@ -1,14 +1,16 @@
 // Record: idle, a title, the promise and one Record button, plus one card
 // when something is starting (Up next). While recording, the capture bar
 // (status, time left, what is captured, Mark, Capture screen), the live
-// transcript with the notes the user types into it, and the Screens
-// captured so far. No AI runs here.
+// transcript with the notes the user types into it, Ask (a question about
+// what is being said, sent to the user's AI only when they ask it) and the
+// Screens captured so far. No AI runs here by itself.
 
 import { useCallback, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { LiveTranscriptView } from "../LiveTranscript";
 import { CaptureBar, Screens } from "../CaptureBar";
 import { NoteComposer } from "../NoteComposer";
+import { AskPanel } from "../AskPanel";
 import { UpNextCard, useUpNext } from "../UpNextCard";
 import { useRecording } from "../../hooks/useRecording";
 import { useTranscripts } from "../../hooks/useTranscripts";
@@ -118,8 +120,11 @@ export function RecordView({ recording, transcripts }: RecordViewProps) {
                     {/* Type while it listens: the line lands in the transcript at this moment */}
                     <NoteComposer meetingId={recording.meetingId} onSaved={liveNotes.add} />
                 </div>
-                <aside className="record-view__screens">
-                    <Screens isRecording />
+                <aside className="record-view__side">
+                    {recording.meetingId && <AskPanel meetingId={recording.meetingId} />}
+                    <div className="record-view__screens">
+                        <Screens isRecording />
+                    </div>
                 </aside>
             </div>
         </div>

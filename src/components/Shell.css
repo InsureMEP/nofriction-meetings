@@ -188,8 +188,16 @@
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 1fr 300px;
+  grid-template-columns: 1fr 340px;
   gap: 20px;
+}
+
+/* Beside the transcript: Ask, then the screens captured so far */
+.record-view__side {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 16px;
 }
 
 .record-view__transcript {
@@ -216,8 +224,10 @@
   overflow-y: auto;
 }
 
+/* A narrow window: the transcript, then Ask under it; the screens give way */
 @media (max-width: 900px) {
-  .record-view__body { grid-template-columns: 1fr; }
+  .record-view__body { grid-template-columns: 1fr; grid-template-rows: minmax(0, 3fr) minmax(0, 2fr); }
+  .record-view__side { grid-template-rows: minmax(0, 1fr); }
   .record-view__screens { display: none; }
 }
 
