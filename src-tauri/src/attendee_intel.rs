@@ -32,6 +32,11 @@ pub struct MeetingIntelPackage {
     pub meeting_prep: String,
 }
 
+/// A mail domain that says nothing about a company (gmail.com, icloud.com…)
+pub fn is_personal_domain(domain: &str) -> bool {
+    PERSONAL_DOMAINS.contains(&domain.trim().to_lowercase().as_str())
+}
+
 // Common email domains that are not company-specific
 const PERSONAL_DOMAINS: &[&str] = &[
     "gmail.com",

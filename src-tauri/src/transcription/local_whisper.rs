@@ -787,18 +787,24 @@ impl LocalWhisperProvider {
                 let mid = job.meeting_id.clone();
                 if let (Some(db), Some(mid)) = (db, mid) {
                     let t = text.clone();
-                    if let Err(e) = tauri::async_runtime::block_on(
-                        db.add_transcript_full(
-                            &mid,
-                            &t,
-                            None,
-                            true,
-                            0.9,
-                            segment_start,
-                            word_timings.as_deref(),
-                        ),
-                    ) {
-                        log::warn!("Failed to persist transcript: {}", e);
+                    // Which side it was said on: this Mac's microphone or
+                    // the computer's audio (never who: audio_source.rs)
+                    let side = crate::audio_source::side_of(segment_start, duration);
+                    match tauri::async_runtime::block_on(db.add_transcript_full(
+                        &mid,
+                        &t,
+                        None,
+                        true,
+                        0.9,
+                        segment_start,
+                        word_timings.as_deref(),
+                    )) {
+                        Ok(id) => {
+                            if let Some(side) = side {
+                                let _ = tauri::async_runtime::block_on(db.set_transcript_source(id, side));
+                            }
+                        }
+                        Err(e) => log::warn!("Failed to persist transcript: {}", e),
                     }
                 }
 

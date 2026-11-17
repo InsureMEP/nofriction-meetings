@@ -12,6 +12,8 @@ pub mod paths;
 pub mod secrets;
 pub mod store;
 pub mod audio_mixer;
+// Which side a line was said on: the microphone or the computer's audio
+pub mod audio_source;
 pub mod attendee_intel;
 pub mod capture_engine;
 pub mod catch_up_agent;
@@ -932,6 +934,9 @@ pub fn run() {
             topics::commands::set_meeting_topics,
             topics::commands::find_topics,
             chat::commands::chat_ask,
+            chat::commands::chat_ask_recording,
+            chat::commands::chat_recording_knows,
+            chat::commands::chat_thread_for_recording,
             chat::commands::list_chat_threads,
             chat::commands::get_chat_thread,
             chat::commands::delete_chat_thread,

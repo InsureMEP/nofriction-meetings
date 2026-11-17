@@ -113,7 +113,9 @@ pub async fn ensure_schema(conn: &mut SqliteConnection) -> Result<(), sqlx::Erro
     crate::database::ensure_columns(conn, "transcripts", &[("sync_id", "TEXT")]).await?;
     // Where a synced line was heard ("screen" = what was playing during
     // iPhone screen capture); NULL = the microphone. Kept so the line
-    // reaches other devices as it was.
+    // reaches other devices as it was. The Mac also writes 'mic' and
+    // 'system' on its own lines (audio_source.rs); sync sends and applies
+    // only "screen".
     crate::database::ensure_columns(conn, "transcripts", &[("source", "TEXT")]).await?;
     sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_transcripts_sync_id ON transcripts(sync_id)")
         .execute(&mut *conn)

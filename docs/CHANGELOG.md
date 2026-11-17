@@ -12,6 +12,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 On `main`, not in a build yet.
 
 ### Added
+- **Ask (Mac).** While you record, a panel beside the transcript answers
+  questions about what is being said: "What did I miss?", "What was just
+  asked of me?", "What does that term mean?". It knows the last few
+  minutes, what was said earlier, your notes and marks, the calendar
+  event and who is in it with their companies, and earlier recordings in
+  the same Notebook or with the same people. Every
+  answer points to the moments it came from. ⌘J puts the keyboard in it.
+  Your AI is asked only when you send a question, never by itself, and
+  **What it's given** lists what goes. Asking about one recording
+  in Chat works the same way, so the conversation continues after Stop.
+  Part of noFriction Pro.
+- **Which side spoke (Mac).** On a call, a transcript line is noted as
+  coming from your microphone or from the computer's audio (the other
+  side) when that is clear, which is mostly with headphones. Ask uses it. noFriction doesn't recognise
+  voices, so it is never a name.
 - **Read the screens (Mac).** In a recording's Notes, **Read the screens…**
   sends up to 12 of the recording's screens and photos to your AI and
   keeps what it reads from each (a slide's title and points, a document's

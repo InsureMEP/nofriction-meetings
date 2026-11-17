@@ -1349,6 +1349,39 @@ function handle(cmd: string, args: Args): unknown {
             if (!isPro) throw "PRO_REQUIRED: noFriction Pro unlocks the AI features.";
             if (AI_OPENAI && !openaiConsent) throw "CONSENT_REQUIRED:custom";
             return chatAnswer(a.threadId ?? null, a.scope, String(a.message ?? ""));
+        // Ask: a question about the recording you are in (chat/live.rs)
+        case "chat_ask_recording":
+            if (!isPro) throw "PRO_REQUIRED: noFriction Pro unlocks the AI features.";
+            if (AI_OPENAI && !openaiConsent) throw "CONSENT_REQUIRED:custom";
+            return new Promise((resolve) =>
+                window.setTimeout(() => resolve(chatAnswer(a.threadId ?? null, { kind: "meeting", value: a.meetingId }, String(a.message ?? ""))), 900),
+            );
+        case "chat_recording_knows": {
+            const running = live && live.id === a.meetingId;
+            return {
+                meeting_id: a.meetingId,
+                title: meetingById(a.meetingId)?.title ?? "Acme project sync",
+                kind: "meeting",
+                notebook: "Acme project",
+                recording: !!running,
+                lines: 42,
+                tagged: 30,
+                people: [
+                    { name: "You", company: null, role: null, you: true },
+                    { name: "Maya Chen", company: "Acme", role: "organizer", you: false },
+                    { name: "Jordan Lee", company: "Acme", role: null, you: false },
+                ],
+                event: "Acme project sync",
+                event_details: true,
+                saved_notes: false,
+                notes: 2,
+                related: 2,
+            };
+        }
+        case "chat_thread_for_recording": {
+            const t = chatThreads.find((x) => x.scope?.kind === "meeting" && x.scope?.value === a.meetingId);
+            return t ? { thread: t, messages: chatMessages.filter((m) => m.thread_id === t.id) } : null;
+        }
 
         // Sync (Settings → Sync, sync/commands.rs): Pro only, one paired
         // iPhone, and a fictional pairing code (mock/pairing-qr.svg)
