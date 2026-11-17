@@ -109,17 +109,22 @@ fn active_share(bins: &VecDeque<Bin>, from_ms: i64, to_ms: i64, floor: f32) -> O
 }
 
 /// Which side the span belongs to, from how much of it each source was
-/// active. The computer's audio wins when it was playing: with speakers on,
-/// the microphone hears the call too, so "both active" is the other side.
-/// None when neither was clearly active: no guess is stored.
+/// active. A tag is stored only when it is clear:
+/// - the computer's audio was playing and the microphone was quiet: the
+///   other side (headphones, or the user silent);
+/// - the microphone was active and the computer's audio was being captured
+///   and was quiet: the user's side.
+/// Both active is not told apart (with speakers on, the microphone hears
+/// the call; with headphones, the user may be talking over it), and when
+/// the computer's audio isn't captured at all a microphone line could be
+/// either side: no tag.
 fn decide(mic: Option<f32>, system: Option<f32>) -> Option<&'static str> {
-    if system.is_some_and(|s| s >= ACTIVE_SHARE) {
-        return Some(SYSTEM);
+    let mic_active = mic.is_some_and(|m| m >= ACTIVE_SHARE);
+    match system {
+        Some(s) if s >= ACTIVE_SHARE => (!mic_active).then_some(SYSTEM),
+        Some(_) if mic_active => Some(MIC),
+        _ => None,
     }
-    if mic.is_some_and(|m| m >= ACTIVE_SHARE) {
-        return Some(MIC);
-    }
-    None
 }
 
 /// Which side a line said from `start` for `seconds` was on: `MIC`,
@@ -168,14 +173,17 @@ mod tests {
     }
 
     #[test]
-    fn the_computers_audio_wins_when_it_was_playing() {
-        // Only the microphone: the user's side
+    fn a_side_is_stored_only_when_it_is_clear() {
+        // The microphone, with the computer's audio captured and quiet: the user's side
         assert_eq!(decide(Some(0.9), Some(0.0)), Some(MIC));
-        assert_eq!(decide(Some(0.9), None), Some(MIC));
-        // The call's other side, with the microphone hearing it through the speakers
-        assert_eq!(decide(Some(0.8), Some(0.9)), Some(SYSTEM));
+        // The computer's audio isn't captured: a call on the speakers would
+        // look the same, so no tag
+        assert_eq!(decide(Some(0.9), None), None);
+        // The computer's audio with a quiet microphone: the other side
         assert_eq!(decide(Some(0.0), Some(0.6)), Some(SYSTEM));
         assert_eq!(decide(None, Some(0.6)), Some(SYSTEM));
+        // Both active (speakers on, or talking over the call): not told apart
+        assert_eq!(decide(Some(0.8), Some(0.9)), None);
         // Neither clearly active: no guess
         assert_eq!(decide(Some(0.1), Some(0.1)), None);
         assert_eq!(decide(None, None), None);

@@ -292,20 +292,26 @@ and press Return (⌘J puts the keyboard there):
 - "What did we agree with Ana last time?"
 
 It answers from this recording and what you already have: the last few
-minutes, what was said earlier, your typed notes and marks, the people in
-the calendar event with their companies and your notes about them, and
-earlier recordings in the same Notebook or with the same people. The
+minutes, what was said earlier, your typed notes and marks, the calendar
+event (its title, place and notes) and the people in it with their
+companies, and earlier recordings in the same Notebook or with the same
+people. The
 numbers in an answer are its sources: press one to see the moment.
 
 - **It asks your AI only when you send a question.** Nothing is asked by
   itself while you record. **What it's given** in the panel lists exactly
-  what goes with a question. No email addresses, and never text you struck.
+  what goes with a question. Not the attendees' email addresses, and never
+  text you struck. The event's notes go as they are in your calendar, so
+  a meeting link written there goes too.
 - **Who spoke.** noFriction doesn't recognise voices. On a call it can
-  tell your microphone from the computer's audio (the other side), and
-  the answer says "you" or "someone on the call" from that. It names a
+  often tell your microphone from the computer's audio (the other side),
+  most reliably when you wear headphones; with the call on your speakers
+  the microphone hears both and most lines aren't marked. It names a
   person only when the words themselves make it clear.
 - The conversation is kept with the recording: ask about **This
-  recording** in **Chat** and it continues. Deleting or striking part of
+  recording** in **Chat** and it continues. There it answers from that
+  recording alone; only the panel also draws on earlier recordings, and
+  an answer that did says so. Deleting or striking part of
   the transcript removes the answers that used it.
 - It needs an AI (Settings → AI; Apple on-device works) and is part of
   noFriction Pro. Speech recognition gets names and numbers wrong

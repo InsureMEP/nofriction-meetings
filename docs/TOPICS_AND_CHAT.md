@@ -201,7 +201,10 @@ notes".
   (`AskPanel.tsx` in `RecordView`), with ⌘J to put the keyboard in it. The
   Chat tab's "This recording" scope answers the same way (`chat_ask` hands
   a single-recording scope to `ask_recording`), so the conversation
-  started while recording continues there after Stop.
+  started while recording continues there after Stop. In Chat it draws on
+  that recording alone (`Mode.related = false`): the user narrowed it. An
+  answer from the panel that used earlier recordings says so in its label
+  ("Recording · X and earlier recordings").
 - **Only when asked.** One request per question the user sends
   (`chat_ask_recording`). Nothing asks by itself, on a timer or on what is
   said. This is the one AI call the user can make about the recording that
@@ -210,22 +213,29 @@ notes".
   question):
   - the recording: title, type, Notebook, start time, and that it is still
     running and how far in;
-  - the people of its calendar event: name, company (never a personal mail
-    domain), organiser, which one is the user, how many of the user's
-    recordings they are in, and the user's own notes about them; the
-    event's title, place and notes. No email address is sent;
+  - its calendar event: the title, the place and the notes as they are in
+    the calendar (a meeting link written there goes with them), and the
+    people: name, company (never a personal mail domain), organiser, which
+    one is the user, and how many of the user's recordings they are in. No
+    attendee's email address is sent. (`people.notes` exists in the schema
+    but nothing writes it, so it is not sent or promised.)
   - which side spoke a line, when that could be told: `(mic)` or
     `(computer audio)` (below). Never a name;
   - the user's typed notes and marks in this recording, with their times;
-  - the last six minutes of transcript, in order, the newest last, lines
-    of one side joined into chunks: always given, because "what did they
-    just say?" has no words to search for;
-  - earlier in this recording: lines matched to the question (or spread
-    over what came before, when nothing matches), and the summary of notes
-    already made from it;
-  - earlier recordings in the same Notebook or with the same people: the
-    saved notes of the newest three, and lines and notes matched to the
-    question.
+  - the last minutes of transcript, in order, the newest last, lines of
+    one side joined into chunks: up to six minutes, or as much of them as
+    half the model's room holds (about two minutes of fast speech on a 4K
+    model). Always given, because "what did they just say?" has no words
+    to search for;
+  - earlier in this recording (everything before the first line given as
+    recent): lines matched to the question (or spread over what came
+    before, when nothing matches), and the notes already made from it:
+    the summary, and the decisions, action items, points and filled-in
+    lines that match;
+  - from the panel only, earlier recordings in the same Notebook, or with
+    the same people when one attendee is known to be the user (an address
+    that is in most recordings doesn't count): the saved notes of the
+    first three of them, and lines and notes matched to the question.
   Half of the room goes to the last minutes; the rest is shared by the
   user's notes, earlier lines and earlier recordings. It fits Apple's 4K
   on-device model (a test checks the newest line is still there).
@@ -238,16 +248,21 @@ notes".
   computer's audio are mixed for transcription, so a line doesn't say
   where it came from. The mixer notes how loud each source was (a number
   per audio buffer, a few minutes, in memory; no audio), and when a line
-  is saved it is tagged `mic` or `system` in `transcripts.source` if one
-  was clearly active. The computer's audio wins when both were (with
-  speakers on, the microphone hears the call). It is a side, not a
-  person: in a room, `mic` is everyone in the room.
+  is saved it is tagged `mic` or `system` in `transcripts.source` only
+  when that is clear: one source was active and the other was being
+  captured and was quiet. Both active (speakers on, or talking over the
+  call) and a recording without the computer's audio get no tag. So tags
+  are common with headphones and rare on speakers. It is a side, not a
+  person: in a room, `mic` is everyone in the room. The column is shared
+  with sync, whose `screen` value (audio of an iPhone app) is left as it
+  is and not shown as a tag.
 - **What it says about itself.** The panel's first line says what it
   knows right now (`chat_recording_knows`, no AI call), and **What it's
   given** lists everything above in plain words (`askLogic.ts`). Keep
   that list true.
 - **Stored and purged like chat.** A thread scoped to the recording; each
-  answer's sources include this recording and any other it drew on, so
+  answer's sources include this recording (always, even when it was made
+  from the people and the event alone) and any other it drew on, so
   deleting or striking any of them removes the answer. Stricken text is
   never in a source.
 - **Not on iPhone or iPad yet.**

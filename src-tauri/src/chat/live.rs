@@ -10,8 +10,7 @@
 //! - **The recording**: title, type, Notebook, when it started and how far
 //!   in it is.
 //! - **The people**: the calendar event's attendees with company and role,
-//!   which of them is the user, the user's own notes about each person, and
-//!   the event's title, place and notes.
+//!   which of them is the user, and the event's title, place and notes.
 //! - **Which side spoke**: lines are tagged (mic) or (computer audio) when
 //!   that could be told (audio_source.rs). Never a name: the transcript
 //!   doesn't know voices, and the prompt says so.
@@ -59,6 +58,17 @@ fn err<E: std::fmt::Display>(ctx: &'static str) -> impl Fn(E) -> String {
 
 fn parse_ts(s: &str) -> Option<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(s).ok().map(|d| d.with_timezone(&Utc))
+}
+
+/// How a question is being asked.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Mode {
+    /// The recording is running right now (the capture engine says so; a
+    /// recording with no end time is not proof of it)
+    pub recording: bool,
+    /// Earlier recordings may be drawn on: Ask does, and says so in "What
+    /// it's given"; a Chat narrowed to one recording stays in it
+    pub related: bool,
 }
 
 /// The recording being asked about.
@@ -127,9 +137,6 @@ pub struct Who {
     pub role: Option<String>,
     /// This is the user
     pub you: bool,
-    /// The user's own notes about this person
-    #[serde(skip)]
-    pub notes: Option<String>,
     /// How many recordings they are in
     #[serde(skip)]
     pub met: i64,
@@ -149,7 +156,7 @@ pub async fn people(conn: &mut SqliteConnection, meeting_id: &str) -> Result<Vec
         return Ok(Vec::new());
     }
     let rows = sqlx::query(
-        "SELECT a.name AS listed, a.email, a.company AS listed_company, a.role, p.name, p.company, p.company_domain, p.notes, \
+        "SELECT a.name AS listed, a.email, a.company AS listed_company, a.role, p.name, p.company, p.company_domain, \
                 COALESCE(p.is_self, 0) AS is_self, \
                 (SELECT COUNT(DISTINCT x.meeting_id) FROM meeting_attendees x WHERE lower(x.email) = lower(a.email)) AS met \
          FROM meeting_attendees a LEFT JOIN people p ON p.id = lower(a.email) \
@@ -174,7 +181,6 @@ pub async fn people(conn: &mut SqliteConnection, meeting_id: &str) -> Result<Vec
                 company: text(r.get("company")).or_else(|| text(r.get("listed_company"))).or(domain),
                 role: text(r.get("role")).filter(|role| role == "organizer"),
                 you: r.get::<i64, _>("is_self") != 0,
-                notes: text(r.get("notes")).map(|n| clip(&n, 240)),
                 met: r.get("met"),
             }
         })
@@ -216,6 +222,7 @@ pub fn brief_text(
     event: Option<&(Option<String>, Option<String>, Option<String>)>,
     tagged: bool,
     now: DateTime<Utc>,
+    recording: bool,
 ) -> String {
     let mut out = format!("RECORDING: \"{}\", a {}", h.title.trim(), kind_word(&h.kind));
     if let Some(nb) = &h.notebook {
@@ -223,12 +230,12 @@ pub fn brief_text(
     }
     out.push_str(&format!(". Started {}.", local_time(&h.started_at)));
     let started = parse_ts(&h.started_at);
-    match (h.ended_at.as_deref().and_then(parse_ts), started) {
-        (Some(end), Some(start)) => out.push_str(&format!(" It ended after {} min.", ((end - start).num_seconds().max(0) + 30) / 60)),
-        (None, Some(start)) => out.push_str(&format!(
+    match (recording, h.ended_at.as_deref().and_then(parse_ts), started) {
+        (true, _, Some(start)) => out.push_str(&format!(
             " It is STILL BEING RECORDED: {} min in. The user is in it right now.",
             ((now - start).num_seconds().max(0)) / 60
         )),
+        (false, Some(end), Some(start)) => out.push_str(&format!(" It ended after {} min.", ((end - start).num_seconds().max(0) + 30) / 60)),
         _ => {}
     }
     if let Some((title, place, notes)) = event {
@@ -261,9 +268,6 @@ pub fn brief_text(
             }
             if !facts.is_empty() {
                 line.push_str(&format!(" ({})", facts.join(", ")));
-            }
-            if let Some(n) = &w.notes {
-                line.push_str(&format!(". The user's note about them: {}", n));
             }
             out.push_str(&line);
         }
@@ -434,11 +438,20 @@ async fn related_ids(conn: &mut SqliteConnection, h: &Head) -> Result<Vec<String
         );
     }
     if has_table(conn, "people").await && has_table(conn, "meeting_attendees").await {
+        // "The same people" needs to know which attendee is the user: without
+        // that, the user's own address would make every recording related. An
+        // address that is in most of the user's recordings (a room, a team
+        // list, an unflagged alias) says nothing either.
         let with_people: Vec<String> = sqlx::query_scalar(
             "SELECT DISTINCT m.id FROM meetings m JOIN meeting_attendees x ON x.meeting_id = m.id \
-             WHERE m.id != ?1 AND m.started_at < ?2 AND lower(x.email) IN ( \
+             WHERE m.id != ?1 AND m.started_at < ?2 \
+               AND EXISTS (SELECT 1 FROM meeting_attendees s JOIN people sp ON sp.id = lower(s.email) \
+                           WHERE s.meeting_id = ?1 AND sp.is_self = 1) \
+               AND lower(x.email) IN ( \
                  SELECT lower(a.email) FROM meeting_attendees a LEFT JOIN people p ON p.id = lower(a.email) \
-                 WHERE a.meeting_id = ?1 AND COALESCE(p.is_self, 0) = 0) \
+                 WHERE a.meeting_id = ?1 AND COALESCE(p.is_self, 0) = 0 \
+                   AND (SELECT COUNT(DISTINCT y.meeting_id) FROM meeting_attendees y WHERE lower(y.email) = lower(a.email)) * 2 \
+                       <= MAX(6, (SELECT COUNT(DISTINCT z.meeting_id) FROM meeting_attendees z))) \
              ORDER BY m.started_at DESC LIMIT 12",
         )
         .bind(&h.id)
@@ -530,19 +543,30 @@ impl Sources {
 }
 
 /// Put the sources together for `question`, within `budget` characters.
-pub async fn sources(conn: &mut SqliteConnection, h: &Head, question: &str, budget: usize, now: DateTime<Utc>) -> Result<Sources, String> {
+pub async fn sources(
+    conn: &mut SqliteConnection,
+    h: &Head,
+    question: &str,
+    budget: usize,
+    now: DateTime<Utc>,
+    mode: Mode,
+) -> Result<Sources, String> {
     let terms = crate::database::search_terms(question);
     let all = lines_since(conn, h, 0).await?;
     let newest = all.last().map(|l| l.ms).unwrap_or(0);
     let recent_from = (newest - RECENT_MS).max(0);
     let recent_lines: Vec<Line> = all.iter().filter(|l| l.ms >= recent_from).cloned().collect();
-    let tagged = all.iter().any(|l| l.side.is_some());
+    let tagged = all.iter().any(|l| crate::audio_source::label(l.side.as_deref()).is_some());
 
     // Half for the last minutes; the rest shared by what the user wrote,
     // what was said earlier and what came before this recording
     let recent = newest_that_fit(recent_chunks(h, &recent_lines), budget / 2);
     let spent: usize = recent.iter().map(Passage::cost).sum();
     let rest = budget.saturating_sub(spent);
+    // "Earlier" is everything before the first line that is given as recent:
+    // in a small window that is less than six minutes back, and what falls
+    // between must still be findable
+    let recent_from = recent.first().and_then(|p| p.timestamp_ms).unwrap_or(recent_from);
 
     let notes = best_that_fit(own_notes(conn, h, &terms).await?, rest * 3 / 10, MAX_NOTES, &recent);
     let mut earlier_cands: Vec<Passage> = retrieval::transcript_hits(conn, &Filter::Meeting(h.id.clone()), question)
@@ -580,8 +604,11 @@ pub async fn sources(conn: &mut SqliteConnection, h: &Head, question: &str, budg
         let text = format!("The saved notes' summary of this recording: {}", crate::redaction::render_plain(&summary));
         earlier_cands.push(h.passage("notes", None, clip(&text, retrieval::EXCERPT_CHARS + 240), 0.95));
     }
-    let earlier = best_that_fit(earlier_cands, rest * 4 / 10, SAMPLED_LINES + 1, &recent);
-    let ids = related_ids(conn, h).await?;
+    // What the notes made from this recording say about the question:
+    // decisions, action items, key points, what Fill in the blanks added
+    earlier_cands.extend(retrieval::notes_hits(conn, &Filter::Meeting(h.id.clone()), &terms).await?);
+    let earlier = best_that_fit(earlier_cands, rest * 4 / 10, SAMPLED_LINES + 4, &recent);
+    let ids = if mode.related { related_ids(conn, h).await? } else { Vec::new() };
     let mut taken = recent.clone();
     taken.extend(notes.iter().cloned());
     taken.extend(earlier.iter().cloned());
@@ -593,7 +620,8 @@ pub async fn sources(conn: &mut SqliteConnection, h: &Head, question: &str, budg
     earlier_sorted.sort_by_key(|p| p.timestamp_ms.unwrap_or(0));
     let mut notes_sorted = notes;
     notes_sorted.sort_by_key(|p| p.timestamp_ms.unwrap_or(0));
-    Ok(Sources { brief: brief_text(h, &who, ev.as_ref(), tagged, now), notes: notes_sorted, earlier: earlier_sorted, related, recent }.numbered())
+    Ok(Sources { brief: brief_text(h, &who, ev.as_ref(), tagged, now, mode.recording), notes: notes_sorted, earlier: earlier_sorted, related, recent }
+        .numbered())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -670,13 +698,14 @@ pub async fn answer(
     history: &[(String, String)],
     question: &str,
     now: DateTime<Utc>,
+    mode: Mode,
 ) -> Result<Answer, String> {
     let question = question.trim();
     if question.is_empty() {
         return Err("Ask something first.".into());
     }
     let h = head(conn, meeting_id).await?;
-    let label = retrieval::resolve(conn, &Scope::meeting(meeting_id)).await?.label;
+    let mut label = retrieval::resolve(conn, &Scope::meeting(meeting_id)).await?.label;
     let ctx = c.context_tokens();
     let max_tokens = prompt::max_tokens(ctx).min(MAX_ANSWER_TOKENS);
     let hist = prompt::history_messages(history, ctx);
@@ -684,9 +713,17 @@ pub async fn answer(
     // What is there whatever the sources: the context, the question, the memory
     let who = people(conn, &h.id).await?;
     let ev = event(conn, &h.id).await;
-    let fixed = brief_text(&h, &who, ev.as_ref(), true, now) + question + &hist.iter().map(|m| m.text()).collect::<Vec<_>>().join("\n");
+    // The headings and the question line are part of what is always there
+    let fixed = brief_text(&h, &who, ev.as_ref(), true, now, mode.recording)
+        + &user_message(&Sources { brief: String::new(), notes: vec![], earlier: vec![], related: vec![], recent: vec![] }, question)
+        + &"x".repeat(240)
+        + &hist.iter().map(|m| m.text()).collect::<Vec<_>>().join("\n");
     let budget = prompt::passage_budget(ctx, max_tokens, &system, &fixed);
-    let s = sources(conn, &h, question, budget, now).await?;
+    let s = sources(conn, &h, question, budget, now, mode).await?;
+    // The answer says what it drew on
+    if !s.related.is_empty() {
+        label.push_str(" and earlier recordings");
+    }
     let mut msgs = vec![Msg::system(system)];
     msgs.extend(hist);
     msgs.push(Msg::user(user_message(&s, question)));
@@ -722,16 +759,20 @@ pub struct Knows {
     pub tagged: i64,
     pub people: Vec<Who>,
     pub event: Option<String>,
+    /// The event has a place, or notes, that go with a question
+    pub event_details: bool,
+    /// Notes were already made from this recording
+    pub saved_notes: bool,
     /// The user's typed notes and marks
     pub notes: i64,
     /// Earlier recordings it can draw on (same Notebook or people)
     pub related: i64,
 }
 
-pub async fn knows(conn: &mut SqliteConnection, meeting_id: &str) -> Result<Knows, String> {
+pub async fn knows(conn: &mut SqliteConnection, meeting_id: &str, recording: bool) -> Result<Knows, String> {
     let h = head(conn, meeting_id).await?;
     let (lines, tagged): (i64, i64) = sqlx::query_as(
-        "SELECT COUNT(*), COALESCE(SUM(source IS NOT NULL), 0) FROM transcripts WHERE meeting_id = ? AND is_final = 1",
+        "SELECT COUNT(*), COALESCE(SUM(source IN ('mic', 'system')), 0) FROM transcripts WHERE meeting_id = ? AND is_final = 1",
     )
     .bind(meeting_id)
     .fetch_one(&mut *conn)
@@ -744,17 +785,26 @@ pub async fn knows(conn: &mut SqliteConnection, meeting_id: &str) -> Result<Know
         .map_err(err("Couldn't read the notes"))?;
     let related = related_ids(conn, &h).await?.len() as i64;
     let who = people(conn, meeting_id).await?;
-    let ev = event(conn, meeting_id).await.and_then(|(title, _, _)| title);
+    let ev = event(conn, meeting_id).await;
+    let event_details = ev.as_ref().is_some_and(|(_, place, notes)| place.is_some() || notes.is_some());
+    let ev = ev.and_then(|(title, _, _)| title);
+    let saved_notes: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM meeting_notes WHERE meeting_id = ?")
+        .bind(meeting_id)
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(err("Couldn't read the notes"))?;
     Ok(Knows {
         meeting_id: h.id.clone(),
         title: h.title.clone(),
         kind: h.kind.clone(),
         notebook: h.notebook.clone(),
-        recording: h.ended_at.is_none(),
+        recording,
         lines,
         tagged,
         people: who,
         event: ev,
+        event_details,
+        saved_notes: saved_notes > 0,
         notes,
         related,
     })

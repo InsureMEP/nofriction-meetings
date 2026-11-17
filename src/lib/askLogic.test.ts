@@ -17,6 +17,8 @@ const knows = (over: Partial<Knows>): Knows => ({
         { name: "Ana Ruiz", company: "Acme Corp", role: "organizer", you: false },
     ],
     event: "Acme renewal call",
+    event_details: true,
+    saved_notes: true,
     notes: 3,
     related: 1,
     ...over,
@@ -45,13 +47,21 @@ test("what your AI is given is said plainly, with what it is not", () => {
     assert.match(g, /the last few minutes in order, and earlier lines that match your question \(124 lines so far\)/);
     assert.match(g, /Never a name: noFriction doesn't recognise voices\./);
     assert.match(g, /Your 3 typed notes and marks in this recording/);
-    assert.match(g, /the calendar event "Acme renewal call": names, companies, who organised it, and your own notes about them\. No email addresses\./);
+    assert.match(g, /The calendar event "Acme renewal call": its title, its place and its notes as they are in your calendar \(a meeting link or dial-in written there goes too\)\./);
+    assert.match(g, /The people in the event: names, companies, who organised it, which one is you, and how many of your recordings each is in\. Not their email addresses\./);
+    assert.match(g, /The notes already made from this recording: their summary/);
+    // Nothing is promised that the app doesn't hold
+    assert.doesNotMatch(g, /your own notes about/);
     assert.match(g, /up to 3 earlier recordings in the same Notebook or with the same people/);
     // Nothing is claimed that isn't there
-    const bare = givenList(knows({ lines: 0, tagged: 0, notes: 0, people: [], event: null, related: 0, notebook: null, recording: false })).join("\n");
+    const bare = givenList(knows({ lines: 0, tagged: 0, notes: 0, people: [], event: null, event_details: false, saved_notes: false, related: 0, notebook: null, recording: false })).join("\n");
     assert.match(bare, /The transcript, once something has been said\./);
-    assert.match(bare, /No people: this recording isn't linked to a calendar event\./);
-    assert.doesNotMatch(bare, /earlier recordings|typed notes|still running|Notebook/);
+    assert.match(bare, /No people or event: this recording isn't linked to a calendar event\./);
+    assert.doesNotMatch(bare, /earlier recordings|typed notes|still running|Notebook|notes already made/);
+    // An event with a place and notes but no attendee list is still said
+    const solo = givenList(knows({ people: [], event: null, event_details: true })).join("\n");
+    assert.match(solo, /The calendar event: its title, its place and its notes/);
+    assert.doesNotMatch(solo, /isn't linked/);
 });
 
 test("the questions offered fit the moment and the type", () => {

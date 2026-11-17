@@ -1372,6 +1372,8 @@ function handle(cmd: string, args: Args): unknown {
                     { name: "Jordan Lee", company: "Acme", role: null, you: false },
                 ],
                 event: "Acme project sync",
+                event_details: true,
+                saved_notes: false,
                 notes: 2,
                 related: 2,
             };

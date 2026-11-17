@@ -196,17 +196,21 @@ these rules apply.
     (`chat/live.rs`, the panel beside the live transcript on the Mac;
     docs/TOPICS_AND_CHAT.md "Ask"). One request per question the user
     sends, never by itself. It is given, assembled on the Mac for that
-    question: the recording's facts, the people of its calendar event
-    (names, companies, the user's notes about them; no email addresses),
-    the user's typed notes and marks, the last minutes in order, earlier
-    lines, and the notes of related earlier recordings. The panel says
+    question: the recording's facts, its calendar event (title, place,
+    notes) and people (names, companies; no email addresses), the user's
+    typed notes and marks, the last minutes in order, earlier lines, the
+    notes made from it, and the notes of related earlier recordings. A
+    Chat narrowed to one recording is answered the same way but from that
+    recording alone (`live::Mode.related`). The panel says
     what is given ("What it's given"); keep that list true when the
     context changes. Answers are chat messages with their sources, so
     Delete and Strike remove them (`chat::purge_for_meeting`).
   - **"Who is speaking" is a side, never a name.** `audio_source.rs` keeps
     how loud the microphone and the computer's audio were and tags a
-    transcript line `mic` or `system` (`transcripts.source`) when that is
-    clear. noFriction doesn't recognise voices: never show or tell an AI
+    transcript line `mic` or `system` (`transcripts.source`, a column
+    shared with sync's `screen`) only when that is clear: one source
+    active and the other captured and quiet. Both active, or the
+    computer's audio not captured, gets no tag. noFriction doesn't recognise voices: never show or tell an AI
     that a named person said a line unless the words themselves say so,
     and never write "speaker identification" in user-facing text.
   - **A picture reaches an AI only on a click that says so.** One feature

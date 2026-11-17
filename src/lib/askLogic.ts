@@ -28,6 +28,10 @@ export interface Knows {
     tagged: number;
     people: Who[];
     event: string | null;
+    /** The event has a place or notes that go with a question */
+    event_details: boolean;
+    /** Notes were already made from this recording */
+    saved_notes: boolean;
     /** Your typed notes and marks */
     notes: number;
     /** Earlier recordings it can draw on (same Notebook or people) */
@@ -75,12 +79,16 @@ export function givenList(k: Knows): string[] {
             : "Not who spoke: noFriction doesn't recognise voices. On a call it can tell your microphone from the computer's audio.",
     );
     if (k.notes > 0) out.push(`Your ${n(k.notes, "typed note or mark", "typed notes and marks")} in this recording, with their times.`);
-    if (k.people.length > 0) {
+    if (k.saved_notes) out.push("The notes already made from this recording: their summary, and the decisions, action items and points that match your question.");
+    if (k.event || k.event_details) {
         out.push(
-            `The people in ${k.event ? `the calendar event "${k.event}"` : "its calendar event"}: names, companies, who organised it, and your own notes about them. No email addresses.`,
+            `The calendar event${k.event ? ` "${k.event}"` : ""}: its title${k.event_details ? ", its place and its notes as they are in your calendar (a meeting link or dial-in written there goes too)" : ""}.`,
         );
-    } else {
-        out.push("No people: this recording isn't linked to a calendar event.");
+    }
+    if (k.people.length > 0) {
+        out.push("The people in the event: names, companies, who organised it, which one is you, and how many of your recordings each is in. Not their email addresses.");
+    } else if (!k.event && !k.event_details) {
+        out.push("No people or event: this recording isn't linked to a calendar event.");
     }
     if (k.related > 0) {
         out.push(`The saved notes of up to 3 earlier recordings in the same Notebook or with the same people, and lines from them that match your question (${n(k.related, "recording", "recordings")} to draw on).`);

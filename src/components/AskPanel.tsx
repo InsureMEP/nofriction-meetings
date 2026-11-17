@@ -39,12 +39,26 @@ export function AskPanel({ meetingId }: Props) {
     const current = useRef(meetingId);
     current.current = meetingId;
 
+    /** A question is on its way (read by the refresh, which must not race it) */
+    const busy = useRef(false);
+
     const refresh = useCallback(async () => {
         try {
             const k = await invoke<Knows>("chat_recording_knows", { meetingId });
             if (current.current === meetingId) setKnows(k);
         } catch {
             // The panel still works without the summary line
+        }
+        // An answer that arrived while this panel was away (another tab, or
+        // Stop pressed mid-question) is picked up here
+        if (busy.current) return;
+        try {
+            const d = await invoke<{ thread: ChatThread; messages: ChatMessage[] } | null>("chat_thread_for_recording", { meetingId });
+            if (!d || busy.current || current.current !== meetingId) return;
+            setThread(d.thread);
+            setMessages((prev) => (d.messages.length > prev.length ? d.messages : prev));
+        } catch {
+            // Nothing to pick up
         }
     }, [meetingId]);
 
@@ -57,20 +71,10 @@ export function AskPanel({ meetingId }: Props) {
         setAsking(null);
         setError(null);
         setShown(null);
-        let live = true;
+        busy.current = false;
         void refresh();
-        invoke<{ thread: ChatThread; messages: ChatMessage[] } | null>("chat_thread_for_recording", { meetingId })
-            .then((d) => {
-                if (!live || !d) return;
-                setThread(d.thread);
-                setMessages(d.messages);
-            })
-            .catch(() => {});
         const timer = window.setInterval(() => void refresh(), REFRESH_MS);
-        return () => {
-            live = false;
-            window.clearInterval(timer);
-        };
+        return () => window.clearInterval(timer);
     }, [meetingId, refresh]);
 
     // Command-J puts the keyboard in the question field
@@ -97,6 +101,7 @@ export function AskPanel({ meetingId }: Props) {
         setShown(null);
         setInput("");
         setAsking(question);
+        busy.current = true;
         try {
             const turn = await withAiConsent(
                 () => invoke<ChatTurn>("chat_ask_recording", { threadId: thread?.id ?? null, meetingId: forMeeting, message: question }),
@@ -116,8 +121,11 @@ export function AskPanel({ meetingId }: Props) {
             );
         } finally {
             if (current.current === forMeeting) {
+                busy.current = false;
                 setAsking(null);
                 void refresh();
+                // The next question can be typed straight away
+                field.current?.focus({ preventScroll: true });
             }
         }
     };
@@ -228,7 +236,8 @@ export function AskPanel({ meetingId }: Props) {
                     onChange={(e) => setInput(e.target.value)}
                     placeholder={askPlaceholder(knows)}
                     aria-label="Your question about this recording"
-                    disabled={asking !== null}
+                    readOnly={asking !== null}
+                    aria-busy={asking !== null}
                     maxLength={600}
                 />
                 <button type="submit" className="ask__send" disabled={!input.trim() || asking !== null} aria-label="Ask">

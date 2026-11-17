@@ -426,8 +426,10 @@ impl DatabaseManager {
         // Word timings (JSON, nullable): [{"s":utf16_start,"e":utf16_end,"t0":ms,"t1":ms}]
         // relative to the line's text and timestamp. Offsets only, never words.
         ensure_columns(&mut conn, "transcripts", &[("word_timings", "TEXT")]).await?;
-        // Which side a line was said on: 'mic' or 'system' (audio_source.rs).
-        // Not who spoke; NULL when it couldn't be told, and for older lines.
+        // Which side a line was said on. The column is shared with sync
+        // (sync/store.rs: 'screen' = audio of an iPhone app). The Mac adds
+        // 'mic' and 'system' for its own lines when that is clear
+        // (audio_source.rs). Not who spoke; NULL when it can't be told.
         ensure_columns(&mut conn, "transcripts", &[("source", "TEXT")]).await?;
 
         // Create indexes
@@ -1413,7 +1415,9 @@ impl DatabaseManager {
 
     /// Which side a line was said on (`audio_source::MIC` / `SYSTEM`).
     pub async fn set_transcript_source(&self, id: i64, source: &str) -> Result<(), sqlx::Error> {
-        sqlx::query("UPDATE transcripts SET source = ? WHERE id = ?").bind(source).bind(id).execute(&self.pool).await?;
+        // Only a line that has no side yet: a repeated line is folded into
+        // the first one said, which keeps its own
+        sqlx::query("UPDATE transcripts SET source = ? WHERE id = ? AND source IS NULL").bind(source).bind(id).execute(&self.pool).await?;
         Ok(())
     }
 

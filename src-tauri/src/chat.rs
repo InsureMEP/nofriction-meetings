@@ -440,7 +440,7 @@ pub async fn ask(
     scope: &Scope,
     question: &str,
 ) -> Result<ChatTurn, String> {
-    ask_as(pool, c, thread_id, scope, question, false).await
+    ask_as(pool, c, thread_id, scope, question, None).await
 }
 
 /// Ask about one recording in the moment (`live::answer`): what was just
@@ -453,8 +453,9 @@ pub async fn ask_recording(
     thread_id: Option<&str>,
     meeting_id: &str,
     question: &str,
+    mode: live::Mode,
 ) -> Result<ChatTurn, String> {
-    ask_as(pool, c, thread_id, &Scope::meeting(meeting_id), question, true).await
+    ask_as(pool, c, thread_id, &Scope::meeting(meeting_id), question, Some(mode)).await
 }
 
 async fn ask_as(
@@ -463,7 +464,7 @@ async fn ask_as(
     thread_id: Option<&str>,
     scope: &Scope,
     question: &str,
-    in_the_moment: bool,
+    in_the_moment: Option<live::Mode>,
 ) -> Result<ChatTurn, String> {
     let mut conn = pool.acquire().await.map_err(err("Database busy"))?;
     let (existing, hist) = match thread_id {
@@ -475,7 +476,7 @@ async fn ask_as(
         None => (None, Vec::new()),
     };
     let ans = match (in_the_moment, scope.value.as_deref()) {
-        (true, Some(meeting_id)) => live::answer(&mut conn, c, meeting_id, &hist, question, Utc::now()).await?,
+        (Some(mode), Some(meeting_id)) => live::answer(&mut conn, c, meeting_id, &hist, question, Utc::now(), mode).await?,
         _ => answer(&mut conn, c, scope, &hist, question).await?,
     };
     let now = Utc::now().to_rfc3339();
@@ -554,6 +555,21 @@ async fn ask_as(
         .map_err(err("Couldn't save the chat"))?;
     }
     let mut seen: Vec<&str> = Vec::new();
+    // An answer about a recording is that recording's, even when it was made
+    // from the people and the event alone: it goes when the recording does
+    let about: Vec<&str> = match (in_the_moment, scope.value.as_deref()) {
+        (Some(_), Some(id)) => vec![id],
+        _ => Vec::new(),
+    };
+    for id in &about {
+        seen.push(id);
+        sqlx::query("INSERT OR IGNORE INTO chat_message_sources (message_id, meeting_id) VALUES (?, ?)")
+            .bind(&assistant.id)
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(err("Couldn't save the chat"))?;
+    }
     for p in &ans.passages {
         if seen.contains(&p.meeting_id.as_str()) {
             continue;
@@ -579,6 +595,11 @@ pub mod commands {
     use crate::AppState;
     use tauri::State;
 
+    /// This recording is the one being recorded right now.
+    fn recording_now(state: &AppState, meeting_id: &str) -> bool {
+        state.capture_engine.read().is_recording() && state.state_builder.read().current_meeting_id().as_deref() == Some(meeting_id)
+    }
+
     /// Ask a question in a thread (None starts a new one). Consent and Pro
     /// are checked by `ai::complete_text`; the UI turns their errors into
     /// the dialogs.
@@ -590,10 +611,12 @@ pub mod commands {
         message: String,
     ) -> Result<ChatTurn, String> {
         log::info!("Chat: question of {} chars, scope {}", message.chars().count(), scope.kind.as_str());
-        // One recording: answered the way Ask does, with its people, the
-        // user's notes and what came before, not by search alone
+        // One recording: answered the way Ask does (its people, the user's
+        // notes, the last minutes), and from that recording alone: the user
+        // narrowed the chat to it
         if let (ScopeKind::Meeting, Some(meeting_id)) = (scope.kind, scope.value.as_deref()) {
-            return ask_recording(state.database.pool(), &LiveCompleter, thread_id.as_deref(), meeting_id, &message).await;
+            let mode = live::Mode { recording: recording_now(&state, meeting_id), related: false };
+            return ask_recording(state.database.pool(), &LiveCompleter, thread_id.as_deref(), meeting_id, &message, mode).await;
         }
         ask(state.database.pool(), &LiveCompleter, thread_id.as_deref(), &scope, &message).await
     }
@@ -609,18 +632,20 @@ pub mod commands {
         message: String,
     ) -> Result<ChatTurn, String> {
         log::info!("Ask: question of {} chars about one recording", message.chars().count());
-        ask_recording(state.database.pool(), &LiveCompleter, thread_id.as_deref(), &meeting_id, &message).await
+        let mode = live::Mode { recording: recording_now(&state, &meeting_id), related: true };
+        ask_recording(state.database.pool(), &LiveCompleter, thread_id.as_deref(), &meeting_id, &message, mode).await
     }
 
     /// What a question about this recording would draw on (no AI call).
     #[tauri::command(rename_all = "camelCase")]
     pub async fn chat_recording_knows(state: State<'_, AppState>, meeting_id: String) -> Result<live::Knows, String> {
+        let recording = recording_now(&state, &meeting_id);
         let mut conn = state.database.pool().acquire().await.map_err(err("Database busy"))?;
-        live::knows(&mut conn, &meeting_id).await
+        live::knows(&mut conn, &meeting_id, recording).await
     }
 
     /// The newest chat about this recording, to pick the conversation up
-    /// where it was left (the Ask panel, and Notes after Stop).
+    /// where it was left (the Ask panel).
     #[tauri::command(rename_all = "camelCase")]
     pub async fn chat_thread_for_recording(state: State<'_, AppState>, meeting_id: String) -> Result<Option<ChatThreadDetail>, String> {
         let id: Option<String> = sqlx::query_scalar(

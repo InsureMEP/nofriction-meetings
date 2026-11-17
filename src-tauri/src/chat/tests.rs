@@ -442,6 +442,11 @@ async fn live_fx() -> Fx {
     f
 }
 
+/// Asked from the Ask panel while the recording runs.
+const ASK: live::Mode = live::Mode { recording: true, related: true };
+/// Asked in the Chat tab, narrowed to the one recording, after it ended.
+const ONE_RECORDING: live::Mode = live::Mode { recording: false, related: false };
+
 fn at_20_min(start: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<chrono::Utc> {
     start + chrono::Duration::seconds(1200)
 }
@@ -452,7 +457,7 @@ async fn ask_is_given_the_recording_the_people_the_notes_and_the_last_minutes() 
     let mut conn = f.db.pool().acquire().await.unwrap();
     let now = at_20_min(start_of(&f, "m2").await);
     let m = Mock::new("They asked **you** for the SOC 2 report by Friday [7].");
-    let ans = live::answer(&mut conn, &m, "m2", &[], "what did they just ask me for?", now).await.unwrap();
+    let ans = live::answer(&mut conn, &m, "m2", &[], "what did they just ask me for?", now, ASK).await.unwrap();
     let p = m.last_prompt();
     assert!(p.starts_with(&live::system_prompt()), "{p}");
 
@@ -461,7 +466,9 @@ async fn ask_is_given_the_recording_the_people_the_notes_and_the_last_minutes() 
     assert!(p.contains("It is STILL BEING RECORDED: 20 min in."), "{p}");
     assert!(p.contains("CALENDAR EVENT: Acme renewal call (Zoom)") && p.contains("EVENT NOTES: Agenda: renewal price, rollout date"), "{p}");
     assert!(p.contains("- Casey (the user)"), "a personal mail domain is not a company: {p}");
-    assert!(p.contains("- Ana Ruiz (Acme Corp, organizer). The user's note about them: Runs procurement. Prefers email."), "{p}");
+    assert!(p.contains("- Ana Ruiz (Acme Corp, organizer)\n"), "{p}");
+    // Nothing in the app writes notes about a person, so none are sent
+    assert!(!p.contains("Runs procurement"), "{p}");
     assert!(p.contains("A line tagged (mic) was picked up by the user's microphone"), "{p}");
     // No email address goes: the name and the company are what an answer needs
     assert!(!p.contains("ana@acme.example") && !p.contains("gmail.com"), "{p}");
@@ -492,6 +499,17 @@ async fn ask_is_given_the_recording_the_people_the_notes_and_the_last_minutes() 
     assert_eq!(ns, (1..=ans.passages.len()).collect::<Vec<_>>());
     let cited = ans.passages.iter().find(|x| x.excerpt.contains("SOC two report")).unwrap();
     assert_eq!((cited.meeting_id.as_str(), cited.timestamp_ms, cited.source), ("m2", Some(1_190_000), "transcript"));
+    // The answer says what it drew on
+    assert_eq!(ans.scope_label, "Recording · Acme sync and earlier recordings");
+
+    // The same question in a Chat narrowed to this recording stays in it,
+    // and a recording that isn't running isn't said to be
+    let one = Mock::new("ok");
+    let ans = live::answer(&mut conn, &one, "m2", &[], "what did they just ask me for?", now, ONE_RECORDING).await.unwrap();
+    let p = one.last_prompt();
+    assert!(!p.contains("FROM EARLIER RECORDINGS") && !p.contains("Acme kickoff") && !p.contains("pilot in Denver"), "{p}");
+    assert!(!p.contains("STILL BEING RECORDED"), "{p}");
+    assert!(ans.passages.iter().all(|x| x.meeting_id == "m2"));
     assert_eq!(ans.scope_label, "Recording · Acme sync");
 }
 
@@ -509,7 +527,7 @@ async fn ask_finds_what_was_said_earlier_and_never_what_was_struck() {
         .unwrap();
     let mut conn = f.db.pool().acquire().await.unwrap();
     let m = Mock::new("Eight percent, in January [2].");
-    live::answer(&mut conn, &m, "m2", &[], "what did they say about the renewal price?", now).await.unwrap();
+    live::answer(&mut conn, &m, "m2", &[], "what did they say about the renewal price?", now, ASK).await.unwrap();
     let p = m.last_prompt();
     // Matched to the question from 18 minutes earlier, with its side
     let earlier = p.split("EARLIER IN THIS RECORDING:\n").nth(1).expect(&p);
@@ -524,9 +542,14 @@ async fn ask_finds_what_was_said_earlier_and_never_what_was_struck() {
     assert!(p.contains("the discount code is [stricken from the record]"), "{p}");
     // A recording that doesn't exist is an error, and nothing is asked
     let none = Mock::new("x");
-    assert!(live::answer(&mut conn, &none, "nope", &[], "anything?", now).await.is_err());
-    assert!(live::answer(&mut conn, &none, "m2", &[], "   ", now).await.is_err());
+    assert!(live::answer(&mut conn, &none, "nope", &[], "anything?", now, ASK).await.is_err());
+    assert!(live::answer(&mut conn, &none, "m2", &[], "   ", now, ASK).await.is_err());
     assert!(none.calls.lock().is_empty());
+    // What the notes made from this recording say is found by the question's
+    // words: an action item, not only the summary
+    let m = Mock::new("Bo sends it [1].");
+    live::answer(&mut conn, &m, "m2", &[], "who sends the budget?", now, ONE_RECORDING).await.unwrap();
+    assert!(m.last_prompt().contains("Action item: Send the budget (Bo)"), "{}", m.last_prompt());
 }
 
 #[tokio::test]
@@ -541,14 +564,22 @@ async fn ask_fits_a_small_model_and_keeps_the_newest_line() {
     let mut conn = f.db.pool().acquire().await.unwrap();
     let mut m = Mock::new("ok");
     m.ctx = 4_096; // Apple's on-device model
-    live::answer(&mut conn, &m, "m2", &[], "what did I miss?", at_20_min(start)).await.unwrap();
+    live::answer(&mut conn, &m, "m2", &[], "what did I miss?", at_20_min(start), ASK).await.unwrap();
     let p = m.last_prompt();
-    assert!(p.chars().count() < 4_096 * 4, "the prompt fits the window: {} chars", p.chars().count());
+    // 4,096 tokens less the answer (614) and the reserve, at 3.2 characters a token
+    assert!(p.chars().count() < 11_000, "the prompt fits the window: {} chars", p.chars().count());
+    // In a small window fewer than six minutes fit as "the last minutes";
+    // what was said between is still found by a question's words
+    let q = Mock::new("ok");
+    let mut q = q;
+    q.ctx = 4_096;
+    live::answer(&mut conn, &q, "m2", &[], "what was point number 3 about?", at_20_min(start), ASK).await.unwrap();
+    assert!(q.last_prompt().contains("point number 3 about"), "{}", q.last_prompt());
     assert!(p.contains("the very last thing said"), "the newest line is always there: {p}");
     assert!(p.contains("STILL BEING RECORDED") && p.contains("PEOPLE IN IT:"), "{p}");
     // With room, all of the last six minutes is given
     let big = Mock::new("ok");
-    live::answer(&mut conn, &big, "m2", &[], "what did I miss?", at_20_min(start)).await.unwrap();
+    live::answer(&mut conn, &big, "m2", &[], "what did I miss?", at_20_min(start), ASK).await.unwrap();
     assert!(big.last_prompt().contains("point number 30") && big.last_prompt().contains("point number 59"));
 }
 
@@ -557,13 +588,13 @@ async fn an_ask_is_kept_as_a_chat_about_that_recording_and_goes_with_its_text() 
     let f = live_fx().await;
     let pool = f.db.pool();
     let m = Mock::new("Denver first [3], as agreed at kickoff [2].");
-    let turn = ask_recording(pool, &m, None, "m2", "where does the rollout start?").await.unwrap();
+    let turn = ask_recording(pool, &m, None, "m2", "where does the rollout start?", ASK).await.unwrap();
     assert_eq!(turn.thread.scope, Scope::meeting("m2"));
-    assert_eq!(turn.assistant.scope_label.as_deref(), Some("Recording · Acme sync"));
+    assert_eq!(turn.assistant.scope_label.as_deref(), Some("Recording · Acme sync and earlier recordings"));
     assert!(m.last_prompt().starts_with(&live::system_prompt()));
     // The next question in the same thread carries the first exchange
     let m2 = Mock::new("In two weeks [4].");
-    let t2 = ask_recording(pool, &m2, Some(&turn.thread.id), "m2", "and the review?").await.unwrap();
+    let t2 = ask_recording(pool, &m2, Some(&turn.thread.id), "m2", "and the review?", ASK).await.unwrap();
     assert_eq!(t2.thread.id, turn.thread.id);
     assert_eq!(m2.calls.lock()[0].len(), 4, "system, question, answer, question");
     // It drew on this recording and on the earlier one: both are its sources
@@ -575,8 +606,15 @@ async fn an_ask_is_kept_as_a_chat_about_that_recording_and_goes_with_its_text() 
     assert_eq!(sources, vec!["m0", "m2"]);
     // What Ask knows, without asking
     let mut conn = pool.acquire().await.unwrap();
-    let k = live::knows(&mut conn, "m2").await.unwrap();
+    let k = live::knows(&mut conn, "m2", true).await.unwrap();
     assert_eq!((k.recording, k.lines, k.tagged, k.notes, k.related), (true, 8, 5, 2, 1));
+    assert!(k.event_details && k.saved_notes);
+    assert!(!live::knows(&mut conn, "m2", false).await.unwrap().recording, "running is what the capture engine says");
+    // An answer made before anything was said is still this recording's
+    f.db.create_meeting("m9", "Just started").await.unwrap();
+    let early = ask_recording(pool, &Mock::new("Nothing yet."), None, "m9", "who is here?", ASK).await.unwrap();
+    let own: Vec<String> = sqlx::query_scalar("SELECT meeting_id FROM chat_message_sources WHERE message_id = ?").bind(&early.assistant.id).fetch_all(pool).await.unwrap();
+    assert_eq!(own, vec!["m9"]);
     assert_eq!(k.people.iter().map(|w| (w.name.as_str(), w.company.as_deref(), w.you)).collect::<Vec<_>>(), vec![("Casey", None, true), ("Ana Ruiz", Some("Acme Corp"), false)]);
     assert_eq!(k.event.as_deref(), Some("Acme renewal call"));
     drop(conn);

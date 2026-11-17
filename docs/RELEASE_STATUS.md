@@ -1,9 +1,9 @@
 # Release status and agent coordination
 
 Read this before starting work. Several agents work in this repo at once.
-Last updated 2026-11-14 by the release/distribution session. Update it when you change any of the facts below.
+Last updated 2026-11-17 by the release/distribution session. Update it when you change any of the facts below.
 
-## In the stores now (updated 2026-11-14)
+## In the stores now (updated 2026-11-17)
 
 | What | Version (build) | State | Notes |
 |---|---|---|---|
@@ -11,7 +11,7 @@ Last updated 2026-11-14 by the release/distribution session. Update it when you 
 | App Store, iPhone | 1.0.2 (11) | **Released** (Ready for Sale) | Search jumps to the line; new iPhone preview video |
 | App Store, iPhone | 1.1.0 (12) | **Released 2026-10-23** (Ready for Sale) | Export… (#81), one-step AI connect with Sign in with OpenRouter (#82), new description and promo text (#85) |
 | Mac App Store | 3.9.0 (48) | **Released** (Ready for Sale). First Mac release | Make lesson, Export…, one-step AI connect, ⌘E, and the Stoichiometry course inside the app (#92). The website's Mac App Store badge is on (`macLive: true`, #101) |
-| App Store review ("v2") | iPhone/iPad 2.0.0 (14) · Mac 4.0.0 (49) | **Waiting for review**, both submitted 2026-11-14 (iOS submission 13b2df21, Mac ffd65ae6), release automatically on approval | The owner said to submit without the device pass ("just submit it"). Screenshots and previews are the 1.1.0 / 3.9.0 ones. Neither build has Read the screens, the capture rule or the Export fix (see "Mac 4.0.1" below) |
+| App Store, iPhone/iPad and Mac ("v2") | iPhone/iPad 2.0.0 (14) · Mac 4.0.0 (49) | **Released** (Ready for Sale, seen 2026-11-17; submitted 2026-11-14) | Up next, typed notes, the notebook's page, the quick-note panel, Fill in the blanks. Screenshots and previews are still the 1.1.0 / 3.9.0 ones. Neither build has Read the screens, the capture rule, the Export fix or Ask (see "Mac 4.0.1" below) |
 | Subscriptions (Pro Monthly/Yearly) | — | **Approved** | |
 | TestFlight external (https://testflight.apple.com/join/4JnJD3Fk) | iOS 10, 11 · Mac 43, 44, 45 | In beta testing | |
 | TestFlight internal | iOS 2.0.0 (14) · Mac 4.0.0 (49) | Uploaded 2026-11-13 | The internal group's only tester never accepted the invite, so nobody receives these through TestFlight. The owner's own devices are on the public group below (builds up to iOS 11 / Mac 48). To put 14 and 49 there they must be added to "noFriction Beta" and pass Beta App Review |
