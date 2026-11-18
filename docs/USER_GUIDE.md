@@ -307,7 +307,23 @@ numbers in an answer are its sources: press one to see the moment.
   often tell your microphone from the computer's audio (the other side),
   most reliably when you wear headphones; with the call on your speakers
   the microphone hears both and most lines aren't marked. It names a
-  person only when the words themselves make it clear.
+  person only when the words themselves make it clear, with one
+  exception: when the calendar event has only you and one other person,
+  the other side is most likely them, and an answer may say so as
+  "Ana (likely)".
+- **From another app.** With your call or your slides in front, press
+  **⌃⌥⌘A**. A field opens over it; type the question and press Return, or
+  press Return on its own to ask what you missed in the last few
+  minutes. The answer appears under the field in a few lines and stays
+  there. The keyboard is back in your app as soon as you press Return,
+  so you keep working while it answers. Press **⌃⌥⌘A** again to ask
+  something else, or twice to close the card; left alone, it closes by
+  itself two minutes after the answer. The app you were in stays in front. The same question and its
+  full answer, with sources, are in the Ask panel. **File → Ask About
+  This Recording** and the menu-bar icon's menu open the same field. The
+  first time you use a cloud AI, ask once in the noFriction window so it
+  can ask your permission. The card asks macOS to leave it out of a
+  shared screen, but don't rely on that: close it before you share.
 - The conversation is kept with the recording: ask about **This
   recording** in **Chat** and it continues. There it answers from that
   recording alone; only the panel also draws on earlier recordings, and
@@ -971,7 +987,7 @@ Full policy: [nofriction.io/privacy](https://nofriction.io/privacy).
 | Can't reach a local server | Check the address and that the server is running. Plain `http://` only works for this device, your local network or Tailscale. On iPhone/iPad, allow Local Network access, and use the computer's network address, not `localhost`. |
 | It keeps offering to record something | **Not now** hides it until tomorrow. To stop the notifications: **Remind me when something starts** (Mac: **Settings → Recording**; iPhone/iPad: **Settings**). A notebook stops being offered when you haven't recorded it at that time for six weeks. |
 | A recording started by itself (Mac) | **Record by itself** is on: **Settings → Recording → Starting**. |
-| ⌃⌥⌘N or ⌃⌥⌘M does nothing (Mac) | Another app is using that key. Use **Type a Note** or **Mark** in the menu-bar icon's menu, or quit the other app and reopen noFriction. |
+| ⌃⌥⌘N, ⌃⌥⌘M or ⌃⌥⌘A does nothing (Mac) | Another app is using that key. Use **Type a Note**, **Mark** or **Ask About This Recording** in the menu-bar icon's menu, or quit the other app and reopen noFriction. |
 | Notes cover only part of a long recording | Notes made by an earlier version read only the start. Open the recording → **Notes** → **Make again**. |
 | Recording stopped by itself | That's the time limit you chose or automatic stop; see [What is it, how long, and notebook](#what-is-it-how-long-and-notebook) and [Automatic stop](#automatic-stop). |
 | Notes are in the wrong style | Change the recording's type (Mac: the type row under the recording's title), then **Make again** on the notes. |

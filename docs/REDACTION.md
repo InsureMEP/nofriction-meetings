@@ -512,7 +512,14 @@ UI in `src/components/redaction/Redaction.tsx`.
   server lists it as not shared. Whether a capture honors that is macOS's
   decision and was not verified: if the app's own capture didn't, a line
   being typed would be in that screenshot like anything else on the
-  screen, and is purged with the recording's screens.
+  screen, and is purged with the recording's screens. The same panel
+  shows an answer to a question asked with ⌃⌥⌘A (Ask from any app): the
+  question and the answer are a chat message of the recording's thread,
+  purged like any other (`chat::purge_for_meeting`); the card holds a
+  plain copy in memory only while it is on screen and is emptied when it
+  closes. A note put aside while a question is typed
+  (`Session.note_draft`) is in memory until the note key, another
+  recording or quit.
   **iPhone:** a typed note is a `MomentMarker` of kind `note`, deleted with
   its recording. There is no time-range edit, so a Delete or Strike of
   words, lines or screens leaves typed lines alone; what the notes wrote

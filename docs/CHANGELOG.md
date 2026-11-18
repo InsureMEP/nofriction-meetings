@@ -50,6 +50,19 @@ On `main`, not in a build yet.
   **What it's given** lists what goes. Asking about one recording
   in Chat works the same way, so the conversation continues after Stop.
   Part of noFriction Pro.
+- **Ask from any app (Mac).** **⌃⌥⌘A** opens a field over whatever app
+  is in front. Type a question about the recording and press Return, or
+  press Return on its own to ask what you missed. The answer shows under
+  the field in a few lines; the keyboard is back in your app as soon as
+  you press Return, and the card closes after two minutes or when you
+  press ⌃⌥⌘A twice. The app in front stays in front.
+  The question and its full answer with sources are in the Ask panel.
+  **File → Ask About This Recording** and the menu-bar icon's menu open
+  the same field. It asks your AI only when you press Return.
+- **The other side by name on a two-person call (Mac).** When the
+  calendar event has only you and one other person, Ask may name them for
+  what came through the computer's audio, marked "(likely)". It is worked
+  out from the calendar; noFriction doesn't recognise voices.
 - **Which side spoke (Mac).** On a call, a transcript line is noted as
   coming from your microphone or from the computer's audio (the other
   side) when that is clear, which is mostly with headphones. Ask uses it. noFriction doesn't recognise

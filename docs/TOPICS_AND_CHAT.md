@@ -270,6 +270,84 @@ notes".
   from reasoning, not from recordings), and answer quality with a real
   model during a real meeting.
 
+#### Ask from any app (2026-11-18)
+
+The owner: "enhance these capabilities". On a call the user is in Zoom,
+Meet or their slides, not in the noFriction window, so the panel beside
+the transcript is the one place they are not looking.
+
+- **⌃⌥⌘A** (also **File → Ask About This Recording** and the menu-bar
+  icon's item) opens the quick-note panel for a question
+  (`quick_note.rs::toggle_ask`). It takes the keyboard without bringing
+  noFriction forward, as the note panel does. Return sends the question;
+  Return with nothing typed asks "What did I miss in the last few
+  minutes?". If nothing is recording it says so and asks nothing.
+- **Return gives the keyboard back.** The moment a question is sent the
+  card stays on screen and the keyboard returns to the app in front
+  (`panel::release_keyboard`, `PINNED`), so a Return or a ⌘ key meant
+  for the call never reaches the card. The field shows what was asked
+  (also for the default question).
+- **The answer is a card** under the field (`panel::show_answer`): the
+  panel grows downward to fit it, its top edge stays put, up to 300 pt
+  (17 lines; longer ends in an ellipsis). ⌃⌥⌘A while it is up takes the
+  keyboard for the next question and leaves the answer where it is;
+  ⌃⌥⌘A again (or Esc, now that it has the keyboard) closes it. Left
+  alone it closes two minutes after the answer; if the user is in it at
+  that moment (copying a line) it closes when they leave it. An answer
+  that lands after the card was closed and opened again for the same
+  recording still shows; one that lands on a closed card, or on the note
+  panel, is only in the app.
+- **Only the recording that is running.** Return re-reads the recorder:
+  if the card's recording has stopped, it says so and asks nothing, and
+  the Ask key on an old card opens a fresh one for what is recording
+  now.
+- **A shorter answer** (`Mode.glance`): the same sources as the panel in
+  the app, plus one rule in the prompt (at most three short lines or
+  bullets, the most useful first) and 320 answer tokens instead of 700.
+  The card shows it as plain text (`plain_answer`: no emphasis marks,
+  bullets as "•", no source numbers because they can't be opened there,
+  at most 900 characters). The stored message is the whole Markdown
+  answer with its sources.
+- **The same conversation.** The question goes to the recording's latest
+  thread (`ask_recording`), so it is in the panel and in Chat with its
+  sources; the panel refreshes on the `ask_answered` event. Purged like
+  any chat message. The card itself keeps nothing: closing it empties it.
+- **Consent, Pro and errors.** The card can't show the consent dialog or
+  the paywall over another app, so `ask_error` says where to go
+  ("Open noFriction and ask there once") and nothing is sent. An
+  endpoint's own error text is never on the card or in the log.
+- **One field, two uses.** The note key and the Ask key open the same
+  panel. Pressing the other key changes it over (`press`). A note being
+  typed is put aside when the panel opens for a question and comes back
+  with the note key (`Session.note_draft`); a question is never left in
+  the field as a note. While a note is being kept the Ask key never
+  takes the field for a question (it closes an open panel), and while a
+  question is with the AI neither key changes the panel over. A question
+  typed and not sent is gone when the card closes.
+- **Naming the other side on a two-person call** (`live::other_side`).
+  When the event has exactly the user and one other person, and lines
+  are tagged with a side, the context says the computer's audio is most
+  likely that person and that an answer may name them, written
+  "Name (likely)" the first time. It is worked out from the calendar,
+  not heard, and "What it's given" says so (`askLogic.ts::otherSide`).
+  With three people, nobody known to be the user, or no side tags, the
+  rule is as before: a side, never a name. Applies to the panel and Chat
+  as well as the card.
+- **Checked:** `cargo run --example ask_card` puts the real card on
+  screen without taking the keyboard and checks that it grows to fit,
+  keeps its top edge, holds a long answer to the limit, and is empty once
+  closed. An independent review of the state handling found the card
+  could stay on "Asking your AI…" forever when reopened mid-question,
+  stay pinned, keep the keyboard after answering, and ask about a
+  recording that had stopped; all fixed before merge. With `KEYBOARD=1`
+  the example also checks that the card takes the keyboard for the
+  question, gives it up on Return while staying on screen, and that the
+  answer lands without taking it back (17 checks). **Not verified:** the
+  shortcut over a real call, and a question answered by a real model
+  from the card. On a calendar that lists a room or drops a
+  participant, a three-person call can look like two: that is why the
+  name is always marked "(likely)".
+
 ### Tests (`topics/tests.rs`, `chat/tests.rs`, `*.test.ts`)
 
 Rust (20): topic JSON shapes and the cap of four, malformed input never

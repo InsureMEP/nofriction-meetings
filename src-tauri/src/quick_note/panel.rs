@@ -120,12 +120,23 @@ struct Refs {
     panel: Id,
     field: Id,
     caption: Id,
+    /// The answer to a question (Ask), under the field; empty when hidden
+    answer: Id,
 }
 
 thread_local! {
     static REFS: Cell<Option<Refs>> = const { Cell::new(None) };
     static HIDING: Cell<bool> = const { Cell::new(false) };
+    /// The panel stays on screen when it loses the keyboard: an answer is
+    /// on its way or being read while the user is back in their call
+    static PINNED: Cell<bool> = const { Cell::new(false) };
 }
+
+/// The answer card: how tall the text may get, and the space around it
+const ANSWER_MAX_HEIGHT: f64 = 300.0;
+const ANSWER_GAP: f64 = 12.0;
+/// As many lines as fit in that height at the answer's size
+const ANSWER_MAX_LINES: isize = 17;
 
 /// Run `f` inside an autorelease pool.
 fn pooled<R>(f: impl FnOnce() -> R) -> R {
@@ -333,6 +344,11 @@ extern "C" fn text_changed(_this: &Object, _sel: Sel, _notification: Id) {
 }
 
 extern "C" fn resigned_key(_this: &Object, _sel: Sel, _notification: Id) {
+    // While an answer is awaited or shown the card stays where it is: the
+    // user went back to their call and will glance at it
+    if PINNED.with(|p| p.get()) {
+        return;
+    }
     guarded(hide);
 }
 
@@ -436,6 +452,9 @@ unsafe fn create() -> Refs {
     let _: () = msg_send![field, setAction: sel!(keep:)];
     let _: () = msg_send![field, setDelegate: delegate];
     let _: () = msg_send![field, setAccessibilityLabel: ns_string("Type a note. Return keeps it at this moment.")];
+    // Stays at the top when the panel grows downward for an answer
+    // (NSViewMinYMargin: the space under it is what stretches)
+    let _: () = msg_send![field, setAutoresizingMask: 8usize];
     let _: () = msg_send![effect, addSubview: field];
     let _: () = msg_send![field, release];
 
@@ -446,7 +465,25 @@ unsafe fn create() -> Refs {
     let _: () = msg_send![caption, setFont: small];
     // NSLineBreakByTruncatingTail
     let _: () = msg_send![caption, setLineBreakMode: 4usize];
+    let _: () = msg_send![caption, setAutoresizingMask: 8usize];
     let _: () = msg_send![effect, addSubview: caption];
+
+    // The answer to a question, under the caption: wrapped text, selectable
+    // so a line can be copied, hidden until there is one
+    let answer: Id = msg_send![class!(NSTextField), wrappingLabelWithString: ns_string("")];
+    let _: () = msg_send![answer, setFrame: rect(22.0, ANSWER_GAP, WIDTH - 44.0, 0.0)];
+    let body: Id = msg_send![class!(NSFont), systemFontOfSize: 13.5f64];
+    let _: () = msg_send![answer, setFont: body];
+    let ink: Id = msg_send![class!(NSColor), labelColor];
+    let _: () = msg_send![answer, setTextColor: ink];
+    let _: () = msg_send![answer, setSelectable: YES];
+    // A long answer ends in an ellipsis instead of being cut mid-line
+    let _: () = msg_send![answer, setMaximumNumberOfLines: ANSWER_MAX_LINES];
+    let answer_cell: Id = msg_send![answer, cell];
+    let _: () = msg_send![answer_cell, setTruncatesLastVisibleLine: YES];
+    let _: () = msg_send![answer, setHidden: YES];
+    let _: () = msg_send![answer, setAccessibilityLabel: ns_string("Answer")];
+    let _: () = msg_send![effect, addSubview: answer];
 
     // The panel doesn't retain its delegate; it lives as long as the app
     let _: () = msg_send![panel, setDelegate: delegate];
@@ -460,7 +497,25 @@ unsafe fn create() -> Refs {
         let _: () = msg_send![editor, setInsertionPointColor: yellow];
     }
 
-    Refs { panel, field, caption }
+    Refs { panel, field, caption, answer }
+}
+
+/// Resize the panel to `height`, keeping its top edge where it is.
+unsafe fn set_height(refs: Refs, height: f64) {
+    let frame: Rect = msg_send![refs.panel, frame];
+    if (frame.size.height - height).abs() < 0.5 {
+        return;
+    }
+    let top = frame.origin.y + frame.size.height;
+    let next = rect(frame.origin.x, top - height, frame.size.width, height);
+    let _: () = msg_send![refs.panel, setFrame: next display: YES];
+}
+
+/// Take the answer away and give the panel its one-line height back.
+unsafe fn drop_answer(refs: Refs) {
+    let _: () = msg_send![refs.answer, setStringValue: ns_string("")];
+    let _: () = msg_send![refs.answer, setHidden: YES];
+    set_height(refs, HEIGHT);
 }
 
 fn refs() -> Refs {
@@ -526,21 +581,113 @@ unsafe fn write_caption(refs: Refs, text: &str, error: bool) {
 /// Show the field over whatever is in front and give it the keyboard.
 /// `keep_draft` leaves what was typed before; otherwise the field is empty.
 pub fn show(caption: &str, keep_draft: bool) {
+    show_field("Type a note", "Type a note. Return keeps it at this moment.", caption, keep_draft, false);
+}
+
+/// The same field, for a question (Ask): Return sends it. `keep_answer`
+/// leaves the last answer on the card while the next question is typed.
+pub fn show_ask(caption: &str, keep_answer: bool) {
+    show_field("Ask about what's being said", "Ask about what is being said. Return asks.", caption, false, keep_answer);
+}
+
+fn show_field(placeholder: &str, spoken: &str, caption: &str, keep_draft: bool, keep_answer: bool) {
     pooled(|| unsafe {
         let refs = refs();
+        PINNED.with(|p| p.set(false));
         if !keep_draft {
             let _: () = msg_send![refs.field, setStringValue: ns_string("")];
         }
-        let _: () = msg_send![refs.field, setPlaceholderString: ns_string("Type a note")];
+        let already: BOOL = msg_send![refs.panel, isVisible];
+        if !keep_answer {
+            drop_answer(refs);
+        }
+        let _: () = msg_send![refs.field, setPlaceholderString: ns_string(placeholder)];
+        let _: () = msg_send![refs.field, setAccessibilityLabel: ns_string(spoken)];
         let _: () = msg_send![refs.field, setEditable: YES];
         let _: () = msg_send![refs.field, setSelectable: YES];
         write_caption(refs, caption, false);
-        place(refs.panel);
+        // A card that is already up with its answer stays where it is
+        if !(keep_answer && already != NO) {
+            place(refs.panel);
+        }
         let _: () = msg_send![refs.panel, orderFrontRegardless];
         let _: () = msg_send![refs.panel, makeKeyWindow];
         let _: BOOL = msg_send![refs.panel, makeFirstResponder: refs.field];
         cursor_to_end(refs);
     });
+}
+
+/// Keep the panel on screen when it loses the keyboard (an answer is on
+/// its way or being read), or let it close as usual.
+pub fn set_pinned(pinned: bool) {
+    PINNED.with(|p| p.set(pinned));
+}
+
+/// Whether the panel stays up without the keyboard (an answer card).
+pub fn pinned() -> bool {
+    PINNED.with(|p| p.get())
+}
+
+/// Give the keyboard back to the app in front and stay on screen: the
+/// question is sent and the user is in their call again. Until the card is
+/// closed or takes the keyboard for the next question, a Return or a ⌘ key
+/// goes to their app, not to it.
+pub fn release_keyboard() {
+    pooled(|| unsafe {
+        let Some(refs) = REFS.with(|r| r.get()) else { return };
+        let visible: BOOL = msg_send![refs.panel, isVisible];
+        if visible == NO {
+            return;
+        }
+        PINNED.with(|p| p.set(true));
+        // Nothing in the card is being edited any more, whoever calls this
+        let _: BOOL = msg_send![refs.panel, makeFirstResponder: NIL];
+        let key: BOOL = msg_send![refs.panel, isKeyWindow];
+        if key == NO {
+            return;
+        }
+        // Ordering out hands the keyboard back to the window that had it;
+        // ordering front again shows the card without taking it. Nothing
+        // here is a close: no handler runs.
+        let was_hiding = HIDING.with(|h| h.replace(true));
+        let _: () = msg_send![refs.panel, orderOut: NIL];
+        let _: () = msg_send![refs.panel, orderFrontRegardless];
+        HIDING.with(|h| h.set(was_hiding));
+    });
+}
+
+/// Show an answer under the field. The panel grows downward to fit it, up
+/// to a limit; longer text ends in an ellipsis (the whole answer is in the
+/// app). An empty text takes the answer away.
+pub fn show_answer(text: &str) {
+    pooled(|| unsafe {
+        let Some(refs) = REFS.with(|r| r.get()) else { return };
+        if text.trim().is_empty() {
+            drop_answer(refs);
+            return;
+        }
+        let _: () = msg_send![refs.answer, setStringValue: ns_string(text)];
+        let width = WIDTH - 44.0;
+        let cell: Id = msg_send![refs.answer, cell];
+        let fits: Size = msg_send![cell, cellSizeForBounds: rect(0.0, 0.0, width, 10_000.0)];
+        let height = fits.height.ceil().clamp(18.0, ANSWER_MAX_HEIGHT);
+        // The panel first, so the views pinned to its top move with it
+        set_height(refs, HEIGHT + height + ANSWER_GAP + 4.0);
+        let _: () = msg_send![refs.answer, setFrame: rect(22.0, ANSWER_GAP, width, height)];
+        let _: () = msg_send![refs.answer, setHidden: NO];
+    });
+}
+
+/// What the answer label holds, and the panel's height (for the example
+/// and the tests of the parent module).
+pub fn answer_probe() -> Option<(String, f64)> {
+    REFS.with(|r| r.get()).map(|refs| {
+        pooled(|| unsafe {
+            let value: Id = msg_send![refs.answer, stringValue];
+            let frame: Rect = msg_send![refs.panel, frame];
+            (rust_string(value), frame.size.height)
+        })
+    })
 }
 
 /// Becoming first responder selects the text; put the cursor after it.
@@ -559,6 +706,8 @@ unsafe fn cursor_to_end(refs: Refs) {
 pub fn show_notice(text: &str, caption: &str) {
     pooled(|| unsafe {
         let refs = refs();
+        PINNED.with(|p| p.set(false));
+        drop_answer(refs);
         let _: () = msg_send![refs.field, setStringValue: ns_string("")];
         let _: () = msg_send![refs.field, setPlaceholderString: ns_string(text)];
         // End any editing left from the last time it was open
@@ -612,6 +761,35 @@ pub fn text() -> String {
     })
 }
 
+/// The field's grey line when it is empty (the question that was asked).
+/// The next showing sets its own.
+pub fn set_placeholder(text: &str) {
+    pooled(|| unsafe {
+        if let Some(refs) = REFS.with(|r| r.get()) {
+            let _: () = msg_send![refs.field, setPlaceholderString: ns_string(text)];
+        }
+    });
+}
+
+/// The field's grey line (for the example).
+pub fn placeholder() -> String {
+    REFS.with(|r| r.get()).map_or_else(String::new, |refs| {
+        pooled(|| unsafe {
+            let value: Id = msg_send![refs.field, placeholderString];
+            rust_string(value)
+        })
+    })
+}
+
+/// Put `text` in the field (a note that was put aside for a question).
+pub fn set_text(text: &str) {
+    pooled(|| unsafe {
+        if let Some(refs) = REFS.with(|r| r.get()) {
+            let _: () = msg_send![refs.field, setStringValue: ns_string(text)];
+        }
+    });
+}
+
 /// Empty the field (the line was kept).
 pub fn clear() {
     pooled(|| unsafe {
@@ -637,8 +815,11 @@ pub fn hide() {
         return;
     }
     let was_open = is_open();
+    PINNED.with(|p| p.set(false));
     pooled(|| unsafe {
         let _: () = msg_send![refs.panel, orderOut: NIL];
+        // A closed card holds no answer: nothing of a recording stays here
+        drop_answer(refs);
     });
     HIDING.with(|h| h.set(false));
     if was_open {

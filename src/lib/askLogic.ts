@@ -51,6 +51,18 @@ export function peopleLine(people: Who[]): string | null {
     return companies.length > 0 ? `${who} (${companies.slice(0, 2).join(", ")})` : who;
 }
 
+/**
+ * On a call the event says is between you and one other person, the
+ * computer's audio is most likely that person, and an answer may name them
+ * for it, marked "(likely)". The same rule as `live.rs::other_side`.
+ */
+export function otherSide(k: Knows): Who | null {
+    const others = k.people.filter((p) => !p.you);
+    if (k.tagged === 0 || k.people.length !== 2 || others.length !== 1) return null;
+    // A name, not the address that stands in when the invite has none
+    return others[0].name.trim() && !others[0].name.includes("@") ? others[0] : null;
+}
+
 /** One line under the panel's title: what it knows right now. */
 export function knowsLine(k: Knows): string {
     const parts: string[] = [];
@@ -73,10 +85,13 @@ export function givenList(k: Knows): string[] {
             ? "The transcript, once something has been said."
             : `The transcript: the last few minutes in order, and earlier lines that match your question (${n(k.lines, "line", "lines")} so far).`,
     );
+    const other = otherSide(k);
     out.push(
-        k.tagged > 0
-            ? "Which side spoke each line, when it could be told: your microphone, or the computer's audio (the other side of a call). Never a name: noFriction doesn't recognise voices."
-            : "Not who spoke: noFriction doesn't recognise voices. On a call it can tell your microphone from the computer's audio.",
+        k.tagged === 0
+            ? "Not who spoke: noFriction doesn't recognise voices. On a call it can tell your microphone from the computer's audio."
+            : other
+              ? `Which side spoke each line, when it could be told: your microphone, or the computer's audio. The event has only you and ${other.name}, so your AI is told the computer's audio is most likely ${other.name}, and an answer that names them for it says "(likely)". noFriction doesn't recognise voices.`
+              : "Which side spoke each line, when it could be told: your microphone, or the computer's audio (the other side of a call). Never a name: noFriction doesn't recognise voices.",
     );
     if (k.notes > 0) out.push(`Your ${n(k.notes, "typed note or mark", "typed notes and marks")} in this recording, with their times.`);
     if (k.saved_notes) out.push("The notes already made from this recording: their summary, and the decisions, action items and points that match your question.");

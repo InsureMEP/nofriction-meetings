@@ -731,11 +731,22 @@ its notes must not say that no image is sent. In the block above:
 - The replacement is 200 characters longer and the notes are at 3993 of
   4000, so about 195 characters must come out elsewhere (the OFFLINE AI
   PATH paragraph is the place). Count again before pasting.
+- A build with Ask (#111, on `main` since 2026-11-17) answers a question
+  during a recording, so the last sentence of OFFLINE AI PATH ("No AI
+  runs during a recording.") is no longer true. Replace it with:
+
+  ```text
+  No AI runs by itself during a recording; Ask (Pro) answers a question the user types, in the app or from the Control-Option-Command-A field.
+  ```
+
+  That is 110 characters more; count again before pasting.
 - In What's New, add:
 
   ```text
   • Read the screens (Pro): pick which screens and photos from a recording your AI reads, see each one first, and keep what it reads as text beside the screen
   • While you record, no screenshot is taken while a password app or a private browser window is in front
+  • Ask (Pro): while you record, ask what was just said, what you missed or what a term means. It answers from this recording, your notes and who is in the meeting, and only when you ask
+  • Ask from any app (Pro): Control-Option-Command-A opens a field over your call and shows the answer in a few lines
   ```
 
 - The description may gain one line under the AI list:

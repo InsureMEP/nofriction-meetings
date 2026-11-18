@@ -2,7 +2,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { askPlaceholder, givenList, knowsLine, peopleLine, suggestions, type Knows } from "./askLogic.ts";
+import { askPlaceholder, givenList, knowsLine, otherSide, peopleLine, suggestions, type Knows } from "./askLogic.ts";
 
 const knows = (over: Partial<Knows>): Knows => ({
     meeting_id: "m2",
@@ -45,7 +45,18 @@ test("what your AI is given is said plainly, with what it is not", () => {
     const g = givenList(knows({})).join("\n");
     assert.match(g, /The recording: "Acme sync", its type, its Notebook \(Acme\), when it started and that it is still running\./);
     assert.match(g, /the last few minutes in order, and earlier lines that match your question \(124 lines so far\)/);
-    assert.match(g, /Never a name: noFriction doesn't recognise voices\./);
+    // A call with one other person: they may be named for the other side, and it says how
+    assert.match(g, /The event has only you and Ana Ruiz, so your AI is told the computer's audio is most likely Ana Ruiz, and an answer that names them for it says "\(likely\)"\. noFriction doesn't recognise voices\./);
+    assert.equal(otherSide(knows({}))?.name, "Ana Ruiz");
+    // Three people, nobody known to be you, or no side tags: never a name
+    const bo = { name: "Bo Chen", company: "Acme Corp", role: null, you: false };
+    const three = knows({ people: [...knows({}).people, bo] });
+    assert.equal(otherSide(three), null);
+    assert.match(givenList(three).join("\n"), /Never a name: noFriction doesn't recognise voices\./);
+    assert.equal(otherSide(knows({ people: [bo, knows({}).people[1]] })), null);
+    assert.equal(otherSide(knows({ tagged: 0 })), null);
+    assert.equal(otherSide(knows({ people: [knows({}).people[0], { ...bo, name: " " }] })), null);
+    assert.equal(otherSide(knows({ people: [knows({}).people[0], { ...bo, name: "bo@acme.example" }] })), null);
     assert.match(g, /Your 3 typed notes and marks in this recording/);
     assert.match(g, /The calendar event "Acme renewal call": its title, its place and its notes as they are in your calendar \(a meeting link or dial-in written there goes too\)\./);
     assert.match(g, /The people in the event: names, companies, who organised it, which one is you, and how many of your recordings each is in\. Not their email addresses\./);
