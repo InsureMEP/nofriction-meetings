@@ -265,7 +265,7 @@ export function MeetingPeople({ meetingId }: { meetingId: string }) {
               d.scheduled_end ? ` – ${new Date(d.scheduled_end).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""
           }`
         : null;
-    const label = !d ? (access === "denied" ? "Calendar access is off" : "Connect your calendar") : chipLabel(people) || d.event_title || "Calendar event";
+    const label = !d ? (access === "denied" ? "Calendar access is off" : "Connect your calendar") : chipLabel(people) || "Calendar event";
     const title = !d ? "Recordings get their titles, times and attendees from your calendar" : chipTitle(people, d.event_title);
 
     return (
