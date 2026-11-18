@@ -15,6 +15,12 @@
   justify-content: center;
 }
 
+/* Notes are read: a line is a comfortable length, not the window's width */
+.mn-panel > * {
+  width: 100%;
+  max-width: 780px;
+}
+
 .mn-empty {
   display: flex;
   flex-direction: column;

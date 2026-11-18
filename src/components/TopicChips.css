@@ -30,7 +30,13 @@
 /* Notes view editor */
 .topics-editor { margin-top: 4px; }
 .topics-editor__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.topics-editor__head h4 { margin: 0; }
+/* A section label like Summary and Decisions above it, not a bigger heading */
+.topics-editor__head h4 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.6));
+}
 .topics-editor__actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .topics-editor__chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
 .topics-editor__chips .topic-tag { font-size: 12px; max-width: 320px; }

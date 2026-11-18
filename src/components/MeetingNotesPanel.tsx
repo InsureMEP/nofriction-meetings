@@ -278,7 +278,8 @@ export function MeetingNotesPanel({ meetingId, onJump }: MeetingNotesPanelProps)
 
     const actions = (
         <div className="mn-actions">
-            <button className="mn-btn primary" onClick={generate} disabled={busy || showSetup}>
+            {/* Yellow is for making the notes. Once they exist, making them again is not the next step */}
+            <button className={`mn-btn${notes ? "" : " primary"}`} onClick={generate} disabled={busy || showSetup}>
                 {busy && !fillRun ? "Making notes…" : notes ? "Make again" : "Make notes"}
             </button>
             {notes && (
