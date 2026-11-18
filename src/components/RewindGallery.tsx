@@ -791,7 +791,7 @@ export function RewindGallery({ meetingId, isRecording, seek = null }: RewindGal
                     {needsAi && <AiSetupNotice feature="Notes" compact />}
                     {regenError && <p className="rd-tip" role="alert">Couldn't make the notes: {regenError}</p>}
                     {editable && transcripts.length > 0 && !wordMode && !hasSelection && (
-                        <p className="rd-tip">Click a line to select it, drag or Shift-click for a range, ⌘A for all. Double-click a line to edit its words.</p>
+                        <p className="rd-tip">Click a line to select it. Double-click to edit its words.</p>
                     )}
                     {editable && wordMode && (
                         <div className="rd-selectbar rd-lines-toolbar">
