@@ -1,7 +1,7 @@
 // Run: node --test src/lib/peopleChip.test.ts
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chipLabel, chipTitle, popoverPlace, shortName } from "./peopleChip.ts";
+import { chipLabel, chipTitle, eventHeading, popoverPlace, scheduledLine, shortName } from "./peopleChip.ts";
 
 const p = (name: string | null, email = "x@acme.example") => ({ name, email });
 
@@ -34,4 +34,16 @@ test("the list opens inside the recording's pane", () => {
     assert.equal(popoverPlace({ left: 520, bottom: 170 }, { left: 400, right: 800, bottom: 1000 }, 440).left, -108);
     // A short pane still gets a usable height
     assert.equal(popoverPlace({ left: 660, bottom: 900 }, pane, 440).maxHeight, 160);
+});
+
+test("the list doesn't repeat the recording's name, and says its time is the calendar's", () => {
+    assert.equal(eventHeading("Daily Tech Standup", "Daily Tech Standup"), false);
+    assert.equal(eventHeading(" daily tech standup ", "Daily Tech Standup"), false);
+    assert.equal(eventHeading("Daily Tech Standup", "Meeting — Nov 18"), true);
+    assert.equal(eventHeading("Daily Tech Standup", null), true);
+    assert.equal(eventHeading(null, "Meeting — Nov 18"), false);
+    assert.equal(scheduledLine("Wed, Nov 18, 9:00 AM – 9:50 AM", "Zoom", "Work"), "On your calendar: Wed, Nov 18, 9:00 AM – 9:50 AM · Zoom · Work");
+    // A link in the place field is the join link, not a place
+    assert.equal(scheduledLine("Wed, Nov 18, 9:00 AM", "https://example.com/j/1", null), "On your calendar: Wed, Nov 18, 9:00 AM");
+    assert.equal(scheduledLine(null, null, null), "On your calendar");
 });

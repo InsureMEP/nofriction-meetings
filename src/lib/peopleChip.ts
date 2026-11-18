@@ -43,3 +43,19 @@ export function popoverPlace(chip: { left: number; bottom: number }, pane: { lef
     const maxHeight = Math.max(160, Math.floor(pane.bottom - gap - chip.bottom - 6));
     return { left: Math.round(left), maxHeight };
 }
+
+/** Whether the list says the event's name: only when it differs from the recording's, which is right above it. */
+export function eventHeading(event: string | null, recording: string | null): boolean {
+    const a = (event ?? "").trim().toLowerCase();
+    return a !== "" && a !== (recording ?? "").trim().toLowerCase();
+}
+
+/**
+ * "On your calendar: Wed, Nov 18, 9:00 AM – 9:50 AM · Zoom · Work". Says it
+ * is the calendar's slot: the recording's own length is in the title row.
+ */
+export function scheduledLine(when: string | null, location: string | null, calendar: string | null): string {
+    const place = location && !/^https?:/i.test(location.trim()) ? location.trim() : null;
+    const rest = [when, place, calendar].filter(Boolean).join(" · ");
+    return rest ? `On your calendar: ${rest}` : "On your calendar";
+}

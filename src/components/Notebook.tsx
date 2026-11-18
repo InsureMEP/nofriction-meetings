@@ -102,8 +102,8 @@ export function RecordingTitleBlock({
     meetingId: string;
     refreshKey?: unknown;
     onSaved?: () => void;
-    /** More chips for the same row (who was in it) */
-    children?: ReactNode;
+    /** More chips for the same row (who was in it), given the recording's title */
+    children?: (title: string | null) => ReactNode;
 }) {
     const [meeting, setMeeting] = useState<tauri.Meeting | null>(null);
     const [kind, setKind] = useState<RecordingKind>("meeting");
@@ -225,7 +225,7 @@ export function RecordingTitleBlock({
                         <span>{saved ?? "Add to a notebook"}</span>
                     </button>
                 )}
-                {children}
+                {children?.(meeting?.title ?? null)}
                 {status && <span className="rec-row__status" role="status">{status}</span>}
             </div>
         </header>

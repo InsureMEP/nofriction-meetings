@@ -25,8 +25,8 @@ import {
     type MeetingPeople as MeetingPeopleData,
     type Person,
 } from "../lib/tauri";
-import { chipLabel, chipTitle, popoverPlace } from "../lib/peopleChip";
-import { CalendarIcon, PeopleIcon, SearchIcon } from "./icons";
+import { chipLabel, chipTitle, eventHeading, popoverPlace, scheduledLine } from "../lib/peopleChip";
+import { CalendarIcon, ChevronDownIcon, PeopleIcon, SearchIcon } from "./icons";
 import "./People.css";
 
 const open_ = (url: string) => openUrl(url).catch((e) => console.error("open failed", e));
@@ -199,7 +199,7 @@ function ConnectCalendar({ access, onSynced }: { access: CalendarAccess | null; 
 /** How wide the list opens (People.css `.mpeople__pop`) */
 const POP_WIDTH = 440;
 
-export function MeetingPeople({ meetingId }: { meetingId: string }) {
+export function MeetingPeople({ meetingId, recordingTitle = null }: { meetingId: string; recordingTitle?: string | null }) {
     const [data, setData] = useState<MeetingPeopleData | null>(null);
     const [access, setAccess] = useState<CalendarAccess | null>(null);
     const [open, setOpen] = useState(false);
@@ -283,6 +283,7 @@ export function MeetingPeople({ meetingId }: { meetingId: string }) {
             >
                 {d && people.length > 0 ? <PeopleIcon size={14} /> : <CalendarIcon size={14} />}
                 <span className="mpeople__label">{label}</span>
+                <ChevronDownIcon size={12} className="mpeople__chev" />
             </button>
             {open && (
                 <div
@@ -298,10 +299,9 @@ export function MeetingPeople({ meetingId }: { meetingId: string }) {
                         <>
                             <header className="mpeople__head">
                                 <div className="mpeople__event">
-                                    <span className="mpeople__title">{d.event_title}</span>
-                                    <span className="mpeople__meta">
-                                        {[when, d.location && !d.location.startsWith("http") ? d.location : null, d.calendar_name].filter(Boolean).join(" · ")}
-                                    </span>
+                                    {/* The event's name only when it isn't the recording's: it is right above */}
+                                    {eventHeading(d.event_title, recordingTitle) && <span className="mpeople__title">{d.event_title}</span>}
+                                    <span className="mpeople__meta">{scheduledLine(when, d.location, d.calendar_name)}</span>
                                 </div>
                                 {d.meeting_url && (
                                     <button className="li__ghost" onClick={() => open_(d.meeting_url!)} type="button">Join link</button>

@@ -67,11 +67,23 @@
 .mpeople__notes summary { cursor: pointer; }
 .mpeople__notes p { white-space: pre-wrap; margin: 6px 0 0; max-height: 160px; overflow: auto; }
 
-/* In the list the LinkedIn buttons wait until you are on the row:
-   twenty of them at full strength was the loudest thing on the page */
-.mpeople__pop .person .li__ghost { opacity: 0.7; }
+/* In the list the LinkedIn buttons show on the row you are on (pointer or
+   keyboard): twenty of them at once was the loudest thing on the page.
+   A linked profile always shows. */
+.mpeople__pop .person .li__ghost { opacity: 0; transition: opacity 0.12s ease-out; }
 .mpeople__pop .person:hover .li__ghost,
 .mpeople__pop .person:focus-within .li__ghost { opacity: 1; }
+.mpeople__pop .mpeople__head .li__ghost { opacity: 1; }
+
+.mpeople__chev { flex: none; opacity: 0.6; }
+
+/* A linked profile is a quiet button; the mark keeps LinkedIn's blue */
+.li__open {
+  border: 1px solid var(--border-color, #262626);
+  background: transparent;
+  color: var(--text-primary, #f5f5f5);
+}
+.li__open:hover { border-color: #3a3a3a; }
 .mpeople__pop .li-edit input { width: 180px; }
 
 .people-list {
@@ -160,11 +172,6 @@
 .li__ghost:hover { color: var(--text-primary, #f5f5f5); border-color: #3a3a3a; }
 .li__ghost:disabled { opacity: 0.5; cursor: default; }
 
-.li__open {
-  border: 1px solid rgba(10, 102, 194, 0.5);
-  background: rgba(10, 102, 194, 0.12);
-  color: #e5e5e5;
-}
 
 .li__badge {
   display: inline-grid;
