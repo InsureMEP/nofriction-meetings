@@ -58,6 +58,14 @@ export const CalendarIcon: React.FC<IconProps> = ({ size = 16, strokeWidth = 2, 
     </svg>
 );
 
+export const PeopleIcon: React.FC<IconProps> = ({ size = 16, strokeWidth = 2, className }) => (
+    <svg {...base(size, className)} strokeWidth={strokeWidth}>
+        <circle cx="9" cy="8" r="3.5" />
+        <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
+        <path d="M16 4.8a3.5 3.5 0 0 1 0 6.4M18.5 14.6a6.5 6.5 0 0 1 3 5.4" />
+    </svg>
+);
+
 export const CheckIcon: React.FC<IconProps> = ({ size = 16, strokeWidth = 2, className }) => (
     <svg {...base(size, className)} strokeWidth={strokeWidth}>
         <path d="M20 6L9 17l-5-5" />

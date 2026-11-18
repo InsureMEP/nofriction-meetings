@@ -271,9 +271,17 @@
   align-items: center;
   gap: 6px;
   overflow-x: auto;
-  padding: 2px 0 10px;
+  padding: 2px 28px 10px 0;
   scrollbar-width: none;
+  /* More notebooks than fit: the row scrolls, and fades where it goes on */
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
 }
+.class-filter::-webkit-scrollbar { display: none; }
+
+/* A name is read whole or not at all: chips keep their width and the row
+   scrolls. They used to shrink to "A." and "s…" when there were many. */
+.class-filter .class-chip { flex: none; }
 
 .class-tag {
   display: inline-block;

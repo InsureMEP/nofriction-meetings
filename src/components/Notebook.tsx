@@ -3,7 +3,7 @@
 // notebook are two tappable rows (src-tauri/src/notebooks.rs,
 // recording_kind.rs).
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import * as tauri from "../lib/tauri";
 import { canonicalNotebook } from "../lib/recordPlan";
 import { NOTEBOOKS_LABEL, RECORDING_KINDS, notebookPlaceholder, parseKind, type RecordingKind } from "../lib/recordingKind";
@@ -36,10 +36,25 @@ export function NotebookFilterChips({
     onChange: (notebook: string | null) => void;
 }) {
     const titleId = useId();
+    const strip = useRef<HTMLDivElement>(null);
+    // The chosen notebook is never out of sight in a long row
+    useEffect(() => {
+        strip.current?.querySelector(".class-chip.is-on")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }, [value, notebooks.length]);
     if (notebooks.length === 0 && !value) return null;
     const shown = value && !notebooks.includes(value) ? [value, ...notebooks] : notebooks;
     return (
-        <div className="class-filter" role="toolbar" aria-labelledby={titleId}>
+        <div
+            ref={strip}
+            className="class-filter"
+            role="toolbar"
+            aria-labelledby={titleId}
+            // One row that scrolls sideways: a mouse wheel moves it too
+            onWheel={(e) => {
+                const el = e.currentTarget;
+                if (el.scrollWidth > el.clientWidth && Math.abs(e.deltaY) > Math.abs(e.deltaX)) el.scrollLeft += e.deltaY;
+            }}
+        >
             <span id={titleId} className="class-filter__title">{NOTEBOOKS_LABEL}</span>
             <button
                 type="button"
@@ -78,7 +93,18 @@ const formatWhen = (iso: string, seconds: number | null | undefined) => {
  * rows with no labels: the type (a menu; new notes and the Review guide use
  * it) and the notebook (click to edit; saves on Enter or blur).
  */
-export function RecordingTitleBlock({ meetingId, refreshKey = 0, onSaved }: { meetingId: string; refreshKey?: unknown; onSaved?: () => void }) {
+export function RecordingTitleBlock({
+    meetingId,
+    refreshKey = 0,
+    onSaved,
+    children,
+}: {
+    meetingId: string;
+    refreshKey?: unknown;
+    onSaved?: () => void;
+    /** More chips for the same row (who was in it), given the recording's title */
+    children?: (title: string | null) => ReactNode;
+}) {
     const [meeting, setMeeting] = useState<tauri.Meeting | null>(null);
     const [kind, setKind] = useState<RecordingKind>("meeting");
     const [saved, setSaved] = useState<string | null>(null);
@@ -199,6 +225,7 @@ export function RecordingTitleBlock({ meetingId, refreshKey = 0, onSaved }: { me
                         <span>{saved ?? "Add to a notebook"}</span>
                     </button>
                 )}
+                {children?.(meeting?.title ?? null)}
                 {status && <span className="rec-row__status" role="status">{status}</span>}
             </div>
         </header>

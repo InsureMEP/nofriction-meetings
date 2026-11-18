@@ -626,21 +626,26 @@ img.logo-icon {
 /* ========================================
    SCROLLBARS
    ======================================== */
+/* Quiet on matte black. The thumb was a light-theme grey (#d1d5db), and a
+   sideways scrollbar had no height set, so the screens strip in Rewind
+   showed a thick pale bar under it. */
 ::-webkit-scrollbar {
   width: 8px;
+  height: 8px;
 }
 
-::-webkit-scrollbar-track {
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
   background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: #3a3a3a;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: #525252;
 }
 
 /* ========================================

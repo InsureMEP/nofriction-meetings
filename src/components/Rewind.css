@@ -26,27 +26,34 @@
 .rewind-main {
     flex: 1;
     display: grid;
-    grid-template-columns: 1fr minmax(320px, 380px);
+    /* The screen keeps the room: the transcript is a third of a narrow
+       pane, never more than 380 px */
+    grid-template-columns: minmax(0, 1fr) clamp(280px, 32%, 380px);
     gap: 1px;
     background: var(--border-color, #262626);
     overflow: hidden;
     min-height: 0;
 }
 
+/* The screen sits on the page's own surface. On pure black, the bars
+   above and below a wide screen read as a box the content is locked in. */
 .rewind-frame-preview {
-    background: #000;
+    background: var(--bg-card, #0d0d0d);
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     position: relative;
     overflow: hidden;
+    padding: 14px;
 }
 
 .rewind-frame-preview img {
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
+    border-radius: 6px;
+    box-shadow: 0 0 0 1px var(--border-color, #262626);
 }
 
 .frame-placeholder {
@@ -94,12 +101,12 @@
 .transcript-entries {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 6px;
 }
 
 .transcript-entry {
     position: relative;
-    padding: 10px;
+    padding: 8px 10px;
     background: rgba(255, 255, 255, 0.03);
     border-radius: 8px;
     cursor: pointer;
@@ -114,20 +121,24 @@
     border-left-color: var(--hazard-yellow, #facc15);
 }
 
+.entry-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 3px;
+}
+
 .entry-time {
     font-size: 11px;
     color: var(--text-secondary, #a3a3a3);
     font-family: var(--ds-font-mono, ui-monospace, monospace);
     font-variant-numeric: tabular-nums;
-    margin-bottom: 2px;
 }
 
 .entry-speaker {
     font-size: 12px;
     font-weight: 600;
-    color: var(--hazard-yellow, #facc15);
-    display: block;
-    margin-bottom: 4px;
+    color: var(--text-primary, #f5f5f5);
 }
 
 .entry-text {
@@ -212,7 +223,10 @@
 .rewind-thumbnails {
     display: flex;
     gap: 10px;
-    padding: 10px 14px;
+    padding: 10px 40px 10px 14px;
+    /* The strip goes on: it fades at the edge instead of cutting a screen */
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
     background: var(--bg-main, #050505);
     overflow-x: auto;
     border-top: 1px solid var(--border-color, #262626);
@@ -295,3 +309,10 @@
 }
 .rw-menu__item:hover:not(:disabled) { background: var(--tactical-gray, #171717); }
 .rw-menu__item:disabled { opacity: 0.45; cursor: default; }
+
+/* A short window: the strip of screens shrinks before the screen does */
+@media (max-height: 820px) {
+    .rewind-thumbnails { height: 88px; padding: 8px 40px 8px 14px; }
+    .thumbnail { flex-basis: 110px; }
+    .rewind-timeline { padding: 6px 18px; }
+}

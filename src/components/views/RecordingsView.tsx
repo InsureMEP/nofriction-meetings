@@ -5,6 +5,7 @@
 // Class recording (docs/LESSONS.md §13) and Export… (docs/EXPORT.md).
 
 import { useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import {
     onExportRequest,
     onRecordingSeek,
@@ -53,6 +54,22 @@ export function RecordingsView({ onSelectMeeting, selectedMeetingId, refreshKey,
     const [pageOpen, setPageOpen] = useState(false);
     const showPage = notebook !== null && pageOpen;
     const kind = useRecordingKind(selectedMeetingId);
+    // Bumped when the calendar has linked recordings (it may have renamed some)
+    const [renames, setRenames] = useState(0);
+
+    // The calendar can rename a recording that still has its default name
+    // ("Meeting — Nov 18" becomes the event's title) after the list was
+    // read. One recording has one name: the list and the title reload.
+    useEffect(() => {
+        let off: (() => void) | null = null;
+        let disposed = false;
+        listen("people_updated", () => setRenames((n) => n + 1)).then((fn) => (disposed ? fn() : (off = fn)));
+        return () => {
+            disposed = true;
+            off?.();
+        };
+    }, []);
+
     const jumpTo = (meetingId: string, ms: number) => {
         setSeek({ meetingId, ms, n: Date.now() });
         setMeetingView("rewind");
@@ -113,7 +130,7 @@ export function RecordingsView({ onSelectMeeting, selectedMeetingId, refreshKey,
             <MeetingHistory
                 onSelectMeeting={openRecording}
                 selectedMeetingId={showPage ? null : selectedMeetingId}
-                refreshKey={refreshKey + metaEdits}
+                refreshKey={refreshKey + metaEdits + renames}
                 compact={!!selectedMeetingId || showPage}
                 notebook={notebook}
                 onNotebook={(n) => {
@@ -128,7 +145,7 @@ export function RecordingsView({ onSelectMeeting, selectedMeetingId, refreshKey,
             {showPage && notebook && (
                 <NotebookPage
                     notebook={notebook}
-                    refreshKey={refreshKey + metaEdits}
+                    refreshKey={refreshKey + metaEdits + renames}
                     isRecording={isRecording}
                     onOpenNotes={(id) => {
                         requestRecordingView(id, "notes");
@@ -147,8 +164,10 @@ export function RecordingsView({ onSelectMeeting, selectedMeetingId, refreshKey,
                             ‹ {notebook}
                         </button>
                     )}
-                    <RecordingTitleBlock meetingId={selectedMeetingId} refreshKey={refreshKey} onSaved={() => setMetaEdits((n) => n + 1)} />
-                    <MeetingPeople meetingId={selectedMeetingId} />
+                    <RecordingTitleBlock meetingId={selectedMeetingId} refreshKey={refreshKey + renames} onSaved={() => setMetaEdits((n) => n + 1)}>
+                        {/* Who was in it: one chip. The list opens over the page, so the recording keeps it */}
+                        {(title) => <MeetingPeople meetingId={selectedMeetingId} recordingTitle={title} />}
+                    </RecordingTitleBlock>
                     <div className="deck-tabs" role="tablist" aria-label="Recording view">
                         {tabs.map((t) => (
                             <button

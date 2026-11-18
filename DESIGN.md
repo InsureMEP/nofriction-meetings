@@ -1,7 +1,12 @@
 # noFriction — Design System
 
-**Version:** 1.4.0  
-**Last Updated:** 2026-11-13
+**Version:** 1.5.0  
+**Last Updated:** 2026-11-18
+
+> v1.5.0 (owner, 2026-11-18: "The point is rewind, so show me the content,
+> don't lock it in a giant ass screen"): the content keeps the page. A
+> ten-person calendar event had filled a recording's page with its attendee
+> card and left Rewind a strip. See "The content keeps the page" below.
 
 > v1.4.0 (owner decisions, 2026-11-13): the typeface is the system face
 > (Inter was named but never bundled), and the 44px target rule is for
@@ -246,6 +251,34 @@ Settings has six sections: Recording, Transcription, AI, Sync, Subscription
 - A note is a mark the user typed: stored beside the marks, shown where it
   was written, never in the Marks list and never a fourth mark kind.
 - Banners live in the one slot under the top bar, never over it.
+- **The content keeps the page.** On an open recording, everything above
+  the tabs is one title block of fixed height: the title, when, and one row
+  of chips (type, notebook, who was in it). Anything whose size depends on
+  the data (people on the invite, links, tags, notes from the calendar) is
+  a chip that opens over the page, never a block in the page's flow. A
+  recording with ten attendees and one with none have the same room for
+  Rewind. Check a change to this screen with a big invite and many
+  notebooks (`?people=10` in the mock harness), not with the demo's three.
+- In a small window the content shrinks last: the list narrows (340 to
+  240 px), the transcript takes a third of the pane, the strip of screens
+  gets shorter, and only then does the screen.
+- The screen in Rewind sits on the page's surface, not on black: bars
+  above and below a wide screen must not read as a box.
+- The transcript starts with what was said: no instruction sentence and no
+  boxed control above the first line, and no placeholder ("Speaker") where
+  a name isn't known. Gestures are learned by trying; the list's label
+  carries them for screen readers.
+- A list of people is names. A row's actions (Find, Paste link) show on
+  the row you are on, by pointer or keyboard.
+- Yellow is for the one next step. Once the thing exists (notes made), its
+  "again" button is an ordinary button. Labels (topics, where a link came
+  from) are neutral, never a colour of their own.
+- Text that is read (notes) is a column of about 780 px, not the window's
+  width.
+- A row of chips never shrinks its chips to fit: a name is read whole or
+  not at all. The row scrolls sideways and fades where it continues.
+- Scrollbars are dark and thin (`src/App.css`, "SCROLLBARS"); never the
+  system's light thumb on the matte page.
 - The menu bar, tray and window use the same words.
 
 ## Vocabulary
