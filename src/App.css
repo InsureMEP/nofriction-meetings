@@ -474,11 +474,13 @@ img.logo-icon {
   gap: 4px;
 }
 
-/* A row is reached from the keyboard too */
-.meeting-item:focus-visible,
+/* A recording is reached from the keyboard too: its name and time take
+   the focus (never the row, which holds other buttons) */
+.meeting-item__open { flex: 1; min-width: 0; border-radius: 6px; }
+.meeting-item__open:focus-visible,
 .compact-meeting-item:focus-visible {
   outline: 2px solid var(--hazard-yellow, #facc15);
-  outline-offset: -2px;
+  outline-offset: 2px;
 }
 
 .compact-meeting-item {

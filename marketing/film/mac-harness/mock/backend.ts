@@ -25,6 +25,7 @@ type Args = Record<string, any> | undefined;
 //   ?setup=1  first run: nothing allowed yet, the speech model downloading
 //   ?pro=0    not subscribed: AI calls fail with PRO_REQUIRED (the paywall)
 //   ?ai=none  no AI set up yet
+//   ?match=1  the newest recording's row offers to be named after an event
 //   ?people=N a recording's calendar event with N other people (default 3;
 //             10 is the big-invite case); ?people=none no event matched;
 //             ?people=solo an event with nobody else on it
@@ -1064,8 +1065,22 @@ function handle(cmd: string, args: Args): unknown {
         }
         case "delete_meeting":
             return null;
+        // ?match=1: the newest recording overlaps a calendar event, so its
+        // row carries "Name it after the event?" with Rename (a control
+        // inside the row: the row's own button must never include it)
         case "match_recording_to_calendar":
-            return null;
+            if (flags.get("match") !== "1" || a.meetingId !== meetings[0]?.id) return null;
+            return {
+                meeting_id: a.meetingId,
+                event_id: "ev-overlap",
+                event_title: "Northwind quarterly review",
+                attendee_count: 4,
+                attendee_names: ["Dana Okafor", "Priya Nair", "Aiko Tanaka"],
+                attendee_emails: [],
+                start_time: new Date().toISOString(),
+                end_time: new Date().toISOString(),
+            };
+
         case "get_transcripts": {
             const tl = timelineFor(a.meetingId);
             const start = Date.parse(tl.started_at ?? new Date().toISOString());

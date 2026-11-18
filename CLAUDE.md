@@ -391,6 +391,16 @@ these rules apply.
   `entitlement::require_pro()` in `ai::client::complete`.
 
 **Lessons that cost real time:**
+- **A button never contains another control.** A recording's row was
+  made `role="button"` so it could be opened from the keyboard (#113),
+  with Delete and the calendar's Rename inside it. A press through the
+  accessibility API is delivered as a click at the middle of the pressed
+  element; in the real app that landed on Rename and renamed a recording
+  (2026-11-18, put back from the backup). The button is now the name and
+  time only (`MeetingHistory.tsx::rowAccess`). The mock shows that banner
+  with `?match=1`. When driving the real app through accessibility, press
+  only a leaf control whose whole label is the one meant, never a row or
+  a group.
 - **The mock must hold what a real library holds.** The harness
   (`marketing/film/mac-harness`) answered `get_meeting_people` with nothing
   ("the strip stays hidden"), so every design pass looked at a recording
