@@ -54,10 +54,16 @@ const clock = (ms: number) => {
 };
 
 /**
- * A recording's row opens from the keyboard and for assistive tech, not
- * only on a click: it is a button that can be tabbed to, and Return or
- * Space opens it. Keys pressed on something inside the row (Delete, the
- * calendar's Rename) are that thing's.
+ * A recording opens from the keyboard and for assistive tech, not only on
+ * a click: its name and time are a button that can be tabbed to, and
+ * Return or Space opens it.
+ *
+ * The button is the name and time ONLY, never the whole row. A row also
+ * holds Delete and, sometimes, the calendar's "Name it after the event?"
+ * with Rename. A press through the accessibility API is delivered as a
+ * click at the middle of the pressed element, so with the whole row as
+ * the button it landed on Rename and renamed the recording (2026-11-18).
+ * No control may sit inside the element these props go on.
  */
 function rowAccess(open: () => void, selected: boolean) {
     return {
@@ -258,16 +264,17 @@ export function MeetingHistory({
                                     key={g.meetingId}
                                     className={`meeting-item ${selectedMeetingId === m.id ? "selected" : ""}`}
                                     onClick={() => onSelectMeeting(m.id)}
-                                    {...rowAccess(() => onSelectMeeting(m.id), selectedMeetingId === m.id)}
                                 >
-                                    <div className="meeting-title">
-                                        {m.title}
-                                        <KindTag meeting={m} />
-                                        {m.class_name && <span className="class-tag" title={m.class_name}>{m.class_name}</span>}
-                                    </div>
-                                    <div className="meeting-date">
-                                        {formatDate(m.started_at)}
-                                        {g.why.length > 0 && <span> · {g.why.join(" · ")}</span>}
+                                    <div className="meeting-item__open" {...rowAccess(() => onSelectMeeting(m.id), selectedMeetingId === m.id)}>
+                                        <div className="meeting-title">
+                                            {m.title}
+                                            <KindTag meeting={m} />
+                                            {m.class_name && <span className="class-tag" title={m.class_name}>{m.class_name}</span>}
+                                        </div>
+                                        <div className="meeting-date">
+                                            {formatDate(m.started_at)}
+                                            {g.why.length > 0 && <span> · {g.why.join(" · ")}</span>}
+                                        </div>
                                     </div>
                                     {g.lines.length > 0 && (
                                         <ul className="rec-search__lines">
@@ -375,7 +382,6 @@ export function MeetingHistory({
                                     key={meeting.id}
                                     className={`meeting-item ${selectedMeetingId === meeting.id ? "selected" : ""}`}
                                     onClick={() => onSelectMeeting(meeting.id)}
-                                    {...rowAccess(() => onSelectMeeting(meeting.id), selectedMeetingId === meeting.id)}
                                 >
                                     {match && !isDismissed && (
                                         <div className="cal-match" onClick={(e) => e.stopPropagation()}>
@@ -408,7 +414,7 @@ export function MeetingHistory({
                                         </div>
                                     )}
                                     <div className="meeting-item__row">
-                                        <div>
+                                        <div className="meeting-item__open" {...rowAccess(() => onSelectMeeting(meeting.id), selectedMeetingId === meeting.id)}>
                                             <div className="meeting-title">
                                                 {meeting.title}
                                                 <KindTag meeting={meeting} />
