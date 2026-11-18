@@ -240,7 +240,9 @@
   min-height: 0;
 }
 
-.recordings-view.has-selection { grid-template-columns: 340px 1fr; }
+/* The list gives way before the recording does: 340 px in a wide window,
+   down to 240 px in a narrow one */
+.recordings-view.has-selection { grid-template-columns: clamp(240px, 24vw, 340px) minmax(0, 1fr); }
 
 .recordings-view > .meeting-history {
   min-height: 0;
@@ -443,9 +445,18 @@
 }
 
 /* ─── A recording's title block: name, when, type and notebook rows ─── */
-.rec-title { padding: 0 0 8px; }
+/* Two rows: the name, then when it was with its chips beside it */
+.rec-title {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 14px;
+  row-gap: 6px;
+  padding: 0 0 6px;
+}
 
 .rec-title__name {
+  grid-column: 1 / -1;
   margin: 0;
   font-size: 20px;
   font-weight: 600;
@@ -453,8 +464,9 @@
 }
 
 .rec-title__when {
-  margin: 2px 0 8px;
+  margin: 0;
   font-size: 12.5px;
+  white-space: nowrap;
   color: var(--agency-text-secondary, rgba(255, 255, 255, 0.45));
 }
 

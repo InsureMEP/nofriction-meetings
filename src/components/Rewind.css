@@ -26,7 +26,9 @@
 .rewind-main {
     flex: 1;
     display: grid;
-    grid-template-columns: 1fr minmax(320px, 380px);
+    /* The screen keeps the room: the transcript is a third of a narrow
+       pane, never more than 380 px */
+    grid-template-columns: minmax(0, 1fr) clamp(280px, 32%, 380px);
     gap: 1px;
     background: var(--border-color, #262626);
     overflow: hidden;
@@ -304,3 +306,10 @@
 }
 .rw-menu__item:hover:not(:disabled) { background: var(--tactical-gray, #171717); }
 .rw-menu__item:disabled { opacity: 0.45; cursor: default; }
+
+/* A short window: the strip of screens shrinks before the screen does */
+@media (max-height: 820px) {
+    .rewind-thumbnails { height: 88px; padding: 8px 14px; }
+    .thumbnail { flex-basis: 110px; }
+    .rewind-timeline { padding: 6px 18px; }
+}
