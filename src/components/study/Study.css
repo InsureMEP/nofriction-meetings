@@ -86,12 +86,9 @@
 .study-mark__close { margin-left: auto; padding: 2px 8px; }
 
 /* ── Recordings: marker list ─────────────────────────────────────── */
+/* One plain row until it is opened: what was said starts at the top */
 .study-markers {
-    margin: 4px 0 10px;
-    padding: 8px;
-    border-radius: 8px;
-    border: 1px solid var(--border-color, #262626);
-    background: var(--matte-black, #0a0a0a);
+    margin: 0 0 8px;
 }
 .study-markers__bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .study-markers__toggle { padding: 0 6px; font-weight: 600; color: var(--text-primary, #f5f5f5); }

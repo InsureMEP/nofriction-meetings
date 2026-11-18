@@ -99,12 +99,12 @@
 .transcript-entries {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 6px;
 }
 
 .transcript-entry {
     position: relative;
-    padding: 10px;
+    padding: 8px 10px;
     background: rgba(255, 255, 255, 0.03);
     border-radius: 8px;
     cursor: pointer;
@@ -119,20 +119,24 @@
     border-left-color: var(--hazard-yellow, #facc15);
 }
 
+.entry-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 3px;
+}
+
 .entry-time {
     font-size: 11px;
     color: var(--text-secondary, #a3a3a3);
     font-family: var(--ds-font-mono, ui-monospace, monospace);
     font-variant-numeric: tabular-nums;
-    margin-bottom: 2px;
 }
 
 .entry-speaker {
     font-size: 12px;
     font-weight: 600;
-    color: var(--hazard-yellow, #facc15);
-    display: block;
-    margin-bottom: 4px;
+    color: var(--text-primary, #f5f5f5);
 }
 
 .entry-text {

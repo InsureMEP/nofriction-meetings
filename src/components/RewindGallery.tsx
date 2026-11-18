@@ -790,9 +790,6 @@ export function RewindGallery({ meetingId, isRecording, seek = null }: RewindGal
                     )}
                     {needsAi && <AiSetupNotice feature="Notes" compact />}
                     {regenError && <p className="rd-tip" role="alert">Couldn't make the notes: {regenError}</p>}
-                    {editable && transcripts.length > 0 && !wordMode && !hasSelection && (
-                        <p className="rd-tip">Click a line to select it. Double-click to edit its words.</p>
-                    )}
                     {editable && wordMode && (
                         <div className="rd-selectbar rd-lines-toolbar">
                             <span className="rd-hint">Editing words: click a word, Shift-click or drag to select more.</span>
@@ -844,19 +841,21 @@ export function RewindGallery({ meetingId, isRecording, seek = null }: RewindGal
                                         onClick={(e) => onLineClick(e, t)}
                                         onDoubleClick={(e) => selectable && onLineDoubleClick(e, li)}
                                     >
-                                        <span className="entry-time">{formatTime(t.timestamp_ms)}</span>
+                                        {/* The time, and who spoke when that is known: one row.
+                                            No placeholder name when it isn't. */}
+                                        <span
+                                            className="entry-head"
+                                            title={editable && wordMode ? "Double-click to select the whole line" : undefined}
+                                            onDoubleClick={() => editable && wordMode && words.selectLine(li, lineWords(t.text).length)}
+                                        >
+                                            <span className="entry-time">{formatTime(t.timestamp_ms)}</span>
+                                            {t.speaker && <span className="entry-speaker">{t.speaker}</span>}
+                                        </span>
                                         {sel && (
                                             <span className="rd-line-check" aria-hidden="true">
                                                 {split ? "◐" : "✓"}
                                             </span>
                                         )}
-                                        <span
-                                            className="entry-speaker"
-                                            title={editable && wordMode ? "Double-click to select the whole line" : undefined}
-                                            onDoubleClick={() => editable && wordMode && words.selectLine(li, lineWords(t.text).length)}
-                                        >
-                                            {t.speaker || "Speaker"}
-                                        </span>
                                         <p className="entry-text">
                                             <RedactableLine
                                                 text={t.text}
