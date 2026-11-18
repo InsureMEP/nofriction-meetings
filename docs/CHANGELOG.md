@@ -35,6 +35,9 @@ On `main`, not in a build yet.
   is the app's one accent.
 
 ### Fixed
+- **A recording opens from the keyboard (Mac).** In Recordings, Tab
+  reaches a recording's name and Return or Space opens it; VoiceOver can
+  press it.
 - **One name per recording (Mac).** When your calendar names a recording
   after it was listed, the list now shows the new name too.
 
