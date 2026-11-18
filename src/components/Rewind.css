@@ -223,7 +223,10 @@
 .rewind-thumbnails {
     display: flex;
     gap: 10px;
-    padding: 10px 14px;
+    padding: 10px 40px 10px 14px;
+    /* The strip goes on: it fades at the edge instead of cutting a screen */
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
     background: var(--bg-main, #050505);
     overflow-x: auto;
     border-top: 1px solid var(--border-color, #262626);
@@ -309,7 +312,7 @@
 
 /* A short window: the strip of screens shrinks before the screen does */
 @media (max-height: 820px) {
-    .rewind-thumbnails { height: 88px; padding: 8px 14px; }
+    .rewind-thumbnails { height: 88px; padding: 8px 40px 8px 14px; }
     .thumbnail { flex-basis: 110px; }
     .rewind-timeline { padding: 6px 18px; }
 }
