@@ -16,6 +16,7 @@ pub mod menu_ids {
     pub const MARK_MOMENT: &str = "mark_moment";
     /// The quick-note panel (quick_note.rs)
     pub const TYPE_NOTE: &str = "type_note";
+    pub const ASK_RECORDING: &str = "ask_recording";
     /// Export… the open recording as a package (docs/EXPORT.md)
     pub const EXPORT_RECORDING: &str = "export_recording";
 
@@ -78,6 +79,11 @@ pub fn create_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .item(
             &MenuItemBuilder::with_id(menu_ids::TYPE_NOTE, "Type a Note")
                 .accelerator(crate::quick_note::MENU_ACCELERATOR)
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id(menu_ids::ASK_RECORDING, "Ask About This Recording")
+                .accelerator(crate::quick_note::ASK_MENU_ACCELERATOR)
                 .build(app)?,
         )
         .separator()
@@ -173,6 +179,10 @@ pub fn handle_menu_event(app: &AppHandle<Wry>, event_id: &str) {
             crate::quick_note::toggle(app);
             return;
         }
+        menu_ids::ASK_RECORDING => {
+            crate::quick_note::toggle_ask(app);
+            return;
+        }
         menu_ids::EXPORT_RECORDING => "menu:export_recording",
         menu_ids::VIEW_RECORD => "menu:view_record",
         menu_ids::VIEW_RECORDINGS => "menu:view_recordings",
@@ -242,6 +252,7 @@ mod tests {
             menu_ids::PAUSE_RECORDING,
             menu_ids::MARK_MOMENT,
             menu_ids::TYPE_NOTE,
+            menu_ids::ASK_RECORDING,
             menu_ids::CONTACT_SUPPORT,
         ] {
             assert!(!shows_window(id), "{id} works without the window");

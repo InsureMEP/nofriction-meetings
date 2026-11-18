@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { friendlyAiError, isNoProviderError, withAiConsent } from "../lib/ai";
 import type { ChatMessage, ChatThread, ChatTurn, Citation } from "../lib/chat";
 import { clockOf } from "../lib/chatLogic";
@@ -77,6 +78,20 @@ export function AskPanel({ meetingId }: Props) {
         return () => window.clearInterval(timer);
     }, [meetingId, refresh]);
 
+    // A question asked from the card over another app (⌃⌥⌘A) is part of
+    // this conversation: show it as soon as it is answered
+    useEffect(() => {
+        let off: (() => void) | null = null;
+        let disposed = false;
+        listen<{ meetingId: string }>("ask_answered", (e) => {
+            if (e.payload.meetingId === meetingId) void refresh();
+        }).then((fn) => (disposed ? fn() : (off = fn)));
+        return () => {
+            disposed = true;
+            off?.();
+        };
+    }, [meetingId, refresh]);
+
     // Command-J puts the keyboard in the question field
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
@@ -90,6 +105,8 @@ export function AskPanel({ meetingId }: Props) {
     }, []);
 
     useEffect(() => {
+        // Before the first question the offered ones are read from the top
+        if (messages.length === 0 && !asking) return;
         end.current?.scrollIntoView({ block: "end" });
     }, [messages, asking]);
 
@@ -245,7 +262,7 @@ export function AskPanel({ meetingId }: Props) {
                 </button>
             </form>
             <p className="ask__hint">
-                <kbd>⌘J</kbd> to ask · sent to your AI only when you ask
+                <kbd>⌘J</kbd> here · <kbd>⌃⌥⌘A</kbd> in any app · sent only when you ask
             </p>
         </section>
     );

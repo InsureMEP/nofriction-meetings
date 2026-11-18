@@ -49,6 +49,11 @@ const MAX_NOTES: usize = 16;
 const MAX_RELATED: usize = 3;
 /// An answer in the moment is short
 const MAX_ANSWER_TOKENS: u32 = 700;
+/// An answer on the card over another app is shorter still
+const GLANCE_ANSWER_TOKENS: u32 = 320;
+/// Added to the system prompt for that card
+const GLANCE_RULE: &str = "\n- This answer is shown on a small card over the user's call, read at a glance: at most three short \
+lines or bullets, the most useful thing first, no introduction.";
 /// Lines given from before the last minutes
 const SAMPLED_LINES: usize = 6;
 
@@ -69,6 +74,9 @@ pub struct Mode {
     /// Earlier recordings may be drawn on: Ask does, and says so in "What
     /// it's given"; a Chat narrowed to one recording stays in it
     pub related: bool,
+    /// The answer is read at a glance, on the small card over another app
+    /// (quick_note.rs): a few lines, no lists of sources
+    pub glance: bool,
 }
 
 /// The recording being asked about.
@@ -213,6 +221,20 @@ fn local_time(rfc3339: &str) -> String {
     parse_ts(rfc3339).map(|d| d.with_timezone(&chrono::Local).format("%a %-d %b %Y, %-I:%M %p").to_string()).unwrap_or_default()
 }
 
+/// On a call the event says is between the user and one other person,
+/// the computer's audio is most likely that person. Only then, and only
+/// when lines are tagged with a side, may an answer name them for the
+/// other side, marked "(likely)": it is worked out from the calendar, not
+/// heard (`askLogic.ts::otherSide` says the same thing in the panel).
+pub fn other_side(who: &[Who], tagged: bool) -> Option<&Who> {
+    let mut others = who.iter().filter(|w| !w.you);
+    match (tagged && who.len() == 2, others.next(), others.next()) {
+        // A name, not the address that stands in when the invite has none
+        (true, Some(other), None) if !other.name.trim().is_empty() && !other.name.contains('@') => Some(other),
+        _ => None,
+    }
+}
+
 /// What the assistant is told about the recording before any source: where
 /// and when this is, who is there, and how to read the side tags. It is
 /// context, not something to cite.
@@ -271,6 +293,15 @@ pub fn brief_text(
             }
             out.push_str(&line);
         }
+    }
+    // A call between two people: the other side is most likely the other one
+    if let Some(other) = other_side(who, tagged) {
+        out.push_str(&format!(
+            "\nTHE OTHER SIDE: the event has only the user and {name}, so a (computer audio) line is most likely {name}. \
+This is worked out from the calendar, not from a voice. You may name them for such a line, written \"{name} (likely)\" the \
+first time in an answer, unless the words show someone else is speaking.",
+            name = other.name
+        ));
     }
     out.push_str(if tagged {
         "\nWHO SPOKE: the transcript does not know voices. A line tagged (mic) was picked up by the user's microphone: \
@@ -644,9 +675,9 @@ talked about here, with a citation. Then add what it is in general, in a sentenc
 \"(background, not said in the recording)\". If you don't know it, say so.\n\
 - Who said it: the transcript does not know voices. Use the (mic) and (computer audio) tags and the people list. Say \
 \"you\" for the user's side only when a (mic) line clearly is the user, and name another person only when the words \
-themselves make it clear (they are addressed by name, or introduce themselves). Otherwise say \"someone on the call\" or \
-\"someone in the room\". Never guess a name.\n\
-- Use the people list for who is who: names, companies, who organised it, and what the user noted about them.\n\
+themselves make it clear (they are addressed by name, or introduce themselves), or as the context allows under THE OTHER \
+SIDE, marked \"(likely)\". Otherwise say \"someone on the call\" or \"someone in the room\". Never guess a name.\n\
+- Use the people list for who is who: names, companies and who organised it.\n\
 - \"Just now\", \"what did they say\", \"what did I miss\" mean the last minutes: read them in order; the newest is last.\n\
 - The transcript comes from speech recognition and can be wrong, most of all on names and numbers. Say when something \
 looks misheard instead of repeating it as fact.\n\
@@ -707,9 +738,9 @@ pub async fn answer(
     let h = head(conn, meeting_id).await?;
     let mut label = retrieval::resolve(conn, &Scope::meeting(meeting_id)).await?.label;
     let ctx = c.context_tokens();
-    let max_tokens = prompt::max_tokens(ctx).min(MAX_ANSWER_TOKENS);
+    let max_tokens = prompt::max_tokens(ctx).min(if mode.glance { GLANCE_ANSWER_TOKENS } else { MAX_ANSWER_TOKENS });
     let hist = prompt::history_messages(history, ctx);
-    let system = system_prompt();
+    let system = if mode.glance { system_prompt() + GLANCE_RULE } else { system_prompt() };
     // What is there whatever the sources: the context, the question, the memory
     let who = people(conn, &h.id).await?;
     let ev = event(conn, &h.id).await;

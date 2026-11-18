@@ -407,6 +407,61 @@ def audit(root):
     need('queue_frame(' not in (root / 'src-tauri/src/commands/mod.rs').read_text(),
          'Screens must not be queued for an AI when they are captured')
 
+    # --- Ask from any app (quick_note.rs, the Ask key) -----------------------
+    # One question, sent only on the user's Return, through the same door
+    # as the panel in the app (so the same consent and Pro gate), opened
+    # only by the key and the two menu items.
+    quick_rs = (root / 'src-tauri/src/quick_note.rs').read_text()
+    panel_rs = (root / 'src-tauri/src/quick_note/panel.rs').read_text()
+    need(len(re.findall(r'\bask_recording\(', quick_rs)) == 1 and 'crate::chat::ask_recording(' in quick_rs,
+         'quick_note.rs asks through chat::ask_recording, once (the card\'s Return)')
+    for text, rel in ((quick_rs, 'quick_note.rs'), (panel_rs, 'quick_note/panel.rs')):
+        need(not re.search(r'\bai::|\breqwest\b|complete_if\(|complete_vision|https?://', text),
+             f'{rel}: the note and Ask panel makes no AI or network request of its own')
+    # What a log line in the panel may be given: the key's name, a system
+    # error about the key or the main thread, or the app's own error code.
+    # Never a question, an answer, a typed line or an endpoint's words,
+    # passed or captured inline ({question}). A new log line is added here.
+    allowed_log_args = {'', 'KEY_LABEL', 'ASK_KEY_LABEL', 'KEY_LABEL, e', 'ASK_KEY_LABEL, e', 'e', 'error_code(&e)'}
+    for text, rel in ((quick_rs, 'quick_note.rs'), (panel_rs, 'quick_note/panel.rs')):
+        code = text.split('#[cfg(test)]\nmod tests', 1)[0]
+        need(not re.search(r'\b(?:println|eprintln|print|eprint|dbg)!\s*\(', code), f'{rel}: no print or dbg, only log lines the guard knows')
+        for m in re.finditer(r'log::\w+!\(\s*("(?:[^"\\]|\\.)*")\s*(?:,\s*(.*?))?\s*\)\s*[;,]', code, re.S):
+            fmt, passed = m.group(1), ' '.join((m.group(2) or '').split())
+            need(not re.search(r'\{[A-Za-z_][^}]*\}', fmt), f'{rel}: a log line captures a value inline: {fmt[:70]}')
+            need(passed in allowed_log_args, f'{rel}: a log line is given `{passed[:60]}` (allowed: {sorted(a for a in allowed_log_args if a)})')
+            # A raw error is a system one (a key that couldn't be registered,
+            # the main thread), never the reply to a question
+            if re.search(r'(?:^|, )e$', passed):
+                need('not available' in fmt or 'main thread' in fmt, f'{rel}: a log line is given a raw error outside the hotkey and main-thread lines: {fmt[:70]}')
+        need(len(re.findall(r'log::\w+!\(', code)) == len(re.findall(r'log::\w+!\(\s*"(?:[^"\\]|\\.)*"\s*(?:,\s*.*?)?\s*\)\s*[;,]', code, re.S)),
+             f'{rel}: a log line the guard could not read (keep its format string first, on the same call)')
+    # Only Return sends: on_ask is defined once and called once (from the
+    # field's Return), and the panel opens for a question only from open()
+    need(len(re.findall(r'\bon_ask\(', quick_rs)) == 2 and 'on_ask(text);' in body_after(quick_rs, r'fn on_keep\(text: String\)'),
+         'quick_note.rs: on_ask is called from on_keep (Return) and nowhere else')
+    need(len(re.findall(r'\bon_keep\(', quick_rs)) == 1, 'quick_note.rs: on_keep is the field\'s Return handler and is called from nowhere else')
+    need(len(re.findall(r'\bopen\(app, true\)', quick_rs)) == 1 and 'open(app, true);' in body_after(quick_rs, r'pub fn toggle_ask\('),
+         'quick_note.rs: the panel opens for a question only from toggle_ask')
+    need('glance: true' in quick_rs and 'fn ask_error' in quick_rs and 'fn plain_answer' in quick_rs,
+         'The card asks for a short answer and shows only its own words for a failure (ask_error)')
+    need(re.search(r'panel::set_caption\(&ask_error\(&e\), true\)', quick_rs),
+         'A failed question shows ask_error on the card, never the endpoint\'s words')
+    for path in sorted((root / 'src-tauri/src').rglob('*.rs')):
+        rel = path.relative_to(root).as_posix()
+        calls = len(re.findall(r'\btoggle_ask\(', path.read_text()))
+        allowed = {'src-tauri/src/quick_note.rs': 2, 'src-tauri/src/menu_builder.rs': 1, 'src-tauri/src/tray_builder.rs': 1}.get(rel, 0)
+        need(calls == allowed,
+             f'{rel}: toggle_ask is named {calls} time(s), allowed {allowed} (the Ask panel opens only from its key and the two menu items)')
+    need('setSharingType: 0usize' in panel_rs, 'The note and Ask panel asks to be left out of shared screens (NSWindowSharingNone)')
+    need('drop_answer(refs);' in body_after(panel_rs, 'pub fn hide()'), 'A closed card holds no answer (panel::hide drops it)')
+    live_rs = (root / 'src-tauri/src/chat/live.rs').read_text()
+    other_side_body = body_after(live_rs, r'pub fn other_side\(') or ''
+    need('who.len() == 2' in other_side_body and "contains('@')" in other_side_body and '{name} (likely)' in live_rs,
+         'Naming the other side is only for a two-person event with a real name, and marked "(likely)" (live::other_side)')
+    need('crate::quick_note::answer_purged(meeting_id);' in body_after((root / 'src-tauri/src/chat.rs').read_text(), r'pub async fn purge_for_meeting\('),
+         'Purging a recording\'s chat closes an answer card about it (chat::purge_for_meeting)')
+
     # --- Bundled environment files; watch app ------------------------------
     for name in ('tauri.conf.json', 'tauri.mas.conf.json'):
         config = json.loads((root / 'src-tauri' / name).read_text())

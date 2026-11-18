@@ -123,6 +123,9 @@ async fn has_table(conn: &mut SqliteConnection, name: &str) -> Result<bool, sqlx
 /// is deleted. Schema-tolerant: an old backup may not have the tables.
 /// Returns the number of messages deleted.
 pub async fn purge_for_meeting(conn: &mut SqliteConnection, meeting_id: &str) -> Result<u64, sqlx::Error> {
+    // An answer about this recording that is still on the card over another
+    // app (quick_note.rs) is one more copy: it goes first
+    crate::quick_note::answer_purged(meeting_id);
     if !has_table(conn, "chat_message_sources").await? || !has_table(conn, "chat_messages").await? {
         return Ok(0);
     }
@@ -615,7 +618,7 @@ pub mod commands {
         // notes, the last minutes), and from that recording alone: the user
         // narrowed the chat to it
         if let (ScopeKind::Meeting, Some(meeting_id)) = (scope.kind, scope.value.as_deref()) {
-            let mode = live::Mode { recording: recording_now(&state, meeting_id), related: false };
+            let mode = live::Mode { recording: recording_now(&state, meeting_id), related: false, glance: false };
             return ask_recording(state.database.pool(), &LiveCompleter, thread_id.as_deref(), meeting_id, &message, mode).await;
         }
         ask(state.database.pool(), &LiveCompleter, thread_id.as_deref(), &scope, &message).await
@@ -632,7 +635,7 @@ pub mod commands {
         message: String,
     ) -> Result<ChatTurn, String> {
         log::info!("Ask: question of {} chars about one recording", message.chars().count());
-        let mode = live::Mode { recording: recording_now(&state, &meeting_id), related: true };
+        let mode = live::Mode { recording: recording_now(&state, &meeting_id), related: true, glance: false };
         ask_recording(state.database.pool(), &LiveCompleter, thread_id.as_deref(), &meeting_id, &message, mode).await
     }
 

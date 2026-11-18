@@ -36,6 +36,7 @@ pub mod tray_ids {
     pub const RESUME_RECORDING: &str = "tray_resume_recording";
     pub const MARK_MOMENT: &str = "tray_mark_moment";
     pub const TYPE_NOTE: &str = "tray_type_note";
+    pub const ASK: &str = "tray_ask";
     pub const SHOW_WINDOW: &str = "tray_show_window";
     pub const OPEN_SETTINGS: &str = "tray_open_settings";
 }
@@ -61,6 +62,11 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
             // The key is shown beside it; the global key is what acts
             &MenuItemBuilder::with_id(tray_ids::TYPE_NOTE, "Type a Note")
                 .accelerator(crate::quick_note::MENU_ACCELERATOR)
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id(tray_ids::ASK, "Ask About This Recording")
+                .accelerator(crate::quick_note::ASK_MENU_ACCELERATOR)
                 .build(app)?,
         )
         .separator()
@@ -122,6 +128,7 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
         tray_ids::RESUME_RECORDING => emit_to_frontend(app, "tray:resume_recording"),
         tray_ids::MARK_MOMENT => crate::markers::commands::mark_from_shortcut(app),
         tray_ids::TYPE_NOTE => crate::quick_note::toggle(app),
+        tray_ids::ASK => crate::quick_note::toggle_ask(app),
         tray_ids::SHOW_WINDOW => show_window(app),
         tray_ids::OPEN_SETTINGS => {
             emit_to_frontend(app, "menu:settings");

@@ -443,9 +443,9 @@ async fn live_fx() -> Fx {
 }
 
 /// Asked from the Ask panel while the recording runs.
-const ASK: live::Mode = live::Mode { recording: true, related: true };
+const ASK: live::Mode = live::Mode { recording: true, related: true, glance: false };
 /// Asked in the Chat tab, narrowed to the one recording, after it ended.
-const ONE_RECORDING: live::Mode = live::Mode { recording: false, related: false };
+const ONE_RECORDING: live::Mode = live::Mode { recording: false, related: false, glance: false };
 
 fn at_20_min(start: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<chrono::Utc> {
     start + chrono::Duration::seconds(1200)
@@ -470,6 +470,13 @@ async fn ask_is_given_the_recording_the_people_the_notes_and_the_last_minutes() 
     // Nothing in the app writes notes about a person, so none are sent
     assert!(!p.contains("Runs procurement"), "{p}");
     assert!(p.contains("A line tagged (mic) was picked up by the user's microphone"), "{p}");
+    // A call between two people: the other side has a name
+    assert!(p.contains("THE OTHER SIDE: the event has only the user and Ana Ruiz, so a (computer audio) line is most likely Ana Ruiz."), "{p}");
+    // …as something worked out, and marked so in the answer
+    assert!(p.contains("written \"Ana Ruiz (likely)\" the first time") && p.contains("not from a voice"), "{p}");
+    assert!(p.contains("or as the context allows under THE OTHER SIDE, marked \"(likely)\""), "{p}");
+    assert!(!p.contains("what the user noted about them"), "nothing writes notes about people: {p}");
+    assert!(!p.contains("read at a glance"), "the card's rule is for the card: {p}");
     // No email address goes: the name and the company are what an answer needs
     assert!(!p.contains("ana@acme.example") && !p.contains("gmail.com"), "{p}");
 
@@ -501,6 +508,27 @@ async fn ask_is_given_the_recording_the_people_the_notes_and_the_last_minutes() 
     assert_eq!((cited.meeting_id.as_str(), cited.timestamp_ms, cited.source), ("m2", Some(1_190_000), "transcript"));
     // The answer says what it drew on
     assert_eq!(ans.scope_label, "Recording · Acme sync and earlier recordings");
+
+    // Asked from the card over another app: the same sources, a shorter answer
+    let card = Mock::new("ok");
+    live::answer(&mut conn, &card, "m2", &[], "what did they just ask me for?", now, live::Mode { glance: true, ..ASK }).await.unwrap();
+    let cp = card.last_prompt();
+    assert!(cp.contains("read at a glance: at most three short lines or bullets"), "{cp}");
+    assert!(cp.contains("THE LAST MINUTES OF THIS RECORDING") && cp.contains("FROM EARLIER RECORDINGS"), "{cp}");
+    // With a third person in the event nobody is named for the other side
+    f.db.add_meeting_attendee("m2", "Bo Chen", "bo@acme.example", Some("Acme Corp"), "attendee").await.unwrap();
+    let three = Mock::new("ok");
+    live::answer(&mut conn, &three, "m2", &[], "who said that?", now, ASK).await.unwrap();
+    assert!(!three.last_prompt().contains("THE OTHER SIDE: the event has only"), "{}", three.last_prompt());
+    // The rule itself: two people, one of them the user, and lines with a side
+    let who = |name: &str, you: bool| live::Who { name: name.into(), company: None, role: None, you, met: 0 };
+    let pair = [who("Casey", true), who("Ana Ruiz", false)];
+    assert_eq!(live::other_side(&pair, true).map(|w| w.name.as_str()), Some("Ana Ruiz"));
+    assert!(live::other_side(&pair, false).is_none(), "no side tags, no name");
+    assert!(live::other_side(&[who("Bo", false), who("Ana Ruiz", false)], true).is_none(), "nobody is known to be the user");
+    assert!(live::other_side(&[who("Casey", true), who(" ", false)], true).is_none());
+    assert!(live::other_side(&[who("Casey", true)], true).is_none());
+    assert!(live::other_side(&[who("Casey", true), who("ana@acme.example", false)], true).is_none(), "an address is not a name");
 
     // The same question in a Chat narrowed to this recording stays in it,
     // and a recording that isn't running isn't said to be

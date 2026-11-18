@@ -205,6 +205,28 @@ these rules apply.
     what is given ("What it's given"); keep that list true when the
     context changes. Answers are chat messages with their sources, so
     Delete and Strike remove them (`chat::purge_for_meeting`).
+  - **Ask from any app is the same one question** (`quick_note.rs`,
+    ⌃⌥⌘A, File → Ask About This Recording, the menu-bar item; owner
+    2026-11-18: "enhance these capabilities"). The note panel opens for a
+    question and the answer shows on it as a card over the app in front
+    (`quick_note/panel.rs`). Only those three things ask; nothing opens
+    the card or asks by itself. It is the same request, the same thread
+    and the same consent and Pro gate as the panel in the app: the card
+    can't show a consent or paywall dialog, so it says where to go and
+    asks nothing. The card shows a plain, shortened copy
+    (`plain_answer`); the answer is stored only as the chat message. A
+    closed card holds no text, and purging the recording's chat closes
+    it (`quick_note::answer_purged`). Return hands the keyboard back to
+    the app in front (`panel::release_keyboard`): the card must never
+    sit on the keyboard while it waits or is read, or a Return meant for
+    the call asks again. It asks only about the recording that is still
+    running. Never put an endpoint's own words on the
+    card or in the log (`ask_error`), and never log the question or the
+    answer. One field serves notes and questions: a question must never
+    be left in it as a note (`press`, `Session.note_draft`). The card
+    asks macOS to leave it out of shared screens
+    (`NSWindowSharingNone`); don't promise that it is never seen in a
+    screen share.
   - **"Who is speaking" is a side, never a name.** `audio_source.rs` keeps
     how loud the microphone and the computer's audio were and tags a
     transcript line `mic` or `system` (`transcripts.source`, a column
@@ -212,7 +234,13 @@ these rules apply.
     active and the other captured and quiet. Both active, or the
     computer's audio not captured, gets no tag. noFriction doesn't recognise voices: never show or tell an AI
     that a named person said a line unless the words themselves say so,
-    and never write "speaker identification" in user-facing text.
+    and never write "speaker identification" in user-facing text. One
+    worked-out case is allowed, and only marked as such
+    (`live::other_side`, 2026-11-18): when the event has exactly the user
+    and one other person and lines are tagged, Ask is told the computer's
+    audio is most likely that person and may name them written
+    "Name (likely)". "What it's given" says so. Don't widen it (three
+    people, no known user, no tags: no name) and don't drop the mark.
   - **A picture reaches an AI only on a click that says so.** One feature
     sends images: **Read the screens** (`screen_reading.rs`; FADELL_V2.md
     §12). Its confirmation shows every picture that would go, with a tick
