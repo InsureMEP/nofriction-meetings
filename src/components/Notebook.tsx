@@ -36,10 +36,25 @@ export function NotebookFilterChips({
     onChange: (notebook: string | null) => void;
 }) {
     const titleId = useId();
+    const strip = useRef<HTMLDivElement>(null);
+    // The chosen notebook is never out of sight in a long row
+    useEffect(() => {
+        strip.current?.querySelector(".class-chip.is-on")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }, [value, notebooks.length]);
     if (notebooks.length === 0 && !value) return null;
     const shown = value && !notebooks.includes(value) ? [value, ...notebooks] : notebooks;
     return (
-        <div className="class-filter" role="toolbar" aria-labelledby={titleId}>
+        <div
+            ref={strip}
+            className="class-filter"
+            role="toolbar"
+            aria-labelledby={titleId}
+            // One row that scrolls sideways: a mouse wheel moves it too
+            onWheel={(e) => {
+                const el = e.currentTarget;
+                if (el.scrollWidth > el.clientWidth && Math.abs(e.deltaY) > Math.abs(e.deltaX)) el.scrollLeft += e.deltaY;
+            }}
+        >
             <span id={titleId} className="class-filter__title">{NOTEBOOKS_LABEL}</span>
             <button
                 type="button"
