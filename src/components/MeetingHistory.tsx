@@ -2,7 +2,7 @@
 // topics, or anything said; ⌘K focuses it), the Notebooks chips, and the
 // recordings by day. Deleting a recording is undoable for a few seconds.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import * as tauri from "../lib/tauri";
 import type { Meeting, CalendarMatchEvent } from "../lib/tauri";
@@ -52,6 +52,25 @@ const clock = (ms: number) => {
     const m = Math.floor(s / 60);
     return `${m}:${String(s % 60).padStart(2, "0")}`;
 };
+
+/**
+ * A recording's row opens from the keyboard and for assistive tech, not
+ * only on a click: it is a button that can be tabbed to, and Return or
+ * Space opens it. Keys pressed on something inside the row (Delete, the
+ * calendar's Rename) are that thing's.
+ */
+function rowAccess(open: () => void, selected: boolean) {
+    return {
+        role: "button" as const,
+        tabIndex: 0,
+        "aria-current": selected ? ("true" as const) : undefined,
+        onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
+            if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+            e.preventDefault();
+            open();
+        },
+    };
+}
 
 export function MeetingHistory({
     onSelectMeeting,
@@ -239,6 +258,7 @@ export function MeetingHistory({
                                     key={g.meetingId}
                                     className={`meeting-item ${selectedMeetingId === m.id ? "selected" : ""}`}
                                     onClick={() => onSelectMeeting(m.id)}
+                                    {...rowAccess(() => onSelectMeeting(m.id), selectedMeetingId === m.id)}
                                 >
                                     <div className="meeting-title">
                                         {m.title}
@@ -320,6 +340,7 @@ export function MeetingHistory({
                             key={meeting.id}
                             className={`compact-meeting-item ${selectedMeetingId === meeting.id ? "selected" : ""}`}
                             onClick={() => onSelectMeeting(meeting.id)}
+                            {...rowAccess(() => onSelectMeeting(meeting.id), selectedMeetingId === meeting.id)}
                         >
                             <div className="compact-meeting-title">{meeting.title}</div>
                             <KindTag meeting={meeting} />
@@ -354,6 +375,7 @@ export function MeetingHistory({
                                     key={meeting.id}
                                     className={`meeting-item ${selectedMeetingId === meeting.id ? "selected" : ""}`}
                                     onClick={() => onSelectMeeting(meeting.id)}
+                                    {...rowAccess(() => onSelectMeeting(meeting.id), selectedMeetingId === meeting.id)}
                                 >
                                     {match && !isDismissed && (
                                         <div className="cal-match" onClick={(e) => e.stopPropagation()}>
