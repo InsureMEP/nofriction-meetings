@@ -4,8 +4,13 @@
 // LinkedIn has no lookup API, so linking is one honest step: "Find" opens a
 // prefilled LinkedIn search; paste the profile URL back and it sticks to
 // that person for every meeting they're in.
+//
+// On a recording it is one chip in the title row ("Maya, Jordan +8"); the
+// list opens over the page from it. It never takes room from the recording:
+// a ten-person invite once filled the page and left Rewind a strip (owner,
+// 2026-11-18: "The point is rewind, so show me the content").
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -20,10 +25,11 @@ import {
     type MeetingPeople as MeetingPeopleData,
     type Person,
 } from "../lib/tauri";
-import { CalendarIcon, SearchIcon } from "./icons";
+import { chipLabel, chipTitle, popoverPlace } from "../lib/peopleChip";
+import { CalendarIcon, PeopleIcon, SearchIcon } from "./icons";
 import "./People.css";
 
-const open = (url: string) => openUrl(url).catch((e) => console.error("open failed", e));
+const open_ = (url: string) => openUrl(url).catch((e) => console.error("open failed", e));
 
 function initials(p: Person) {
     const src = p.name || p.email;
@@ -87,7 +93,7 @@ function LinkedInControl({ person, onSaved }: { person: Person; onSaved: (url: s
     if (person.linkedin_url) {
         return (
             <div className="li">
-                <button className="li__open" onClick={() => open(person.linkedin_url!)} type="button" title={person.linkedin_url}>
+                <button className="li__open" onClick={() => open_(person.linkedin_url!)} type="button" title={person.linkedin_url}>
                     <span className="li__badge" aria-hidden>in</span>
                     Profile
                 </button>
@@ -108,7 +114,7 @@ function LinkedInControl({ person, onSaved }: { person: Person; onSaved: (url: s
 
     return (
         <div className="li">
-            <button className="li__ghost" onClick={() => open(linkedinSearchUrl(person))} type="button" title="Search LinkedIn for this person">
+            <button className="li__ghost" onClick={() => open_(linkedinSearchUrl(person))} type="button" title="Search LinkedIn for this person">
                 <SearchIcon size={12} /> Find
             </button>
             <button
@@ -188,79 +194,143 @@ function ConnectCalendar({ access, onSynced }: { access: CalendarAccess | null; 
     );
 }
 
-// ── Per-meeting strip ───────────────────────────────────────────────────
+// ── On a recording: one chip, the list behind it ────────────────────────
+
+/** How wide the list opens (People.css `.mpeople__pop`) */
+const POP_WIDTH = 440;
 
 export function MeetingPeople({ meetingId }: { meetingId: string }) {
     const [data, setData] = useState<MeetingPeopleData | null>(null);
     const [access, setAccess] = useState<CalendarAccess | null>(null);
+    const [open, setOpen] = useState(false);
+    const [place, setPlace] = useState<{ left: number; maxHeight: number } | null>(null);
+    const wrap = useRef<HTMLSpanElement>(null);
+    const chip = useRef<HTMLButtonElement>(null);
+    const popId = useId();
 
     const load = useCallback(() => {
         getMeetingPeople(meetingId).then(setData).catch(() => setData({ details: null, people: [] }));
         getCalendarAccessStatus().then(setAccess).catch(() => {});
     }, [meetingId]);
 
-    useEffect(load, [load]);
+    useEffect(() => {
+        // Another recording: nothing of the last one stays up
+        setData(null);
+        setOpen(false);
+        load();
+    }, [load]);
     useRefreshOnPeopleUpdated(load);
+
+    // Open inside the recording's pane, and as tall as fits under the chip
+    useLayoutEffect(() => {
+        if (!open) return;
+        const measure = () => {
+            const c = chip.current?.getBoundingClientRect();
+            const pane = (wrap.current?.closest(".recording-detail") ?? document.body).getBoundingClientRect();
+            if (c) setPlace(popoverPlace(c, pane, POP_WIDTH));
+        };
+        measure();
+        window.addEventListener("resize", measure);
+        return () => window.removeEventListener("resize", measure);
+    }, [open]);
+
+    // A click anywhere else, or Esc, closes it
+    useEffect(() => {
+        if (!open) return;
+        const outside = (e: PointerEvent) => {
+            if (!wrap.current?.contains(e.target as Node)) setOpen(false);
+        };
+        const key = (e: KeyboardEvent) => {
+            // Esc in the LinkedIn field cancels that edit, not the list
+            if (e.key !== "Escape" || (e.target as HTMLElement | null)?.tagName === "INPUT") return;
+            setOpen(false);
+            chip.current?.focus();
+        };
+        document.addEventListener("pointerdown", outside);
+        document.addEventListener("keydown", key);
+        return () => {
+            document.removeEventListener("pointerdown", outside);
+            document.removeEventListener("keydown", key);
+        };
+    }, [open]);
 
     if (!data) return null;
     const people = data.people.filter((p) => !p.is_self);
     const d = data.details;
+    // Nothing on the calendar at that time: nothing to say about it
+    if (!d && (access === null || access === "authorized")) return null;
 
-    if (!d && access !== "authorized") {
-        return (
-            <section className="mpeople">
-                <ConnectCalendar access={access} onSynced={load} />
-            </section>
-        );
-    }
-
-    if (!d) {
-        return (
-            <section className="mpeople mpeople--quiet">
-                <p>No calendar event overlapped this recording.</p>
-            </section>
-        );
-    }
-
-    const when = d.scheduled_start
+    const when = d?.scheduled_start
         ? `${new Date(d.scheduled_start).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}${
               d.scheduled_end ? ` – ${new Date(d.scheduled_end).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""
           }`
         : null;
+    const label = !d ? (access === "denied" ? "Calendar access is off" : "Connect your calendar") : chipLabel(people) || d.event_title || "Calendar event";
+    const title = !d ? "Recordings get their titles, times and attendees from your calendar" : chipTitle(people, d.event_title);
 
     return (
-        <section className="mpeople">
-            <header className="mpeople__head">
-                <div className="mpeople__event">
-                    <span className="mpeople__title">{d.event_title}</span>
-                    <span className="mpeople__meta">
-                        {[when, d.location && !d.location.startsWith("http") ? d.location : null, d.calendar_name].filter(Boolean).join(" · ")}
-                    </span>
+        <span className="mpeople" ref={wrap}>
+            <button
+                ref={chip}
+                type="button"
+                className={`rec-row rec-row--btn mpeople__chip ${d ? "" : "is-empty"} ${open ? "is-open" : ""}`}
+                aria-haspopup="dialog"
+                aria-expanded={open}
+                aria-controls={open ? popId : undefined}
+                aria-label={title}
+                title={title}
+                onClick={() => setOpen((o) => !o)}
+            >
+                {d && people.length > 0 ? <PeopleIcon size={14} /> : <CalendarIcon size={14} />}
+                <span className="mpeople__label">{label}</span>
+            </button>
+            {open && (
+                <div
+                    id={popId}
+                    className="mpeople__pop"
+                    role="dialog"
+                    aria-label={d ? "The calendar event and who was in it" : "Connect your calendar"}
+                    style={place ? { left: place.left, maxHeight: place.maxHeight } : { visibility: "hidden" }}
+                >
+                    {!d ? (
+                        <ConnectCalendar access={access} onSynced={load} />
+                    ) : (
+                        <>
+                            <header className="mpeople__head">
+                                <div className="mpeople__event">
+                                    <span className="mpeople__title">{d.event_title}</span>
+                                    <span className="mpeople__meta">
+                                        {[when, d.location && !d.location.startsWith("http") ? d.location : null, d.calendar_name].filter(Boolean).join(" · ")}
+                                    </span>
+                                </div>
+                                {d.meeting_url && (
+                                    <button className="li__ghost" onClick={() => open_(d.meeting_url!)} type="button">Join link</button>
+                                )}
+                            </header>
+                            {people.length > 0 ? (
+                                <ul className="people-list">
+                                    {people.map((p) => (
+                                        <PersonRow
+                                            key={p.id}
+                                            person={p}
+                                            onChange={(np) => setData((cur) => cur && { ...cur, people: cur.people.map((x) => (x.id === np.id ? np : x)) })}
+                                        />
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="mpeople__none">No other attendees on the invite.</p>
+                            )}
+                            {d.notes && (
+                                <details className="mpeople__notes">
+                                    <summary>Invite notes</summary>
+                                    <p>{d.notes}</p>
+                                </details>
+                            )}
+                        </>
+                    )}
                 </div>
-                {d.meeting_url && (
-                    <button className="li__ghost" onClick={() => open(d.meeting_url!)} type="button">Join link</button>
-                )}
-            </header>
-            {people.length > 0 ? (
-                <ul className="people-list">
-                    {people.map((p) => (
-                        <PersonRow
-                            key={p.id}
-                            person={p}
-                            onChange={(np) => setData((cur) => cur && { ...cur, people: cur.people.map((x) => (x.id === np.id ? np : x)) })}
-                        />
-                    ))}
-                </ul>
-            ) : (
-                <p className="mpeople__none">No other attendees on the invite.</p>
             )}
-            {d.notes && (
-                <details className="mpeople__notes">
-                    <summary>Invite notes</summary>
-                    <p>{d.notes}</p>
-                </details>
-            )}
-        </section>
+        </span>
     );
 }
 

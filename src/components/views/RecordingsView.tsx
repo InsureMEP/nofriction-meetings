@@ -147,8 +147,10 @@ export function RecordingsView({ onSelectMeeting, selectedMeetingId, refreshKey,
                             ‹ {notebook}
                         </button>
                     )}
-                    <RecordingTitleBlock meetingId={selectedMeetingId} refreshKey={refreshKey} onSaved={() => setMetaEdits((n) => n + 1)} />
-                    <MeetingPeople meetingId={selectedMeetingId} />
+                    <RecordingTitleBlock meetingId={selectedMeetingId} refreshKey={refreshKey} onSaved={() => setMetaEdits((n) => n + 1)}>
+                        {/* Who was in it: one chip. The list opens over the page, so the recording keeps it */}
+                        <MeetingPeople meetingId={selectedMeetingId} />
+                    </RecordingTitleBlock>
                     <div className="deck-tabs" role="tablist" aria-label="Recording view">
                         {tabs.map((t) => (
                             <button

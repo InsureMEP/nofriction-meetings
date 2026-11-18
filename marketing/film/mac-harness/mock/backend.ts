@@ -25,6 +25,9 @@ type Args = Record<string, any> | undefined;
 //   ?setup=1  first run: nothing allowed yet, the speech model downloading
 //   ?pro=0    not subscribed: AI calls fail with PRO_REQUIRED (the paywall)
 //   ?ai=none  no AI set up yet
+//   ?people=N a recording's calendar event with N other people (default 3;
+//             10 is the big-invite case); ?people=none no event matched;
+//             ?people=solo an event with nobody else on it
 const flags = new URLSearchParams(location.search);
 const FIRST_RUN = flags.get("setup") === "1";
 let isPro = flags.get("pro") !== "0";
@@ -826,6 +829,56 @@ function studyFor(id: string) {
 
 const never = () => new Promise(() => {});
 
+/** Fictional people for a recording's calendar event (?people=N). */
+const CAST: [string, string, string][] = [
+    ["Maya Chen", "Acme", "maya.chen@acme.example"],
+    ["Jordan Lee", "Acme", "jordan.lee@acme.example"],
+    ["Dana Okafor", "Northwind", "dana@northwind.example"],
+    ["Priya Nair", "Northwind", "priya.nair@northwind.example"],
+    ["Marcus Bell", "Acme", "marcus.bell@acme.example"],
+    ["Sofia Alvarez", "Globex", "sofia@globex.example"],
+    ["Tom Becker", "Globex", "tom.becker@globex.example"],
+    ["Aiko Tanaka", "Northwind", "aiko@northwind.example"],
+    ["Leo Martin", "Acme", "leo.martin@acme.example"],
+    ["Nina Petrova", "Globex", "nina.petrova@globex.example"],
+];
+
+function meetingPeople(meetingId: string) {
+    const want = flags.get("people");
+    if (FIRST_RUN || want === "none") return { details: null, people: [] };
+    const m = meetingById(meetingId);
+    const count = want === "solo" ? 0 : Math.max(0, Math.min(CAST.length, Number(want ?? 3) || 3));
+    const start = m ? new Date(m.started_at) : new Date();
+    const person = (i: number, name: string, company: string, email: string, self = false) => ({
+        id: `p${i}`,
+        email,
+        name,
+        company,
+        company_domain: email.split("@")[1],
+        linkedin_url: i === 1 ? "https://www.linkedin.com/in/example" : null,
+        notes: null,
+        is_self: self,
+        role: i === 1 ? "organizer" : null,
+        meeting_count: 3,
+        last_met: null,
+    });
+    return {
+        details: {
+            meeting_id: meetingId,
+            calendar_event_id: `ev-${meetingId}`,
+            event_title: m?.title ?? "Acme project sync",
+            scheduled_start: start.toISOString(),
+            scheduled_end: new Date(start.getTime() + 50 * 60_000).toISOString(),
+            location: "Zoom",
+            meeting_url: "https://example.com/join",
+            notes: "Agenda: launch checklist, billing load test, onboarding numbers.",
+            calendar_name: "Work",
+            organizer_email: CAST[0][2],
+        },
+        people: [person(0, "You", "Acme", "you@acme.example", true), ...CAST.slice(0, count).map(([n, c, e], i) => person(i + 1, n, c, e))],
+    };
+}
+
 function handle(cmd: string, args: Args): unknown {
     const a = args ?? {};
     switch (cmd) {
@@ -1044,9 +1097,10 @@ function handle(cmd: string, args: Args): unknown {
         case "list_video_blank_jobs":
             return [];
 
-        // People / calendar: the strip above a recording stays hidden
+        // People / calendar. The recording's event is always there (it used
+        // to be left out, and a ten-person invite filled the page unseen)
         case "get_meeting_people":
-            return never();
+            return meetingPeople(a.meetingId);
         case "get_calendar_access_status":
             return FIRST_RUN ? "not_determined" : "authorized";
         case "list_people":

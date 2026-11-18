@@ -3,7 +3,7 @@
 // notebook are two tappable rows (src-tauri/src/notebooks.rs,
 // recording_kind.rs).
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import * as tauri from "../lib/tauri";
 import { canonicalNotebook } from "../lib/recordPlan";
 import { NOTEBOOKS_LABEL, RECORDING_KINDS, notebookPlaceholder, parseKind, type RecordingKind } from "../lib/recordingKind";
@@ -78,7 +78,18 @@ const formatWhen = (iso: string, seconds: number | null | undefined) => {
  * rows with no labels: the type (a menu; new notes and the Review guide use
  * it) and the notebook (click to edit; saves on Enter or blur).
  */
-export function RecordingTitleBlock({ meetingId, refreshKey = 0, onSaved }: { meetingId: string; refreshKey?: unknown; onSaved?: () => void }) {
+export function RecordingTitleBlock({
+    meetingId,
+    refreshKey = 0,
+    onSaved,
+    children,
+}: {
+    meetingId: string;
+    refreshKey?: unknown;
+    onSaved?: () => void;
+    /** More chips for the same row (who was in it) */
+    children?: ReactNode;
+}) {
     const [meeting, setMeeting] = useState<tauri.Meeting | null>(null);
     const [kind, setKind] = useState<RecordingKind>("meeting");
     const [saved, setSaved] = useState<string | null>(null);
@@ -199,6 +210,7 @@ export function RecordingTitleBlock({ meetingId, refreshKey = 0, onSaved }: { me
                         <span>{saved ?? "Add to a notebook"}</span>
                     </button>
                 )}
+                {children}
                 {status && <span className="rec-row__status" role="status">{status}</span>}
             </div>
         </header>
