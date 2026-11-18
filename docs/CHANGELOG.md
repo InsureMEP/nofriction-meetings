@@ -11,6 +11,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 On `main`, not in a build yet.
 
+### Changed
+- **A recording opens on its content (Mac).** The calendar event and its
+  attendees are one chip beside the notebook ("Maya, Jordan +8"); click it
+  for the event, everyone on the invite, the join link and the invite's
+  notes. They used to be a card above the recording, and a meeting with ten
+  people left Rewind a strip at the bottom of the window. Rewind, Notes,
+  Links and the Review guide now get the whole page whatever the invite.
+- **Notebook chips keep their names (Mac).** With many notebooks the row
+  above the list scrolls sideways instead of squeezing each name to a
+  letter or two.
+- **Scrollbars are dark and thin (Mac)** instead of the light bar that
+  showed under Rewind's screens.
+- **Rewind shows more of the recording (Mac).** The transcript starts at
+  the top of its column (the Marks box is a plain row and the instruction
+  sentence is gone), each line's time sits beside who spoke, and a line no
+  longer says "Speaker" when nobody is named. The screen sits on the page
+  instead of in a black box. In a small window the list and the strip of
+  screens give way before the screen does.
+- **Notes are a readable column (Mac)** instead of running the width of
+  the window, and **Make again** is an ordinary button once notes exist.
+  Topics and the "Said" / "On screen" labels in Links are neutral: yellow
+  is the app's one accent.
+
+### Fixed
+- **One name per recording (Mac).** When your calendar names a recording
+  after it was listed, the list now shows the new name too.
+
 ### Added
 - **Ask (Mac).** While you record, a panel beside the transcript answers
   questions about what is being said: "What did I miss?", "What was just

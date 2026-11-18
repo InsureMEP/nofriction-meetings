@@ -363,6 +363,15 @@ these rules apply.
   `entitlement::require_pro()` in `ai::client::complete`.
 
 **Lessons that cost real time:**
+- **The mock must hold what a real library holds.** The harness
+  (`marketing/film/mac-harness`) answered `get_meeting_people` with nothing
+  ("the strip stays hidden"), so every design pass looked at a recording
+  with no calendar event, and in the real app a ten-person invite filled
+  the page and left Rewind 211 px (owner, 2026-11-18). A recording's page
+  is checked with `?people=10` and a crowded Notebooks row; anything above
+  the tabs that grows with data is a chip that opens over the page
+  (DESIGN.md, "The content keeps the page"). Headless Chromium hides
+  scrollbars, so scrollbar styling can't be seen in the harness.
 - **A hook's cleanup must not depend on a caller's inline callback.**
   `useUndoDelete(onError)` built `commit` with `[onError]`, callers passed
   an arrow function, so the "leaving the view applies the delete" cleanup

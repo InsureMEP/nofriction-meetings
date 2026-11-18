@@ -357,7 +357,9 @@ count as one topic in the chips, the grouping and Chat.
 **Mac:** **Recordings** lists every recording by day. The search field at
 the top (⌘K) finds titles, people, topics and anything said; a line that
 matches opens the recording at that moment. Filter with the **Notebooks**
-chips. Open a recording to see its type, notebook and attendees, and views
+chips. Open a recording to see its type, its notebook and who was in it
+(the chip with their names: click it for the calendar event, everyone on
+the invite, the join link and the invite's notes), and views
 for **Rewind** (the transcript next to the screenshot timeline: pick any
 moment to see what was on screen and what was said), **Notes**, **Links**
 and **Review guide**. Topics are named by your AI when notes are made, and
