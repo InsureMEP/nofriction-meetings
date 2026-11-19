@@ -362,6 +362,9 @@ def audit(root):
     purge_fn = re.search(r'pub async fn purge_for_meeting\(.*?\n\}\n', chat_rs, re.S)
     need(purge_fn is not None and re.search(r'PURGES\.lock\(\)\.entry\(library\)\.or_insert\(0\) \+= 1', purge_fn.group(0)) is not None,
          'chat::purge_for_meeting must count the purge, so an answer being written stops being shown and is not kept')
+    need(purge_fn is not None and 'app.emit(STREAM_PURGED_EVENT, ())' in purge_fn.group(0)
+         and '"chat_stream_purged"' in (root / 'src/lib/chat.ts').read_text(),
+         'chat::purge_for_meeting must tell the window (chat_stream_purged), and lib/chat.ts must take the answer so far off the screen')
     ask_fn = re.search(r'\nasync fn ask_as\(.*?\n\}\n', chat_rs, re.S)
     need(ask_fn is not None
          and re.search(r'wait_for_writers\(&mut conn\)\.await\?;\s*let watch = PurgeWatch::start\(&mut conn\)\.await;', ask_fn.group(0)) is not None

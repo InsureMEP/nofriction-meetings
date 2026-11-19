@@ -111,6 +111,8 @@ test("an answer still being written renders without half-made marks", () => {
     assert.equal(partialAnswer("- **One** [1]\n- **Tw"), "- **One** [1]\n- **Tw**");
     assert.equal(partialAnswer("See [the plan"), "See [the plan", "only a number is a citation");
     assert.equal(partialAnswer("5 * 3 is"), "5 * 3 is");
+    assert.equal(partialAnswer("2 ** 8 is"), "2 ** 8 is", "stars with a space after them are not a mark");
+    assert.equal(partialAnswer("a ` b"), "a ` b");
     assert.equal(partialAnswer(""), "");
     // Inside an open code fence nothing is touched
     assert.equal(partialAnswer("```\nlet x = a **"), "```\nlet x = a **");

@@ -231,7 +231,9 @@ the model reading the prompt, which streaming does not shorten.
 - **A purge while it is written.** `purge_for_meeting` counts every purge
   of its library (`PURGES`, by database file). A sink made before it shows
   one empty answer (which takes the text off the window and the card) and
-  nothing after, and `ask_as` does not keep or return the finished answer
+  nothing after; the purge also says so at once (`chat_stream_purged` to
+  the window, `PARTIALS_OFF` on the card), so the text goes even if the
+  model has stalled between two words. `ask_as` does not keep or return the finished answer
   ("Text was removed from a recording while this was being answered…").
   Any purge in the library counts, not only one of a recording the answer
   drew on. The answer so far is in memory only and is never logged.
