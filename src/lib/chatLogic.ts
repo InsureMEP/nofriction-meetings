@@ -164,8 +164,16 @@ export function partialAnswer(text: string): string {
     let last = text.slice(cut);
     last = last.replace(/\[[\d,\s]*$/, "");
     if (/(^|[^*])\*$/.test(last)) last = last.slice(0, -1);
-    if ((last.match(/\*\*/g)?.length ?? 0) % 2 === 1) last = last.endsWith("**") ? last.slice(0, -2) : `${last}**`;
-    if ((last.match(/`/g)?.length ?? 0) % 2 === 1) last = last.endsWith("`") ? last.slice(0, -1) : `${last}\``;
+    // An opening mark has a word right after it; "2 ** 8" is text
+    const opensAWord = (mark: string) => /^\S/.test(last.slice(last.lastIndexOf(mark) + mark.length));
+    if ((last.match(/\*\*/g)?.length ?? 0) % 2 === 1) {
+        if (last.endsWith("**")) last = last.slice(0, -2);
+        else if (opensAWord("**")) last = `${last}**`;
+    }
+    if ((last.match(/`/g)?.length ?? 0) % 2 === 1) {
+        if (last.endsWith("`")) last = last.slice(0, -1);
+        else if (opensAWord("`")) last = `${last}\``;
+    }
     return text.slice(0, cut) + last;
 }
 

@@ -55,18 +55,29 @@ export interface ChatTurn {
  */
 export async function withStream<T>(run: (requestId: string) => Promise<T>, onText: (text: string) => void): Promise<T> {
     const requestId = crypto.randomUUID();
-    let off: (() => void) | null = null;
+    const off: (() => void)[] = [];
+    // Text was removed from a recording (Delete, Strike): the answer so far
+    // may hold it. It goes at once and no more of it is shown
+    let stopped = false;
     try {
-        off = await listen<{ requestId: string; text: string }>("chat_stream", (e) => {
-            if (e.payload.requestId === requestId) onText(e.payload.text);
-        });
+        off.push(
+            await listen<{ requestId: string; text: string }>("chat_stream", (e) => {
+                if (!stopped && e.payload.requestId === requestId) onText(e.payload.text);
+            }),
+        );
+        off.push(
+            await listen("chat_stream_purged", () => {
+                stopped = true;
+                onText("");
+            }),
+        );
     } catch {
-        off = null;
+        // Unheard: the answer arrives whole
     }
     try {
         return await run(requestId);
     } finally {
-        off?.();
+        off.forEach((stop) => stop());
     }
 }
 

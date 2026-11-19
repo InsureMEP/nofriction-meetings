@@ -184,6 +184,12 @@ pub async fn purge_for_meeting(conn: &mut SqliteConnection, meeting_id: &str) ->
     // And one still being written stops being shown and is not kept
     let library = library_of(conn).await;
     *PURGES.lock().entry(library).or_insert(0) += 1;
+    // The sinks are stopped now. What a window still shows of an answer
+    // goes at once, not with the model's next word (it may have stalled)
+    if let Some(app) = crate::notifications::app() {
+        use tauri::Emitter;
+        let _ = app.emit(STREAM_PURGED_EVENT, ());
+    }
     if !has_table(conn, "chat_message_sources").await? || !has_table(conn, "chat_messages").await? {
         return Ok(0);
     }
@@ -670,6 +676,10 @@ async fn ask_as(
 /// finished turn is the command's own result; this event carries nothing
 /// that isn't in it, and is never logged.
 pub const STREAM_EVENT: &str = "chat_stream";
+
+/// No payload: text was removed from a recording. A window showing an
+/// answer that is still being written takes it off the screen.
+pub const STREAM_PURGED_EVENT: &str = "chat_stream_purged";
 
 /// Lets a call through at most once per `every` (the first one at once).
 /// An answer so far replaces the one before it, so a skipped one is no loss.

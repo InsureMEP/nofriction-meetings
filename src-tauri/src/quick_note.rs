@@ -427,6 +427,10 @@ mod mac {
     /// That recording's chat was purged while the question was with the
     /// AI: its answer is not shown
     static PURGED_MEANWHILE: AtomicBool = AtomicBool::new(false);
+    /// Text was removed from a recording while a question is with the AI:
+    /// nothing more of its answer goes on the card while it is written.
+    /// Main thread only.
+    static PARTIALS_OFF: AtomicBool = AtomicBool::new(false);
     /// Counts every change of what the card holds (a question sent, an
     /// answer shown, the next question, closing), so the timer that puts an
     /// answer away can tell whether it is still looking at its own answer
@@ -673,6 +677,7 @@ mod mac {
         }
         *ASKING_FOR.lock() = Some(meeting.clone());
         PURGED_MEANWHILE.store(false, Ordering::SeqCst);
+        PARTIALS_OFF.store(false, Ordering::SeqCst);
         ANSWER_SEQ.fetch_add(1, Ordering::SeqCst);
         // The card says what was asked (also when nothing was typed), in the
         // field's grey line: the field itself is empty for the next question
@@ -732,7 +737,7 @@ mod mac {
     /// until the whole answer is there (`answered_on_main`).
     fn partial_on_main(so_far: &str, meeting: &str) {
         let asking = ASKING_NOW.load(Ordering::SeqCst) && ASKING_FOR.lock().as_deref() == Some(meeting);
-        if !asking || PURGED_MEANWHILE.load(Ordering::SeqCst) {
+        if !asking || PURGED_MEANWHILE.load(Ordering::SeqCst) || PARTIALS_OFF.load(Ordering::SeqCst) {
             return;
         }
         let here = panel::is_open() && ASK_MODE.load(Ordering::SeqCst) && SESSION.lock().meeting.as_deref() == Some(meeting);
@@ -804,6 +809,12 @@ mod mac {
         let _ = app.run_on_main_thread(move || {
             if ASKING_FOR.lock().as_deref() == Some(meeting.as_str()) {
                 PURGED_MEANWHILE.store(true, Ordering::SeqCst);
+            }
+            // Any recording's text: the answer being written may draw on it
+            // (related recordings). What the card shows of it goes now
+            if ASKING_NOW.load(Ordering::SeqCst) {
+                PARTIALS_OFF.store(true, Ordering::SeqCst);
+                panel::show_answer("");
             }
             let about = SESSION.lock().meeting.as_deref() == Some(meeting.as_str());
             if about && ASK_MODE.load(Ordering::SeqCst) && panel::is_open() {
