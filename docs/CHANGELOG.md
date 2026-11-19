@@ -13,7 +13,8 @@ On `main`, not in a build yet.
 
 ## [Mac 4.1.0 (50) · iPhone and iPad 2.0.1 (15)] - 2026-11-18
 
-Built from `main` and submitted for review on 2026-11-18
+Built from `main` (`7029307`), uploaded and submitted for review on
+2026-11-18; each is released automatically when Apple approves it
 (docs/RELEASE_STATUS.md). On the Mac this is everything merged since
 4.0.0 (49): Read the screens, the capture rule, Ask and Ask from any
 app, the recording's page, and streamed answers. On iPhone and iPad it
