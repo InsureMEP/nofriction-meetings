@@ -282,7 +282,8 @@ Good to know:
 ### Ask while you record (Mac)
 
 While a recording runs, **Ask** sits beside the transcript. Type a question
-and press Return (⌘J puts the keyboard there):
+and press Return (⌘J puts the keyboard there). The answer appears as it is
+written, so you can start reading after a second or two:
 
 - "What did I miss?" or "Sum up the last few minutes"
 - "What was just asked of me?"

@@ -12,7 +12,7 @@ import { onChatAboutNotebook, requestRecordingSeek, takeChatNotebook } from "../
 import { AiSetupNotice, useAiStatus } from "../AiSetupNotice";
 import { useUndoDelete } from "../UndoToast";
 import { BrainIcon, TrashIcon } from "../icons";
-import { ChatMarkdown } from "./ChatMarkdown";
+import { ChatMarkdown, StreamingAnswer } from "./ChatMarkdown";
 import { ScopePicker } from "./ScopePicker";
 import "./RecordingsChat.css";
 
@@ -42,6 +42,8 @@ export function RecordingsChat({ selectedMeetingId, onOpenRecording }: Props) {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState("");
     const [thinking, setThinking] = useState(false);
+    /** The question on its way and the answer so far, while the model writes */
+    const [pending, setPending] = useState<{ question: string; text: string } | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [needsAi, setNeedsAi] = useState(false);
     const [showThreads, setShowThreads] = useState(false);
@@ -101,6 +103,11 @@ export function RecordingsChat({ selectedMeetingId, onOpenRecording }: Props) {
     useEffect(() => {
         endRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages, thinking]);
+    // While an answer is written the end is followed without easing: a
+    // smooth scroll restarted many times a second never arrives
+    useEffect(() => {
+        if (pending?.text) endRef.current?.scrollIntoView({ block: "end" });
+    }, [pending?.text]);
 
     useEffect(() => {
         const t = textareaRef.current;
@@ -116,8 +123,9 @@ export function RecordingsChat({ selectedMeetingId, onOpenRecording }: Props) {
         setError(null);
         setInput("");
         setThinking(true);
+        setPending({ question: q, text: "" });
         try {
-            const turn = await chatApi.ask(thread?.id ?? null, scope, q);
+            const turn = await chatApi.ask(thread?.id ?? null, scope, q, (text) => setPending({ question: q, text }));
             setThread(turn.thread);
             setMessages((prev) => [...prev, turn.user, turn.assistant]);
             loadThreads();
@@ -126,11 +134,14 @@ export function RecordingsChat({ selectedMeetingId, onOpenRecording }: Props) {
             else setError(aiFailure(e));
             setInput(q);
         } finally {
+            setPending(null);
             setThinking(false);
         }
     };
 
     const openThread = async (t: ChatThread) => {
+        // The answer on its way belongs to the chat that is open
+        if (thinking) return;
         try {
             const d = await chatApi.thread(t.id);
             setThread(d.thread);
@@ -144,6 +155,7 @@ export function RecordingsChat({ selectedMeetingId, onOpenRecording }: Props) {
     };
 
     const newChat = () => {
+        if (thinking) return;
         setThread(null);
         setMessages([]);
         setError(null);
@@ -184,7 +196,7 @@ export function RecordingsChat({ selectedMeetingId, onOpenRecording }: Props) {
                     <button className="rc-btn" onClick={() => setShowThreads((v) => !v)} aria-expanded={showThreads}>
                         Chats{threads.length ? ` (${threads.length})` : ""}
                     </button>
-                    <button className="rc-btn" onClick={newChat} disabled={!thread && messages.length === 0 && !input}>
+                    <button className="rc-btn" onClick={newChat} disabled={thinking || (!thread && messages.length === 0 && !input)}>
                         New chat
                     </button>
                 </div>
@@ -204,14 +216,14 @@ export function RecordingsChat({ selectedMeetingId, onOpenRecording }: Props) {
                         ) : (
                             threads.map((t) => (
                                 <div key={t.id} className={`rc-thread ${thread?.id === t.id ? "is-on" : ""}`}>
-                                    <button className="rc-thread__open" onClick={() => openThread(t)} title={t.title}>
+                                    <button className="rc-thread__open" onClick={() => openThread(t)} title={t.title} disabled={thinking}>
                                         <span className="rc-thread__title">{t.title}</span>
                                         <span className="rc-thread__meta">
                                             {scopeLabel(t.scope)} · {new Date(t.updated_at).toLocaleDateString()}
                                             {t.flag ? " · answers removed" : ""}
                                         </span>
                                     </button>
-                                    <button className="rc-thread__delete" onClick={() => removeThread(t)} title="Delete chat" aria-label="Delete chat">
+                                    <button className="rc-thread__delete" onClick={() => removeThread(t)} title="Delete chat" aria-label="Delete chat" disabled={thinking}>
                                         <TrashIcon size={13} />
                                     </button>
                                 </div>
@@ -261,7 +273,19 @@ export function RecordingsChat({ selectedMeetingId, onOpenRecording }: Props) {
                                     )}
                                 </div>
                             ))}
-                            {thinking && (
+                            {pending && (
+                                <div className="rc-msg user">
+                                    <span className="rc-msg__label">You</span>
+                                    <div className="rc-msg__bubble"><p className="rc-user-text">{pending.question}</p></div>
+                                </div>
+                            )}
+                            {pending?.text ? (
+                                // The answer, while it is written. Read out once, when it is whole
+                                <div className="rc-msg assistant rc-msg--streaming" aria-hidden="true">
+                                    <span className="rc-msg__label">From {scopeText}</span>
+                                    <div className="rc-msg__bubble"><StreamingAnswer text={pending.text} /></div>
+                                </div>
+                            ) : thinking && (
                                 <div className="rc-thinking" role="status">
                                     <div className="rc-thinking__dots"><span /><span /><span /></div>
                                     <span className="rc-thinking__label">Searching your recordings, then asking your AI…</span>

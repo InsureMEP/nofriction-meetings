@@ -7,6 +7,10 @@
 //! - response bodies capped at 4 MB, no redirects
 //! - HTTPS only for cloud; http only for private hosts (checked again here)
 //! - keys redacted from every error string and log line
+//! - streaming (`complete_stream`, `run_stream`): the same request with
+//!   `stream: true`, read as server-sent events; the caller's sink gets the
+//!   answer so far each time it grows. Same timeout, same 4 MB cap. A server
+//!   that answers with plain JSON, or refuses `stream`, is read the old way.
 
 use super::config::{self, Kind};
 use super::providers::{self, preset, KeyNeed, Protocol};
@@ -481,6 +485,28 @@ pub fn strip_think(s: &str) -> String {
     out.trim().to_string()
 }
 
+/// The part of an answer still being written that can be shown: whole
+/// `<think>` blocks are gone, a block still open hides everything after it,
+/// and so does the start of a tag that hasn't finished arriving (`<thi`).
+pub fn visible_so_far(raw: &str) -> String {
+    let mut out = raw.to_string();
+    while let (Some(a), Some(b)) = (out.find("<think>"), out.find("</think>")) {
+        if b < a {
+            break;
+        }
+        out.replace_range(a..b + "</think>".len(), "");
+    }
+    if let Some(a) = out.find("<think>") {
+        out.truncate(a);
+    } else if let Some(a) = out.rfind('<') {
+        let tail = &out[a..];
+        if "<think>".starts_with(tail) {
+            out.truncate(a);
+        }
+    }
+    out.trim().to_string()
+}
+
 pub fn parse_openai_response(v: &Value) -> Result<String, AiError> {
     let choice = &v["choices"][0];
     if choice.is_null() {
@@ -628,6 +654,232 @@ fn parse_json(body: &[u8]) -> Result<Value, AiError> {
 }
 
 // ---------------------------------------------------------------------------
+// Streaming (server-sent events)
+// ---------------------------------------------------------------------------
+
+/// Where a streamed answer goes while it is written: called with the whole
+/// answer so far (never a fragment), each time it grows. A caller can show
+/// it as is and drop any call it has no time for.
+pub type Sink<'a> = &'a (dyn Fn(&str) + Send + Sync);
+
+/// The text of a streamed answer, fed the body in whatever pieces the
+/// network delivers. Pure, so the two wire formats are unit tested:
+/// OpenAI-compatible `chat.completion.chunk`s and Anthropic Messages events.
+/// Reasoning and thinking deltas are not part of the answer and are skipped.
+pub struct SseText {
+    protocol: Protocol,
+    buf: Vec<u8>,
+    /// The answer so far, as sent (think blocks still in it)
+    pub text: String,
+    /// `finish_reason` / `stop_reason`, once the server gave one
+    pub finish: Option<String>,
+    /// An error event inside a 200 stream: its words, and the HTTP status
+    /// the same refusal would have had (401 a key, 429 credit or rate)
+    pub error: Option<(u16, String)>,
+    /// The server said the stream is complete
+    pub done: bool,
+}
+
+impl SseText {
+    pub fn new(protocol: Protocol) -> Self {
+        Self { protocol, buf: Vec::new(), text: String::new(), finish: None, error: None, done: false }
+    }
+
+    /// Take the next bytes. True when the answer grew.
+    pub fn feed(&mut self, bytes: &[u8]) -> bool {
+        self.buf.extend_from_slice(bytes);
+        let before = self.text.len();
+        while let Some(nl) = self.buf.iter().position(|b| *b == b'\n') {
+            let line: Vec<u8> = self.buf.drain(..=nl).collect();
+            self.line(&line);
+        }
+        self.text.len() > before
+    }
+
+    /// The body ended: a last line may have come without its newline.
+    pub fn end(&mut self) {
+        let line = std::mem::take(&mut self.buf);
+        self.line(&line);
+    }
+
+    fn line(&mut self, line: &[u8]) {
+        let line = String::from_utf8_lossy(line);
+        // `event:` names, `:` keep-alive comments and blank lines carry no text
+        let Some(data) = line.trim_end_matches(['\r', '\n']).strip_prefix("data:") else { return };
+        let data = data.trim();
+        if data == "[DONE]" {
+            self.done = true;
+            return;
+        }
+        let Ok(v) = serde_json::from_str::<Value>(data) else { return };
+        match self.protocol {
+            Protocol::Anthropic => self.anthropic(&v),
+            _ => self.openai(&v),
+        }
+    }
+
+    fn fail(&mut self, v: &Value) {
+        let msg = ["/error/message", "/error", "/message", "/error/type"]
+            .iter()
+            .find_map(|p| v.pointer(p).and_then(|x| x.as_str()))
+            .unwrap_or("The provider reported an error");
+        // The stream had already said 200: the error's own type or code
+        // says what kind it is
+        let kind = ["/error/type", "/error/code"]
+            .iter()
+            .filter_map(|p| v.pointer(p).and_then(|x| x.as_str()))
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_ascii_lowercase();
+        let status = if kind.contains("authentication") || kind.contains("invalid_api_key") || kind.contains("permission") {
+            401
+        } else if kind.contains("rate_limit") || kind.contains("quota") || kind.contains("credit") || kind.contains("billing") {
+            429
+        } else {
+            500
+        };
+        self.error = Some((status, msg.chars().take(300).collect()));
+    }
+
+    fn openai(&mut self, v: &Value) {
+        if !v["error"].is_null() {
+            return self.fail(v);
+        }
+        let choice = &v["choices"][0];
+        match &choice["delta"]["content"] {
+            Value::String(s) => self.text.push_str(s),
+            Value::Array(parts) => parts.iter().filter_map(|p| p["text"].as_str()).for_each(|t| self.text.push_str(t)),
+            _ => {}
+        }
+        if let Some(f) = choice["finish_reason"].as_str() {
+            self.finish = Some(f.to_string());
+        }
+    }
+
+    fn anthropic(&mut self, v: &Value) {
+        match v["type"].as_str().unwrap_or("") {
+            "content_block_delta" if v["delta"]["type"] == "text_delta" => {
+                self.text.push_str(v["delta"]["text"].as_str().unwrap_or(""));
+            }
+            "message_delta" => {
+                if let Some(r) = v["delta"]["stop_reason"].as_str() {
+                    self.finish = Some(r.to_string());
+                }
+            }
+            "message_stop" => self.done = true,
+            "error" => self.fail(v),
+            _ => {}
+        }
+    }
+
+    /// The finished answer, by the same rules as a whole-body response. A
+    /// body that just stopped (no finish reason, no end marker) is a broken
+    /// connection, not an answer: half of one is never returned as whole.
+    pub fn finish(self, key: Option<&str>) -> Result<String, AiError> {
+        if let Some((status, e)) = &self.error {
+            let msg = providers::redact_with(e, key);
+            return Err(match status {
+                401 => AiError::WrongKey(msg),
+                429 => AiError::NoCredit(msg),
+                _ => AiError::Other(msg),
+            });
+        }
+        if !self.done && self.finish.is_none() {
+            return Err(AiError::Unreachable("the connection closed before the answer was finished".into()));
+        }
+        let finish = self.finish.as_deref().unwrap_or("");
+        if finish == "refusal" {
+            return Err(AiError::Other("The model declined this request".into()));
+        }
+        let cut = finish == "length" || finish == "max_tokens";
+        let text = strip_think(&self.text);
+        if text.is_empty() {
+            return Err(if cut { AiError::Truncated } else { AiError::Other("The model returned an empty answer".into()) });
+        }
+        if cut {
+            log::warn!("AI answer hit the token cap and was cut off");
+        }
+        Ok(text)
+    }
+}
+
+/// What came back from a request that asked for a stream.
+enum Streamed {
+    /// The answer, already given to the sink piece by piece
+    Text(String),
+    /// Not a stream (an error status, or a server that answered with plain
+    /// JSON): the status and the whole body, for the usual handling
+    Whole(u16, Vec<u8>),
+}
+
+/// Send a request that asks for a stream and read it. A body that starts
+/// with `{` is plain JSON whatever the request said (every SSE line starts
+/// with a field name or `:`), so it is collected and handed back whole.
+async fn send_streaming(
+    req: reqwest::RequestBuilder,
+    headers: &[(&'static str, String)],
+    key: Option<&str>,
+    protocol: Protocol,
+    sink: Sink<'_>,
+) -> Result<Streamed, AiError> {
+    let mut req = req;
+    for (k, v) in headers {
+        req = req.header(*k, v);
+    }
+    let mut resp = req.send().await.map_err(|e| net_error(&e, key))?;
+    let status = resp.status().as_u16();
+    if !(200..300).contains(&status) {
+        return Ok(Streamed::Whole(status, read_capped(resp, key).await?));
+    }
+    let mut sse = SseText::new(protocol);
+    let mut whole: Option<Vec<u8>> = None;
+    let mut sniffed = false;
+    let mut total = 0usize;
+    let mut shown = String::new();
+    while let Some(chunk) = resp.chunk().await.map_err(|e| net_error(&e, key))? {
+        total += chunk.len();
+        if total > MAX_BODY_BYTES {
+            return Err(AiError::Other("Response larger than 4 MB refused".into()));
+        }
+        if !sniffed {
+            let Some(first) = chunk.iter().find(|b| !b.is_ascii_whitespace()) else { continue };
+            sniffed = true;
+            if *first == b'{' {
+                whole = Some(Vec::new());
+            }
+        }
+        if let Some(buf) = whole.as_mut() {
+            buf.extend_from_slice(&chunk);
+            continue;
+        }
+        if sse.feed(&chunk) {
+            let now = visible_so_far(&sse.text);
+            if now != shown {
+                sink(&now);
+                shown = now;
+            }
+        }
+        if sse.done || sse.error.is_some() {
+            break;
+        }
+    }
+    if let Some(buf) = whole {
+        return Ok(Streamed::Whole(status, buf));
+    }
+    sse.end();
+    let text = sse.finish(key)?;
+    if text != shown {
+        sink(&text);
+    }
+    Ok(Streamed::Text(text))
+}
+
+/// A 400 that names `stream`: this server can't stream. Ask again the plain way.
+pub fn stream_refused(status: u16, body: &str) -> bool {
+    status == 400 && body.to_ascii_lowercase().contains("stream")
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -650,6 +902,15 @@ pub async fn complete(kind: Kind, msgs: Vec<Msg>, opts: Opts) -> Result<String, 
     crate::entitlement::require_pro().await?;
     let target = resolve(kind)?;
     run(&target, msgs, opts).await
+}
+
+/// `complete`, with the answer handed to `sink` while it is written (the
+/// whole text so far, each time it grows). Same gate, same target rules,
+/// same result. For answers a person is waiting to read (Chat, Ask).
+pub async fn complete_stream(kind: Kind, msgs: Vec<Msg>, opts: Opts, sink: Sink<'_>) -> Result<String, AiError> {
+    crate::entitlement::require_pro().await?;
+    let target = resolve(kind)?;
+    run_stream(&target, msgs, opts, sink).await
 }
 
 /// One completion that goes only where the caller was told it would. The
@@ -677,7 +938,7 @@ pub async fn complete_if(
 /// Apple Foundation Models: system messages become the session
 /// instructions; the rest is flattened into one prompt (the on-device model
 /// has a 4K context, already fitted by `run`).
-async fn run_apple(msgs: &[Msg], max_tokens: u32, temperature: Option<f32>) -> Result<String, AiError> {
+async fn run_apple(msgs: &[Msg], max_tokens: u32, temperature: Option<f32>, sink: Option<Sink<'_>>) -> Result<String, AiError> {
     if msgs.iter().any(|m| m.has_image()) {
         return Err(AiError::VisionUnavailable);
     }
@@ -697,80 +958,109 @@ async fn run_apple(msgs: &[Msg], max_tokens: u32, temperature: Option<f32>) -> R
             .collect::<Vec<_>>()
             .join("\n\n")
     };
-    crate::store::apple_generate(&instructions, &prompt, max_tokens, temperature)
-        .await
-        .map_err(|e| AiError::Other(format!("Apple on-device model: {}", e)))
+    let out = match sink {
+        Some(sink) => {
+            crate::store::apple_generate_stream(&instructions, &prompt, max_tokens, temperature, &|so_far| {
+                sink(&visible_so_far(so_far))
+            })
+            .await
+        }
+        None => crate::store::apple_generate(&instructions, &prompt, max_tokens, temperature).await,
+    };
+    out.map_err(|e| AiError::Other(format!("Apple on-device model: {}", e)))
 }
 
 /// One chat completion against a resolved target.
-pub async fn run(t: &Target, mut msgs: Vec<Msg>, opts: Opts) -> Result<String, AiError> {
+pub async fn run(t: &Target, msgs: Vec<Msg>, opts: Opts) -> Result<String, AiError> {
+    run_with(t, msgs, opts, None).await
+}
+
+/// `run`, with the answer handed to `sink` while it is written.
+pub async fn run_stream(t: &Target, msgs: Vec<Msg>, opts: Opts, sink: Sink<'_>) -> Result<String, AiError> {
+    run_with(t, msgs, opts, Some(sink)).await
+}
+
+/// At most this many requests for one completion: the first, and one more
+/// for each thing a server can refuse (the token parameter or temperature,
+/// and streaming).
+const MAX_TRIES: usize = 3;
+
+async fn run_with(t: &Target, mut msgs: Vec<Msg>, opts: Opts, sink: Option<Sink<'_>>) -> Result<String, AiError> {
     let max_tokens = opts.max_tokens.clamp(16, 16_000);
     fit_messages(&mut msgs, t.context_tokens, max_tokens);
     let key = t.key.as_deref();
-    match t.protocol {
-        Protocol::Apple => run_apple(&msgs, max_tokens, opts.temperature).await,
-        Protocol::OpenAI => {
-            let url = format!("{}/chat/completions", t.base_url);
-            let headers = request_headers(Protocol::OpenAI, &t.provider, key);
-            let mut completion_tokens = t.completion_tokens;
-            // Claude 5 via Anthropic's OpenAI-compatible layer thinks by
-            // default, and thinking counts against max_tokens.
-            let max_tokens = if t.hint == "anthropic" && anthropic_thinks_by_default(&t.model) {
-                max_tokens + REASONING_HEADROOM
-            } else {
-                max_tokens
-            };
-            for attempt in 0..2 {
-                let body = build_openai_request(&t.model, &msgs, max_tokens, opts.temperature, completion_tokens);
-                let cap = if completion_tokens { max_tokens + REASONING_HEADROOM } else { max_tokens };
-                let req = HTTP.post(&url).json(&body).timeout(request_timeout(cap));
-                let (status, bytes) = send(req, &headers, key).await?;
-                if (200..300).contains(&status) {
-                    return parse_openai_response(&parse_json(&bytes)?);
-                }
-                let text = String::from_utf8_lossy(&bytes);
-                if attempt == 0 && !completion_tokens && needs_completion_tokens_retry(status, &text) {
-                    log::info!("AI: {} wants max_completion_tokens; retrying and remembering", t.model);
-                    completion_tokens = true;
-                    let (p, m) = (t.provider.clone(), t.model.clone());
-                    config::update_background(move |c| {
-                        let st = c.provider_mut(&p);
-                        if !st.completion_tokens_models.contains(&m) {
-                            st.completion_tokens_models.push(m);
-                        }
-                    });
-                    continue;
-                }
-                let err = status_error(status, &bytes, key);
-                log::warn!("AI request to {} failed: {}", t.provider, err);
-                return Err(err);
-            }
-            Err(AiError::Other("Request rejected twice".into()))
-        }
-        Protocol::Anthropic => {
-            let url = format!("{}/messages", t.base_url);
-            let headers = request_headers(Protocol::Anthropic, &t.provider, key);
-            let mut temperature = opts.temperature;
-            for attempt in 0..2 {
-                let body = build_anthropic_request(&t.model, &msgs, max_tokens, temperature);
-                let cap = body["max_tokens"].as_u64().unwrap_or(max_tokens as u64) as u32;
-                let req = HTTP.post(&url).json(&body).timeout(request_timeout(cap));
-                let (status, bytes) = send(req, &headers, key).await?;
-                if (200..300).contains(&status) {
-                    return parse_anthropic_response(&parse_json(&bytes)?);
-                }
-                let text = String::from_utf8_lossy(&bytes);
-                if attempt == 0 && temperature.is_some() && needs_anthropic_param_retry(status, &text) {
-                    temperature = None;
-                    continue;
-                }
-                let err = status_error(status, &bytes, key);
-                log::warn!("AI request to {} failed: {}", t.provider, err);
-                return Err(err);
-            }
-            Err(AiError::Other("Request rejected twice".into()))
-        }
+    if t.protocol == Protocol::Apple {
+        return run_apple(&msgs, max_tokens, opts.temperature, sink).await;
     }
+    let anthropic = t.protocol == Protocol::Anthropic;
+    let url = format!("{}/{}", t.base_url, if anthropic { "messages" } else { "chat/completions" });
+    let headers = request_headers(t.protocol, &t.provider, key);
+    let mut completion_tokens = t.completion_tokens;
+    let mut temperature = opts.temperature;
+    let mut streaming = sink.is_some();
+    // Claude 5 via Anthropic's OpenAI-compatible layer thinks by default, and
+    // thinking counts against max_tokens.
+    let max_tokens = if !anthropic && t.hint == "anthropic" && anthropic_thinks_by_default(&t.model) {
+        max_tokens + REASONING_HEADROOM
+    } else {
+        max_tokens
+    };
+    for _ in 0..MAX_TRIES {
+        let (mut body, cap) = if anthropic {
+            let body = build_anthropic_request(&t.model, &msgs, max_tokens, temperature);
+            let cap = body["max_tokens"].as_u64().unwrap_or(max_tokens as u64) as u32;
+            (body, cap)
+        } else {
+            let body = build_openai_request(&t.model, &msgs, max_tokens, temperature, completion_tokens);
+            (body, if completion_tokens { max_tokens + REASONING_HEADROOM } else { max_tokens })
+        };
+        if streaming {
+            body["stream"] = json!(true);
+        }
+        let req = HTTP.post(&url).json(&body).timeout(request_timeout(cap));
+        let (status, bytes) = match sink.filter(|_| streaming) {
+            Some(sink) => match send_streaming(req, &headers, key, t.protocol, sink).await? {
+                Streamed::Text(text) => return Ok(text),
+                Streamed::Whole(status, bytes) => (status, bytes),
+            },
+            None => send(req, &headers, key).await?,
+        };
+        if (200..300).contains(&status) {
+            let v = parse_json(&bytes)?;
+            let text = if anthropic { parse_anthropic_response(&v) } else { parse_openai_response(&v) }?;
+            // Asked to stream, answered whole: the sink still gets the answer
+            if let Some(sink) = sink {
+                sink(&text);
+            }
+            return Ok(text);
+        }
+        let text = String::from_utf8_lossy(&bytes);
+        if !anthropic && !completion_tokens && needs_completion_tokens_retry(status, &text) {
+            log::info!("AI: {} wants max_completion_tokens; retrying and remembering", t.model);
+            completion_tokens = true;
+            let (p, m) = (t.provider.clone(), t.model.clone());
+            config::update_background(move |c| {
+                let st = c.provider_mut(&p);
+                if !st.completion_tokens_models.contains(&m) {
+                    st.completion_tokens_models.push(m);
+                }
+            });
+            continue;
+        }
+        if anthropic && temperature.is_some() && needs_anthropic_param_retry(status, &text) {
+            temperature = None;
+            continue;
+        }
+        if streaming && stream_refused(status, &text) {
+            log::info!("AI: {} doesn't stream; asking for the whole answer", t.provider);
+            streaming = false;
+            continue;
+        }
+        let err = status_error(status, &bytes, key);
+        log::warn!("AI request to {} failed: {}", t.provider, err);
+        return Err(err);
+    }
+    Err(AiError::Other("Request rejected twice".into()))
 }
 
 // ---------------------------------------------------------------------------
@@ -1259,6 +1549,278 @@ mod tests {
             let _ = s.flush();
         });
         format!("http://127.0.0.1:{}/v1", port)
+    }
+
+    // ── Streaming ────────────────────────────────────────────────────────
+
+    #[test]
+    fn a_stream_is_read_in_whatever_pieces_arrive() {
+        let body = concat!(
+            ": keep-alive\n\n",
+            "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"hmm\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Ship \"}}]}\r\n\r\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":[{\"type\":\"text\",\"text\":\"Fri\"}]}}]}\n\n",
+            "data:{\"choices\":[{\"delta\":{\"content\":\"day ✓\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: {\"choices\":[],\"usage\":{\"total_tokens\":9}}\n\n",
+            "data: [DONE]\n\n",
+        )
+        .as_bytes();
+        // Whole, byte by byte (a multi-byte character split across reads), and in odd chunks
+        for size in [body.len(), 1, 7, 64] {
+            let mut sse = SseText::new(Protocol::OpenAI);
+            let mut grew = 0;
+            for piece in body.chunks(size) {
+                if sse.feed(piece) {
+                    grew += 1;
+                }
+            }
+            sse.end();
+            assert_eq!(sse.text, "Ship Friday ✓", "chunks of {}", size);
+            assert!(sse.done && sse.error.is_none());
+            assert_eq!(sse.finish.as_deref(), Some("stop"));
+            assert!(grew >= 1);
+            assert_eq!(sse.finish(None).unwrap(), "Ship Friday ✓");
+        }
+        // A last line without its newline still counts
+        let mut sse = SseText::new(Protocol::OpenAI);
+        sse.feed(b"data: {\"choices\":[{\"delta\":{\"content\":\"End\"},\"finish_reason\":\"stop\"}]}");
+        assert_eq!(sse.text, "");
+        sse.end();
+        assert_eq!(sse.finish(None).unwrap(), "End");
+        // A body that just stops is a broken connection, never half an answer
+        let mut cut = SseText::new(Protocol::OpenAI);
+        cut.feed(b"data: {\"choices\":[{\"delta\":{\"content\":\"They decided to\"}}]}\n\n");
+        cut.end();
+        assert!(matches!(cut.finish(None), Err(AiError::Unreachable(_))));
+        // The end marker alone is enough (some servers send no finish reason)
+        let mut marked = SseText::new(Protocol::OpenAI);
+        marked.feed(b"data: {\"choices\":[{\"delta\":{\"content\":\"Whole.\"}}]}\n\ndata: [DONE]\n\n");
+        assert_eq!(marked.finish(None).unwrap(), "Whole.");
+    }
+
+    #[test]
+    fn an_anthropic_stream_gives_its_text_and_skips_the_thinking() {
+        let mut sse = SseText::new(Protocol::Anthropic);
+        sse.feed(
+            concat!(
+                "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"content\":[]}}\n\n",
+                "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"let me see\"}}\n\n",
+                "event: ping\ndata: {\"type\":\"ping\"}\n\n",
+                "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"Budget \"}}\n\n",
+                "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"agreed.\"}}\n\n",
+                "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n",
+                "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+            )
+            .as_bytes(),
+        );
+        assert!(sse.done);
+        assert_eq!(sse.finish(None).unwrap(), "Budget agreed.");
+
+        // Cut off before any text: the same error as a whole response
+        let mut cut = SseText::new(Protocol::Anthropic);
+        cut.feed(b"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\"}}\n\n");
+        assert_eq!(cut.finish(None), Err(AiError::Truncated));
+        let mut no = SseText::new(Protocol::Anthropic);
+        no.feed(b"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"refusal\"}}\n\n");
+        assert!(matches!(no.finish(None), Err(AiError::Other(m)) if m.contains("declined")));
+    }
+
+    #[test]
+    fn a_stream_that_fails_or_says_nothing_is_an_error_without_the_key() {
+        let mut sse = SseText::new(Protocol::OpenAI);
+        sse.feed(b"data: {\"choices\":[{\"delta\":{\"content\":\"Half an\"}}]}\n\n");
+        sse.feed(b"data: {\"error\":{\"message\":\"Rate limit for key sk-secret-1234567890 reached\"}}\n\n");
+        match sse.finish(Some("sk-secret-1234567890")) {
+            Err(AiError::Other(m)) => assert!(m.contains("Rate limit") && !m.contains("sk-secret-1234567890"), "{}", m),
+            other => panic!("{:?}", other),
+        }
+        let mut err = SseText::new(Protocol::Anthropic);
+        err.feed(b"event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}\n\n");
+        assert_eq!(err.finish(None), Err(AiError::Other("Overloaded".into())));
+        // An error that names its kind keeps it, as its HTTP status would have
+        let mut rate = SseText::new(Protocol::Anthropic);
+        rate.feed(b"data: {\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\",\"message\":\"Slow down\"}}\n\n");
+        assert_eq!(rate.finish(None), Err(AiError::NoCredit("Slow down".into())));
+        let mut auth = SseText::new(Protocol::OpenAI);
+        auth.feed(b"data: {\"error\":{\"code\":\"invalid_api_key\",\"message\":\"Bad key\"}}\n\n");
+        assert_eq!(auth.finish(None), Err(AiError::WrongKey("Bad key".into())));
+
+        let mut empty = SseText::new(Protocol::OpenAI);
+        empty.feed(b"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n");
+        assert_eq!(empty.finish(None), Err(AiError::Truncated));
+        let mut nothing = SseText::new(Protocol::OpenAI);
+        nothing.feed(b"data: [DONE]\n\n");
+        assert!(matches!(nothing.finish(None), Err(AiError::Other(m)) if m.contains("empty answer")));
+        // Only thinking: nothing to show, and nothing to return
+        let mut think = SseText::new(Protocol::OpenAI);
+        think.feed(b"data: {\"choices\":[{\"delta\":{\"content\":\"<think>plan</think>\"},\"finish_reason\":\"length\"}]}\n\n");
+        assert_eq!(think.finish(None), Err(AiError::Truncated));
+    }
+
+    #[test]
+    fn thinking_is_never_shown_while_it_is_written() {
+        assert_eq!(visible_so_far("Plain so far"), "Plain so far");
+        assert_eq!(visible_so_far("<think>plan the ans"), "");
+        assert_eq!(visible_so_far("<think>plan</think>Ship"), "Ship");
+        assert_eq!(visible_so_far("Ship <think>hmm</think>Friday <think>more"), "Ship Friday");
+        // A tag that hasn't finished arriving
+        for partial in ["Ship <", "Ship <t", "Ship <thin", "Ship <think"] {
+            assert_eq!(visible_so_far(partial), "Ship", "{}", partial);
+        }
+        // Other angle brackets are text
+        assert_eq!(visible_so_far("a < b and <b"), "a < b and <b");
+        assert_eq!(visible_so_far("x <thing"), "x <thing");
+        // What is shown at the end is the answer
+        let whole = "<think>plan</think>\nShip Friday.";
+        assert_eq!(visible_so_far(whole), strip_think(whole));
+        assert!(stream_refused(400, r#"{"error":{"message":"'stream' is not supported with this model"}}"#));
+        assert!(!stream_refused(500, "stream"));
+        assert!(!stream_refused(400, "max_tokens is too large"));
+    }
+
+    /// Loopback stub for whole completions: answers each connection in turn
+    /// with `(status, content type, body pieces)`, the pieces a moment apart
+    /// and the connection closed after the last. Returns the base URL and
+    /// the request bodies it received.
+    fn scripted_server(replies: Vec<(u16, &'static str, Vec<&'static str>)>) -> (String, std::sync::Arc<parking_lot::Mutex<Vec<String>>>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let seen = std::sync::Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let log = seen.clone();
+        std::thread::spawn(move || {
+            for (status, kind, pieces) in replies {
+                let (mut s, _) = listener.accept().unwrap();
+                s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                let mut buf = Vec::new();
+                let mut tmp = [0u8; 4096];
+                loop {
+                    let n = s.read(&mut tmp).unwrap_or(0);
+                    if n == 0 {
+                        break;
+                    }
+                    buf.extend_from_slice(&tmp[..n]);
+                    if let Some(end) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let head = String::from_utf8_lossy(&buf[..end]).to_ascii_lowercase();
+                        let len: usize = head
+                            .lines()
+                            .find_map(|l| l.strip_prefix("content-length:"))
+                            .and_then(|v| v.trim().parse().ok())
+                            .unwrap_or(0);
+                        if buf.len() >= end + 4 + len {
+                            log.lock().push(String::from_utf8_lossy(&buf[end + 4..]).into_owned());
+                            break;
+                        }
+                    }
+                }
+                let _ = s.write_all(format!("HTTP/1.1 {} X\r\nContent-Type: {}\r\nConnection: close\r\n\r\n", status, kind).as_bytes());
+                for piece in pieces {
+                    let _ = s.write_all(piece.as_bytes());
+                    let _ = s.flush();
+                    std::thread::sleep(Duration::from_millis(25));
+                }
+            }
+        });
+        (format!("http://127.0.0.1:{}/v1", port), seen)
+    }
+
+    fn sent(seen: &parking_lot::Mutex<Vec<String>>, n: usize) -> Value {
+        serde_json::from_str(&seen.lock()[n]).unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_streamed_answer_reaches_the_sink_while_it_is_written() {
+        let (url, seen) = scripted_server(vec![(
+            200,
+            "text/event-stream",
+            vec![
+                "data: {\"choices\":[{\"delta\":{\"content\":\"<think>pl\"}}]}\n\n",
+                "data: {\"choices\":[{\"delta\":{\"content\":\"an</think>Ship\"}}]}\n\ndata: {\"choi",
+                "ces\":[{\"delta\":{\"content\":\" Friday\"}}]}\n\n",
+                "data: {\"choices\":[{\"delta\":{\"content\":\".\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+            ],
+        )]);
+        let shown = parking_lot::Mutex::new(Vec::<String>::new());
+        let out = run_stream(&target(url, Some("stub-key")), msgs(), Opts::default(), &|t| shown.lock().push(t.to_string())).await;
+        assert_eq!(out.unwrap(), "Ship Friday.");
+        let shown = shown.into_inner();
+        assert_eq!(shown.last().map(String::as_str), Some("Ship Friday."));
+        assert!(shown.len() >= 2, "one piece only: {:?}", shown);
+        assert!(shown.iter().all(|t| !t.contains("think") && !t.contains("plan")), "{:?}", shown);
+        assert!(shown.windows(2).all(|w| w[1].starts_with(&w[0]) && w[1] != w[0]), "{:?}", shown);
+        let body = sent(&seen, 0);
+        assert_eq!(body["stream"], true);
+        assert_eq!(body["max_tokens"], 1500);
+        assert!(body.get("response_format").is_none());
+
+        // Without a sink the same target is asked the plain way
+        let (url, seen) = scripted_server(vec![(200, "application/json", vec![r#"{"choices":[{"message":{"content":"Whole."},"finish_reason":"stop"}]}"#])]);
+        assert_eq!(run(&target(url, None), msgs(), Opts::default()).await.unwrap(), "Whole.");
+        assert_eq!(sent(&seen, 0)["stream"], false);
+    }
+
+    #[tokio::test]
+    async fn a_server_that_cannot_stream_still_answers() {
+        // It ignores `stream` and answers with plain JSON (no event-stream header to go by)
+        let (url, _) = scripted_server(vec![(200, "text/plain", vec![" \n", r#"{"choices":[{"message":{"content":"All at"#, r#" once."},"finish_reason":"stop"}]}"#])]);
+        let shown = parking_lot::Mutex::new(Vec::<String>::new());
+        let out = run_stream(&target(url, None), msgs(), Opts::default(), &|t| shown.lock().push(t.to_string())).await;
+        assert_eq!(out.unwrap(), "All at once.");
+        assert_eq!(shown.into_inner(), vec!["All at once."]);
+
+        // It refuses `stream`: asked again without it, once
+        let (url, seen) = scripted_server(vec![
+            (400, "application/json", vec![r#"{"error":{"message":"stream=true is not supported"}}"#]),
+            (200, "application/json", vec![r#"{"choices":[{"message":{"content":"Second try."},"finish_reason":"stop"}]}"#]),
+        ]);
+        let shown = parking_lot::Mutex::new(Vec::<String>::new());
+        let out = run_stream(&target(url, None), msgs(), Opts::default(), &|t| shown.lock().push(t.to_string())).await;
+        assert_eq!(out.unwrap(), "Second try.");
+        assert_eq!(shown.into_inner(), vec!["Second try."]);
+        assert_eq!((sent(&seen, 0)["stream"].clone(), sent(&seen, 1)["stream"].clone()), (json!(true), json!(false)));
+
+        // The token-parameter retry still streams
+        let (url, seen) = scripted_server(vec![
+            (400, "application/json", vec![r#"{"error":{"message":"Unsupported parameter: 'max_tokens'. Use 'max_completion_tokens'."}}"#]),
+            (200, "text/event-stream", vec!["data: {\"choices\":[{\"delta\":{\"content\":\"Ok.\"},\"finish_reason\":\"stop\"}]}\n\n"]),
+        ]);
+        let out = run_stream(&target(url, None), msgs(), Opts::default(), &|_| {}).await;
+        assert_eq!(out.unwrap(), "Ok.");
+        let second = sent(&seen, 1);
+        assert_eq!(second["stream"], true);
+        assert!(second.get("max_tokens").is_none() && second.get("max_completion_tokens").is_some());
+
+        // An error status is the same error as ever, key redacted
+        let (url, _) = scripted_server(vec![(401, "application/json", vec![r#"{"error":{"message":"Bad key stub-key-value-1234"}}"#])]);
+        match run_stream(&target(url, Some("stub-key-value-1234")), msgs(), Opts::default(), &|_| {}).await {
+            Err(AiError::WrongKey(m)) => assert!(!m.contains("stub-key-value-1234"), "{}", m),
+            other => panic!("{:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn an_anthropic_answer_streams_from_the_messages_endpoint() {
+        let (url, seen) = scripted_server(vec![(
+            200,
+            "text/event-stream; charset=utf-8",
+            vec![
+                "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"Two \"}}\n\n",
+                "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"sites.\"}}\n\n",
+                "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+            ],
+        )]);
+        let mut t = target(url, Some("stub-key"));
+        t.protocol = Protocol::Anthropic;
+        t.model = "claude-sonnet-4-5".into();
+        let shown = parking_lot::Mutex::new(Vec::<String>::new());
+        let out = run_stream(&t, msgs(), Opts::default(), &|s| shown.lock().push(s.to_string())).await;
+        assert_eq!(out.unwrap(), "Two sites.");
+        assert_eq!(shown.into_inner().last().map(String::as_str), Some("Two sites."));
+        let body = sent(&seen, 0);
+        assert_eq!(body["stream"], true);
+        assert!(body["system"].is_string() && body["max_tokens"].is_number());
     }
 
     fn target(base_url: String, key: Option<&str>) -> Target {

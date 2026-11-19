@@ -78,3 +78,51 @@ public func nf_apple_generate(
     #endif
     context.send(["ok": false, "error": nfAppleAvailability().1])
 }
+
+/// The same generation, streamed: `partial` gets the answer so far (a C
+/// string) each time the model has written more, then `done` gets the JSON
+/// result exactly once, last. `done` owns the context: nothing is sent
+/// after it.
+@_cdecl("nf_apple_generate_stream")
+public func nf_apple_generate_stream(
+    _ instructions: UnsafePointer<CChar>,
+    _ prompt: UnsafePointer<CChar>,
+    _ maxTokens: Int32,
+    _ temperature: Double,
+    _ ctx: UnsafeMutableRawPointer?,
+    _ partial: NFCallback,
+    _ done: NFCallback
+) {
+    let context = NFContext(ptr: ctx, cb: done)
+    let progress = NFContext(ptr: ctx, cb: partial)
+    let instructionsText = String(cString: instructions)
+    let promptText = String(cString: prompt)
+    #if canImport(FoundationModels)
+    if #available(macOS 26.0, *) {
+        Task.detached {
+            do {
+                let session = instructionsText.isEmpty
+                    ? LanguageModelSession()
+                    : LanguageModelSession(instructions: instructionsText)
+                let options = GenerationOptions(
+                    temperature: temperature >= 0 ? temperature : nil,
+                    maximumResponseTokens: maxTokens > 0 ? Int(maxTokens) : nil
+                )
+                var soFar = ""
+                for try await snapshot in session.streamResponse(to: promptText, options: options) {
+                    let text = snapshot.content
+                    if text != soFar {
+                        soFar = text
+                        text.withCString { progress.cb(progress.ptr, $0) }
+                    }
+                }
+                context.send(["ok": true, "text": soFar])
+            } catch {
+                context.fail(error)
+            }
+        }
+        return
+    }
+    #endif
+    context.send(["ok": false, "error": nfAppleAvailability().1])
+}

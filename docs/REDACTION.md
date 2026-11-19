@@ -517,7 +517,16 @@ UI in `src/components/redaction/Redaction.tsx`.
   question and the answer are a chat message of the recording's thread,
   purged like any other (`chat::purge_for_meeting`); the card holds a
   plain copy in memory only while it is on screen and is emptied when it
-  closes. A note put aside while a question is typed
+  closes. An answer that is still being written is shown as it arrives
+  (Chat, the Ask panel, this card): that text is in memory only. When
+  text is removed from any recording of the library meanwhile, it comes
+  off the screen (`chat::stream_sink`) and the finished answer is neither
+  stored nor returned (`chat::ask_as`: a `PurgeWatch` started before
+  anything is read, after waiting out a write being committed, checked
+  when the model is done and again inside the saving transaction); the
+  user is told to ask again. This also closed a gap that was there before
+  streaming: an answer made from text removed while the model was writing
+  used to be saved after the purge had run. A note put aside while a question is typed
   (`Session.note_draft`) is in memory until the note key, another
   recording or quit.
   **iPhone:** a typed note is a `MomentMarker` of kind `note`, deleted with

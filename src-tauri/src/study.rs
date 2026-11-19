@@ -411,6 +411,24 @@ impl Completer for LiveCompleter {
     }
 }
 
+/// `LiveCompleter` for an answer someone is waiting to read (Chat, Ask):
+/// the same request, with the answer handed to `on_text` while it is
+/// written (the whole text so far, each time it grows). Only ever behind
+/// the user's own question, like `LiveCompleter`.
+pub struct StreamingCompleter<'a> {
+    pub on_text: &'a (dyn Fn(&str) + Send + Sync),
+}
+
+#[async_trait::async_trait]
+impl Completer for StreamingCompleter<'_> {
+    async fn complete(&self, msgs: Vec<Msg>, opts: Opts) -> Result<String, AiError> {
+        crate::ai::complete_text_stream(msgs, opts, self.on_text).await
+    }
+    fn context_tokens(&self) -> usize {
+        LiveCompleter.context_tokens()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct Progress {
     pub done: usize,

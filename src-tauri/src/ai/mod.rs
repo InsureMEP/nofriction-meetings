@@ -57,6 +57,12 @@ pub async fn complete_text(msgs: Vec<Msg>, opts: Opts) -> Result<String, AiError
     client::complete(Kind::Text, msgs, opts).await
 }
 
+/// `complete_text` for an answer someone is waiting to read: `sink` gets
+/// the answer so far each time it grows (ai::client `Sink`).
+pub async fn complete_text_stream(msgs: Vec<Msg>, opts: Opts, sink: client::Sink<'_>) -> Result<String, AiError> {
+    client::complete_stream(Kind::Text, msgs, opts, sink).await
+}
+
 /// Completion with image(s) on the active vision provider.
 pub async fn complete_vision(msgs: Vec<Msg>, opts: Opts) -> Result<String, AiError> {
     client::complete(Kind::Vision, msgs, opts).await

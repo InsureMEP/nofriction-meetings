@@ -1,7 +1,7 @@
 // An answer's Markdown rendered as React text nodes (never HTML), with
 // [n] citations as chips that open the recording at that moment.
 
-import { parseAnswer, type Block, type Inline } from "../../lib/chatLogic";
+import { parseAnswer, partialAnswer, type Block, type Inline } from "../../lib/chatLogic";
 import { clockOf } from "../../lib/chatLogic";
 import type { Citation } from "../../lib/chat";
 
@@ -11,8 +11,12 @@ interface Props {
     onCite: (c: Citation) => void;
 }
 
+/** An answer being written has no sources yet: its numbers are shown, not pressed */
+const NO_SOURCES: Citation[] = [];
+
 function CiteChip({ n, citations, onCite }: { n: number; citations: Citation[]; onCite: (c: Citation) => void }) {
     const c = citations.find((x) => x.n === n);
+    if (!c && citations === NO_SOURCES) return <span className="rc-cite rc-cite--pending">{n}</span>;
     if (!c) return <span className="rc-cite rc-cite--dead" title="No source with this number">[{n}]</span>;
     const when = c.timestamp_ms == null ? (c.source === "notes" ? "notes" : "") : clockOf(c.timestamp_ms);
     return (
@@ -68,6 +72,20 @@ export function ChatMarkdown({ content, citations, onCite }: Props) {
     return (
         <div className="rc-md">
             {blocks.map((b, k) => <BlockView key={k} b={b} citations={citations} onCite={onCite} />)}
+        </div>
+    );
+}
+
+/**
+ * An answer while it is being written: the same rendering, on the text so
+ * far, with a caret after the last word. Its citation numbers become chips
+ * when the finished answer replaces it.
+ */
+export function StreamingAnswer({ text }: { text: string }) {
+    const blocks = parseAnswer(partialAnswer(text));
+    return (
+        <div className="rc-md rc-md--streaming">
+            {blocks.map((b, k) => <BlockView key={k} b={b} citations={NO_SOURCES} onCite={() => {}} />)}
         </div>
     );
 }

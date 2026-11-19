@@ -109,3 +109,21 @@ pub fn clean_answer(raw: &str) -> String {
     }
     t.to_string()
 }
+
+/// An answer still being written, as shown meanwhile: what `clean_answer`
+/// would make of it so far. `so_far` already has its think blocks hidden
+/// (`ai::client::visible_so_far`); an opening code fence is dropped at once
+/// (and its closing one, when it has come), so the words don't jump when
+/// the whole answer turns out to be wrapped in one.
+pub fn clean_partial(so_far: &str) -> String {
+    let t = so_far.trim();
+    let Some(rest) = t.strip_prefix("```") else { return t.to_string() };
+    // The fence's own line (```markdown) may not have finished arriving
+    let Some((_, body)) = rest.split_once('\n') else { return String::new() };
+    match body.matches("```").count() {
+        0 => body.trim().to_string(),
+        1 if body.trim_end().ends_with("```") => body.trim_end().trim_end_matches("```").trim().to_string(),
+        // More fences inside: not one wrapped answer, show it as it is
+        _ => t.to_string(),
+    }
+}

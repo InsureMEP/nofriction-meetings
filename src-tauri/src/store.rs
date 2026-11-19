@@ -40,6 +40,15 @@ extern "C" {
         ctx: *mut c_void,
         cb: Callback,
     );
+    fn nf_apple_generate_stream(
+        instructions: *const c_char,
+        prompt: *const c_char,
+        max_tokens: i32,
+        temperature: f64,
+        ctx: *mut c_void,
+        partial: Callback,
+        done: Callback,
+    );
 }
 
 #[cfg(all(target_os = "macos", feature = "mas"))]
@@ -159,6 +168,93 @@ pub async fn apple_generate(
     #[cfg(not(target_os = "macos"))]
     {
         let _ = (instructions, prompt, max_tokens, temperature);
+        Err("Apple on-device model is macOS-only".into())
+    }
+}
+
+/// What the bridge sends for a streamed generation.
+#[cfg(target_os = "macos")]
+enum StreamEvent {
+    /// The answer so far
+    Partial(String),
+    /// The JSON reply that ends it
+    Done(String),
+}
+
+#[cfg(target_os = "macos")]
+type StreamTx = tokio::sync::mpsc::UnboundedSender<StreamEvent>;
+
+/// Called any number of times before `stream_done_cb`, never after it: the
+/// context is only borrowed.
+#[cfg(target_os = "macos")]
+extern "C" fn stream_partial_cb(ctx: *mut c_void, text: *const c_char) {
+    if ctx.is_null() || text.is_null() {
+        return;
+    }
+    let tx = unsafe { &*(ctx as *const StreamTx) };
+    let s = unsafe { std::ffi::CStr::from_ptr(text) }.to_string_lossy().into_owned();
+    let _ = tx.send(StreamEvent::Partial(s));
+}
+
+/// Called exactly once, last: takes the context back and frees it.
+#[cfg(target_os = "macos")]
+extern "C" fn stream_done_cb(ctx: *mut c_void, json: *const c_char) {
+    if ctx.is_null() {
+        return;
+    }
+    let tx: Box<StreamTx> = unsafe { Box::from_raw(ctx as *mut StreamTx) };
+    let s = if json.is_null() {
+        r#"{"ok":false,"error":"empty reply"}"#.to_string()
+    } else {
+        unsafe { std::ffi::CStr::from_ptr(json) }.to_string_lossy().into_owned()
+    };
+    let _ = tx.send(StreamEvent::Done(s));
+}
+
+/// One generation on the on-device model, with `on_text` given the answer
+/// so far each time the model has written more. Returns the whole answer.
+pub async fn apple_generate_stream(
+    instructions: &str,
+    prompt: &str,
+    max_tokens: u32,
+    temperature: Option<f32>,
+    on_text: &(dyn Fn(&str) + Send + Sync),
+) -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let (i, p) = (cstring(instructions), cstring(prompt));
+        let temp = temperature.map(|t| t as f64).unwrap_or(-1.0);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<StreamEvent>();
+        let ctx = Box::into_raw(Box::new(tx)) as *mut c_void;
+        unsafe {
+            nf_apple_generate_stream(
+                i.as_ptr(),
+                p.as_ptr(),
+                max_tokens.min(i32::MAX as u32) as i32,
+                temp,
+                ctx,
+                stream_partial_cb,
+                stream_done_cb,
+            )
+        };
+        while let Some(ev) = rx.recv().await {
+            match ev {
+                StreamEvent::Partial(text) => on_text(&text),
+                StreamEvent::Done(raw) => {
+                    let v: Value = serde_json::from_str(&raw).map_err(|e| format!("bad bridge reply: {}", e))?;
+                    return if v["ok"].as_bool() == Some(true) {
+                        Ok(v["text"].as_str().unwrap_or("").to_string())
+                    } else {
+                        Err(v["error"].as_str().unwrap_or("unknown error").to_string())
+                    };
+                }
+            }
+        }
+        Err("bridge dropped the request".into())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (instructions, prompt, max_tokens, temperature, on_text);
         Err("Apple on-device model is macOS-only".into())
     }
 }
@@ -323,5 +419,72 @@ mod tests {
         ));
         println!("apple_generate → {:?}", out);
         assert!(out.map(|t| !t.trim().is_empty()).unwrap_or(false));
+    }
+
+    /// How long a full window takes: a prompt near the on-device model's
+    /// limit (about 3,000 tokens of made-up meeting talk) and a long answer.
+    #[test]
+    #[ignore]
+    fn apple_generate_stream_full_window() {
+        use parking_lot::Mutex;
+        use std::time::Instant;
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let line = "[12:03] Them: We agreed the pilot starts in March with two sites, and the budget review moves to the week after.\n";
+        let prompt = format!("WHAT WAS SAID:\n{}\nQUESTION: What was agreed, and what is still open?", line.repeat(85));
+        for round in 0..2 {
+            let start = Instant::now();
+            let first: Mutex<Option<f32>> = Mutex::new(None);
+            let out = rt.block_on(super::apple_generate_stream(
+                "You answer questions about a recording from what was said. Answer in Markdown.",
+                &prompt,
+                600,
+                Some(0.2),
+                &|_| {
+                    first.lock().get_or_insert(start.elapsed().as_secs_f32());
+                },
+            ));
+            println!(
+                "round {}: prompt {} chars, first words after {:.2}s, done after {:.2}s, {:?} chars",
+                round,
+                prompt.len(),
+                first.into_inner().unwrap_or(0.0),
+                start.elapsed().as_secs_f32(),
+                out.map(|t| t.chars().count())
+            );
+        }
+    }
+
+    /// The streamed generation hands over the answer while it is written:
+    /// every call is the text so far (it only grows), the last one is the
+    /// answer returned. Prints when the first words came and when the last.
+    /// `cargo test --lib store::tests -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn apple_generate_stream_smoke() {
+        use parking_lot::Mutex;
+        use std::time::Instant;
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let start = Instant::now();
+        let seen: Mutex<Vec<(f32, String)>> = Mutex::new(Vec::new());
+        let out = rt.block_on(super::apple_generate_stream(
+            "You are a helpful assistant. Answer in Markdown.",
+            "Explain in about 150 words why the sky is blue.",
+            400,
+            Some(0.2),
+            &|so_far| seen.lock().push((start.elapsed().as_secs_f32(), so_far.to_string())),
+        ));
+        let total = start.elapsed().as_secs_f32();
+        let seen = seen.into_inner();
+        let text = out.expect("an answer");
+        println!(
+            "apple_generate_stream → {} updates, first after {:.2}s, done after {:.2}s, {} chars",
+            seen.len(),
+            seen.first().map(|s| s.0).unwrap_or(0.0),
+            total,
+            text.chars().count()
+        );
+        assert!(seen.len() > 3, "the answer came in one piece");
+        assert!(seen.windows(2).all(|w| w[1].1.starts_with(&w[0].1)), "an update was not the text so far");
+        assert_eq!(seen.last().map(|s| s.1.as_str()), Some(text.as_str()));
     }
 }

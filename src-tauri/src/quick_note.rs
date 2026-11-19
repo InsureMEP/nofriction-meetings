@@ -233,6 +233,8 @@ pub fn ask_error(e: &str) -> String {
         "Couldn't reach your AI. Try again.".to_string()
     } else if e.starts_with("AI_TRUNCATED") {
         "The answer was cut short. Try again, or ask in noFriction.".to_string()
+    } else if e == crate::chat::PURGED_MEANWHILE {
+        "Text was removed from a recording meanwhile. Ask again.".to_string()
     } else {
         // An endpoint's own words can be long, and are not for a small card
         "Your AI couldn't answer that. Try again, or ask in noFriction.".to_string()
@@ -693,9 +695,21 @@ mod mac {
                     .ok()
                     .flatten();
                     let mode = crate::chat::live::Mode { recording: true, related: true, glance: true };
-                    crate::chat::ask_recording(pool, &crate::study::LiveCompleter, thread.as_deref(), &meeting, &question, mode)
-                        .await
-                        .map(|turn| turn.assistant.content)
+                    // The card fills in while the answer is written
+                    let (to_main, about) = (app.clone(), meeting.clone());
+                    match crate::chat::PurgeWatch::of(pool).await {
+                        Ok(watch) => {
+                            let sink = crate::chat::stream_sink(CARD_EVERY, watch, move |so_far| {
+                                let about = about.clone();
+                                let _ = to_main.run_on_main_thread(move || partial_on_main(&so_far, &about));
+                            });
+                            let c = crate::study::StreamingCompleter { on_text: &sink };
+                            crate::chat::ask_recording(pool, &c, thread.as_deref(), &meeting, &question, mode)
+                                .await
+                                .map(|turn| turn.assistant.content)
+                        }
+                        Err(e) => Err(e),
+                    }
                 }
                 None => Err("noFriction is still starting".to_string()),
             };
@@ -708,6 +722,24 @@ mod mac {
 
     /// `{meetingId}`: a question asked from the card was answered (or failed)
     const ASK_ANSWERED_EVENT: &str = "ask_answered";
+
+    /// The card is laid out again this often at most while an answer is written
+    const CARD_EVERY: std::time::Duration = std::time::Duration::from_millis(90);
+
+    /// The answer so far, while it is written. It goes on the card only
+    /// while that question is still the one with the AI and the card is up
+    /// for a question about that recording; the caption still says "Asking…"
+    /// until the whole answer is there (`answered_on_main`).
+    fn partial_on_main(so_far: &str, meeting: &str) {
+        let asking = ASKING_NOW.load(Ordering::SeqCst) && ASKING_FOR.lock().as_deref() == Some(meeting);
+        if !asking || PURGED_MEANWHILE.load(Ordering::SeqCst) {
+            return;
+        }
+        let here = panel::is_open() && ASK_MODE.load(Ordering::SeqCst) && SESSION.lock().meeting.as_deref() == Some(meeting);
+        if here {
+            panel::show_answer(&plain_answer(so_far));
+        }
+    }
 
     /// The answer landed. It goes on the card if the card is up for a
     /// question about that recording (also when it was closed and opened
@@ -740,6 +772,8 @@ mod mac {
             Err(e) => {
                 // Never the endpoint's own words in the log or on the card
                 log::warn!("Ask from the card failed ({})", error_code(&e));
+                // What was written before it failed is not an answer
+                panel::show_answer("");
                 panel::set_caption(&ask_error(&e), true);
             }
         }
