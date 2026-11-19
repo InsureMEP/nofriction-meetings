@@ -285,6 +285,15 @@ extension MeetingAI {
         }
     }
 
+    /// `liveComplete` for an answer someone is waiting to read (Chat): the
+    /// same request, with the answer handed to `onText` while it is written
+    /// (the whole text so far, each time it grows).
+    static func liveComplete(_ endpoint: AIEndpoint, onText: @escaping AIClient.Partial) -> Complete {
+        { messages, maxTokens, temperature in
+            try await AIClient.shared.complete(messages, maxTokens: maxTokens, temperature: temperature, endpoint: endpoint, onText: onText)
+        }
+    }
+
     /// Errors about the answer itself (retried, then reported for that part).
     /// Everything else (consent, configuration, network, key) stops the run.
     static func isAnswerError(_ e: Error) -> Bool {

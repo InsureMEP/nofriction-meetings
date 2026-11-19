@@ -209,6 +209,7 @@ these rules apply.
     panel, the Ask card; docs/TOPICS_AND_CHAT.md "Streamed answers").
     `ai::client::complete_stream` checks Pro and resolves the target
     exactly as `complete` does; only `study::StreamingCompleter` calls it.
+    On iPhone and iPad it is `AIClient.complete(…, onText:)`, used by Chat.
     The sink gets the whole answer so far, never a fragment. That text is
     in memory only: never log it, and `chat::stream_sink` stops showing it
     when any recording's text is removed. Answers the app parses (notes,

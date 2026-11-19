@@ -55,6 +55,29 @@ extension MeetingAI {
         return ChatAnswer(text: text, citations: citations(in: text, passages: passages))
     }
 
+    /// An answer still being written, made fit to show: think blocks gone,
+    /// and on its last line (the only unfinished one) bold or code that was
+    /// opened is closed, so the words arrive bold instead of starred, and a
+    /// mark that has only begun (a lone `*`, `[1`) waits for the rest.
+    static func chatPartial(_ soFar: String) -> String {
+        let text = ResponseParser.visibleSoFar(soFar)
+        let cut = text.lastIndex(of: "\n").map { text.index(after: $0) } ?? text.startIndex
+        var last = String(text[cut...])
+        if let open = last.lastIndex(of: "["), last[last.index(after: open)...].allSatisfy({ $0.isNumber || $0 == "," || $0 == " " }) {
+            last.removeSubrange(open...)
+        }
+        if last.hasSuffix("*"), !last.hasSuffix("**") { last.removeLast() }
+        if last.components(separatedBy: "**").count % 2 == 0 {
+            if last.hasSuffix("**") { last.removeLast(2) } else { last += "**" }
+        }
+        if last.filter({ $0 == "`" }).count % 2 == 1 {
+            if last.hasSuffix("`") { last.removeLast() } else { last += "`" }
+        }
+        var shown = String(text[..<cut]) + last
+        while let end = shown.last, end.isWhitespace { shown.removeLast() }
+        return shown
+    }
+
     /// `[n]` marks in the answer → the passages they point at, in order of
     /// first mention, each once; numbers with no passage are ignored.
     static func citations(in text: String, passages: [ChatPassage]) -> [ChatCitation] {

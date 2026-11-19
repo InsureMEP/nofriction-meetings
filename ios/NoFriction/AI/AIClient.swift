@@ -103,7 +103,7 @@ enum RequestBuilder {
     }
 
     static func chat(_ ep: AIEndpoint, messages: [ChatMessage], maxTokens: Int, temperature: Double?,
-                     completionTokens: Bool = false) throws -> URLRequest {
+                     completionTokens: Bool = false, stream: Bool = false) throws -> URLRequest {
         guard ep.provider == .custom, let base = ep.baseURL,
               !ep.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw AIError.notConfigured }
         guard URLPolicy.isAllowed(base) else { throw AIError.insecureURL }
@@ -116,7 +116,7 @@ enum RequestBuilder {
             var body: [String: Any] = [
                 "model": ep.model,
                 "messages": messages.map { ["role": $0.role, "content": $0.content] },
-                "stream": false,
+                "stream": stream,
             ]
             if completionTokens {
                 body["max_completion_tokens"] = maxTokens
@@ -258,6 +258,75 @@ enum ResponseParser {
         return text
     }
 
+    /// A 400 that names `stream`: this server can't stream. Ask again the plain way.
+    static func streamRefused(_ message: String) -> Bool {
+        message.lowercased().contains("stream")
+    }
+
+    /// The part of an answer still being written that can be shown: think
+    /// blocks are gone (an open one hides what follows), and so is the
+    /// start of a tag that hasn't finished arriving ("<thi").
+    static func visibleSoFar(_ raw: String) -> String {
+        var out = stripThinking(raw)
+        if let open = out.lastIndex(of: "<"), "<think>".hasPrefix(out[open...]) {
+            out.removeSubrange(open...)
+        }
+        return out.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The text of a streamed answer (server-sent events carrying
+    /// OpenAI-compatible chunks), fed one line at a time. Pure; unit-tested.
+    /// Reasoning deltas are not part of the answer and are skipped.
+    struct StreamedText {
+        /// The answer so far, as sent (think blocks still in it)
+        private(set) var text = ""
+        /// `finish_reason`, once the server gave one
+        private(set) var finish: String?
+        /// The server said the stream is complete (`[DONE]`)
+        private(set) var done = false
+        /// An error event inside a 200 stream: the status the same refusal
+        /// would have had, and its body
+        private(set) var failure: (status: Int, body: Data)?
+
+        /// Take the next line. True when the answer grew.
+        mutating func line(_ raw: String) -> Bool {
+            // `event:` names, `:` keep-alive comments and blank lines carry no text
+            guard raw.hasPrefix("data:") else { return false }
+            let data = raw.dropFirst(5).trimmingCharacters(in: .whitespaces)
+            if data == "[DONE]" { done = true; return false }
+            guard let obj = try? JSONSerialization.jsonObject(with: Data(data.utf8)) as? [String: Any] else { return false }
+            if let error = obj["error"] {
+                let detail = error as? [String: Any]
+                let kind = [detail?["type"] as? String, detail?["code"] as? String].compactMap { $0 }.joined(separator: " ").lowercased()
+                let status = ["authentication", "invalid_api_key", "permission"].contains(where: kind.contains) ? 401
+                    : ["rate_limit", "quota", "credit", "billing"].contains(where: kind.contains) ? 429 : 500
+                failure = (status, Data(data.utf8))
+                return false
+            }
+            guard let choice = (obj["choices"] as? [[String: Any]])?.first else { return false }
+            let before = text.count
+            let delta = choice["delta"] as? [String: Any]
+            if let s = delta?["content"] as? String {
+                text += s
+            } else if let parts = delta?["content"] as? [[String: Any]] {
+                text += parts.compactMap { $0["text"] as? String }.joined()
+            }
+            if let f = choice["finish_reason"] as? String { finish = f }
+            return text.count > before
+        }
+
+        /// The finished answer, by the same rules as a whole response. A
+        /// body that just stopped (no finish reason, no end marker) is a
+        /// broken connection: half an answer is never returned as a whole one.
+        func result(secrets: [String]) throws -> String {
+            if let failure { throw ResponseParser.statusError(failure.status, failure.body, secrets: secrets) }
+            guard done || finish != nil else { throw AIError.unreachable("The connection closed before the answer was finished.") }
+            let answer = ResponseParser.stripThinking(text).trimmingCharacters(in: .whitespacesAndNewlines)
+            if answer.isEmpty { throw finish == "length" ? AIError.truncated : AIError.emptyAnswer }
+            return answer
+        }
+    }
+
     /// Some compatible models inline reasoning in <think>…</think>.
     static func stripThinking(_ s: String) -> String {
         guard s.contains("<think>") else { return s }
@@ -330,45 +399,74 @@ actor AIClient {
         return .other("\(host) rejected the request twice.")
     }
 
-    func complete(_ messages: [ChatMessage], maxTokens: Int, temperature: Double = 0.3, endpoint ep: AIEndpoint) async throws -> String {
+    /// Where a streamed answer goes while it is written: called with the
+    /// whole answer so far (never a fragment), each time it grows.
+    typealias Partial = @Sendable (String) -> Void
+
+    /// One completion. With `onText`, the same request asks for a stream and
+    /// the answer is handed over while it is written (Chat); the result is
+    /// the same whole answer. A server that answers with plain JSON is read
+    /// whole, and one that refuses `stream` is asked again without it.
+    func complete(_ messages: [ChatMessage], maxTokens: Int, temperature: Double = 0.3, endpoint ep: AIEndpoint,
+                  onText: Partial? = nil) async throws -> String {
         if ep.needsConsent && !ep.consentGranted { throw AIError.consentRequired(ep.baseURL?.host() ?? ep.provider.name) }
         let requested = min(max(maxTokens, 16), 8192)
 
         if ep.provider.proto == .foundationModels {
-            return try await AppleOnDevice.complete(messages, maxTokens: requested, temperature: temperature)
+            return try await AppleOnDevice.complete(messages, maxTokens: requested, temperature: temperature, onText: onText)
         }
         guard ep.provider == .custom, let base = ep.baseURL,
               !ep.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw AIError.notConfigured }
         guard URLPolicy.isAllowed(base) else { throw AIError.insecureURL }
 
+        let secrets = [ep.apiKey].compactMap { $0 }
         let modelKey = "\(base.absoluteString)|\(ep.model)"
         var useCompletionTokens = completionTokenModels.contains(modelKey)
-        for attempt in 0..<2 {
+        var streaming = onText != nil
+        // The first request, and one more for each thing a server can refuse
+        // (the token parameter, streaming)
+        for _ in 0..<3 {
             let budget = RequestBuilder.outputBudget(proto: ep.provider.proto, requested: requested,
                                                      completionTokens: useCompletionTokens)
             let fitted = ContextFit.fit(messages, contextTokens: ep.contextTokens, maxTokens: budget)
             let req = try RequestBuilder.chat(ep, messages: fitted, maxTokens: budget, temperature: temperature,
-                                              completionTokens: useCompletionTokens)
-            let (data, status) = try await send(req, secrets: [ep.apiKey].compactMap { $0 })
-            if (200..<300).contains(status) {
-                return try ResponseParser.openAIText(data)
+                                              completionTokens: useCompletionTokens, stream: streaming)
+            let data: Data
+            let status: Int
+            if streaming, let onText {
+                switch try await sendStreaming(req, secrets: secrets, onText: onText) {
+                case .text(let answer): return answer
+                case .whole(let d, let s): (data, status) = (d, s)
+                }
+            } else {
+                (data, status) = try await send(req, secrets: secrets)
             }
-            let message = ResponseParser.errorMessage(data, secrets: [ep.apiKey].compactMap { $0 })
-            if status == 400, attempt == 0, ep.provider.proto == .openai, !useCompletionTokens,
+            if (200..<300).contains(status) {
+                let answer = try ResponseParser.openAIText(data)
+                // Asked to stream, answered whole: the caller still gets the answer
+                onText?(answer)
+                return answer
+            }
+            let message = ResponseParser.errorMessage(data, secrets: secrets)
+            if status == 400, ep.provider.proto == .openai, !useCompletionTokens,
                ResponseParser.wantsCompletionTokens(message) {
                 useCompletionTokens = true
                 completionTokenModels.insert(modelKey)
                 UserDefaults.standard.set(Array(completionTokenModels), forKey: Self.completionTokenModelsKey)
                 continue
             }
-            throw ResponseParser.statusError(status, data, secrets: [ep.apiKey].compactMap { $0 })
+            if status == 400, streaming, ResponseParser.streamRefused(message) {
+                streaming = false
+                continue
+            }
+            throw ResponseParser.statusError(status, data, secrets: secrets)
         }
         throw AIError.badResponse
     }
 
     // MARK: Transport
 
-    private func send(_ req: URLRequest, secrets: [String], total: TimeInterval? = nil) async throws -> (Data, Int) {
+    private func session(for req: URLRequest, total: TimeInterval? = nil) -> URLSession {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = req.timeoutInterval
         config.timeoutIntervalForResource = total ?? req.timeoutInterval
@@ -376,29 +474,103 @@ actor AIClient {
         config.httpCookieStorage = nil
         config.urlCache = nil
         if !protocolClasses.isEmpty { config.protocolClasses = protocolClasses }
-        let session = URLSession(configuration: config, delegate: NoRedirects(), delegateQueue: nil)
+        return URLSession(configuration: config, delegate: NoRedirects(), delegateQueue: nil)
+    }
+
+    /// A transport failure as the app's own error, keys redacted.
+    private func transportError(_ error: Error, secrets: [String]) -> Error {
+        if let e = error as? AIError { return e }
+        if error is CancellationError { return CancellationError() }
+        if let e = error as? URLError {
+            if e.code == .appTransportSecurityRequiresSecureConnection { return AIError.atsBlocked }
+            if e.code == .cancelled { return CancellationError() }
+            return AIError.unreachable(Redactor.redact(e.localizedDescription, secrets: secrets))
+        }
+        return AIError.unreachable(Redactor.redact(error.localizedDescription, secrets: secrets))
+    }
+
+    private func send(_ req: URLRequest, secrets: [String], total: TimeInterval? = nil) async throws -> (Data, Int) {
+        let session = session(for: req, total: total)
         defer { session.finishTasksAndInvalidate() }
         do {
             let (bytes, resp) = try await session.bytes(for: req)
             guard let http = resp as? HTTPURLResponse else { throw AIError.badResponse }
-            if http.expectedContentLength > Self.maxResponseBytes { bytes.task.cancel(); throw AIError.tooLarge }
-            var data = Data()
-            data.reserveCapacity(Int(max(0, min(http.expectedContentLength, Int64(Self.maxResponseBytes)))))
-            for try await byte in bytes {
-                data.append(byte)
-                if data.count > Self.maxResponseBytes { bytes.task.cancel(); throw AIError.tooLarge }
-            }
-            return (data, http.statusCode)
-        } catch let e as AIError {
-            throw e
-        } catch let e as URLError {
-            if e.code == .appTransportSecurityRequiresSecureConnection { throw AIError.atsBlocked }
-            if e.code == .cancelled { throw CancellationError() }
-            throw AIError.unreachable(Redactor.redact(e.localizedDescription, secrets: secrets))
-        } catch is CancellationError {
-            throw CancellationError()
+            return (try await Self.collect(bytes, http), http.statusCode)
         } catch {
-            throw AIError.unreachable(Redactor.redact(error.localizedDescription, secrets: secrets))
+            throw transportError(error, secrets: secrets)
+        }
+    }
+
+    /// The whole body, up to the cap.
+    private static func collect(_ bytes: URLSession.AsyncBytes, _ http: HTTPURLResponse) async throws -> Data {
+        if http.expectedContentLength > Self.maxResponseBytes { bytes.task.cancel(); throw AIError.tooLarge }
+        var data = Data()
+        data.reserveCapacity(Int(max(0, min(http.expectedContentLength, Int64(Self.maxResponseBytes)))))
+        for try await byte in bytes {
+            data.append(byte)
+            if data.count > Self.maxResponseBytes { bytes.task.cancel(); throw AIError.tooLarge }
+        }
+        return data
+    }
+
+    /// What came back from a request that asked for a stream.
+    private enum Streamed {
+        /// The answer, already handed over piece by piece
+        case text(String)
+        /// Not a stream (an error status, or a server that answered with
+        /// plain JSON): the whole body and the status, for the usual handling
+        case whole(Data, Int)
+    }
+
+    /// Send a request that asks for a stream and read it line by line. A
+    /// body that starts with `{` is plain JSON whatever was asked for (every
+    /// event line starts with a field name or `:`), so it is handed back whole.
+    private func sendStreaming(_ req: URLRequest, secrets: [String], onText: Partial) async throws -> Streamed {
+        let session = session(for: req)
+        defer { session.finishTasksAndInvalidate() }
+        do {
+            let (bytes, resp) = try await session.bytes(for: req)
+            guard let http = resp as? HTTPURLResponse else { throw AIError.badResponse }
+            if !(200..<300).contains(http.statusCode) {
+                return .whole(try await Self.collect(bytes, http), http.statusCode)
+            }
+            var parser = ResponseParser.StreamedText()
+            var whole: Data?
+            var sniffed = false
+            var received = 0
+            var shown = ""
+            for try await line in bytes.lines {
+                received += line.utf8.count + 1
+                if received > Self.maxResponseBytes { bytes.task.cancel(); throw AIError.tooLarge }
+                if !sniffed {
+                    let first = line.trimmingCharacters(in: .whitespaces)
+                    if first.isEmpty { continue }
+                    sniffed = true
+                    if first.hasPrefix("{") { whole = Data() }
+                }
+                if whole != nil {
+                    whole?.append(contentsOf: line.utf8)
+                    whole?.append(0x0A)
+                    continue
+                }
+                if parser.line(line) {
+                    let now = ResponseParser.visibleSoFar(parser.text)
+                    if now != shown {
+                        shown = now
+                        onText(now)
+                    }
+                }
+                if parser.done || parser.failure != nil {
+                    bytes.task.cancel()
+                    break
+                }
+            }
+            if let whole { return .whole(whole, http.statusCode) }
+            let answer = try parser.result(secrets: secrets)
+            if answer != shown { onText(answer) }
+            return .text(answer)
+        } catch {
+            throw transportError(error, secrets: secrets)
         }
     }
 }

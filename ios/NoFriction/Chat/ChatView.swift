@@ -18,6 +18,8 @@ struct ChatView: View {
     @State private var scope: ChatScope = .all
     @State private var draft = ""
     @State private var working = false
+    /// The answer on its way, while the model writes it
+    @State private var stream = ChatStream()
     @State private var error: String?
     @State private var showThreads = false
     @State private var openCitation: ChatCitation?
@@ -159,11 +161,23 @@ struct ChatView: View {
                             .id(m.id)
                     }
                     if working {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                            Text("Reading your recordings…").font(.footnote).foregroundStyle(.secondary)
+                        if stream.text.isEmpty {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                Text("Reading your recordings…").font(.footnote).foregroundStyle(.secondary)
+                            }
+                            .id("working")
+                        } else {
+                            // The answer, while it is written. VoiceOver reads it once, when it is whole
+                            Text(MarkdownText.attributed(stream.text))
+                                .font(.callout)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(14)
+                                .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                .accessibilityHidden(true)
+                                .accessibilityIdentifier("chat-streaming")
+                                .id("working")
                         }
-                        .id("working")
                     }
                     if let error {
                         Label(error, systemImage: "exclamationmark.triangle")
@@ -181,6 +195,11 @@ struct ChatView: View {
             }
             .onChange(of: working) { _, w in
                 if w { withAnimation { proxy.scrollTo("working", anchor: .bottom) } }
+            }
+            // The end is followed without easing: an animation restarted many
+            // times a second never arrives
+            .onChange(of: stream.text) { _, _ in
+                if working { proxy.scrollTo("working", anchor: .bottom) }
             }
         }
     }
@@ -283,11 +302,25 @@ struct ChatView: View {
         let sources = scoped.map(ChatSource.init(meeting:))
         let scopeLabel = scope.label
         working = true
+        let stream = stream
+        let asked = stream.begin()
         Task { @MainActor in
-            defer { working = false }
+            defer {
+                working = false
+                stream.end(asked)
+            }
             do {
+                let complete = MeetingAI.liveComplete(endpoint) { soFar in
+                    Task { @MainActor in stream.show(soFar, for: asked) }
+                }
                 let answer = try await MeetingAI.chat(question: q, scopeLabel: scopeLabel, sources: sources, memory: memory,
-                                                      contextTokens: endpoint.contextTokens, complete: MeetingAI.liveComplete(endpoint))
+                                                      contextTokens: endpoint.contextTokens, complete: complete)
+                // The model took its time. If text was removed from a
+                // recording meanwhile, this answer may hold it: it is not kept
+                guard !stream.purged(since: asked) else {
+                    self.error = ChatStore.purgedMeanwhile
+                    return
+                }
                 ChatStore.append(ChatThreadMessage(role: .assistant, content: answer.text, scopeLabel: scopeLabel, citations: answer.citations),
                                  to: t, context: context)
             } catch {
@@ -300,6 +333,50 @@ struct ChatView: View {
         guard let q = pendingQuestion else { return }
         pendingQuestion = nil
         if satisfied { ask(q) } else { draft = q }
+    }
+}
+
+/// The answer to the question the Chat tab is waiting on, while the model
+/// writes it. In memory only; the stored answer replaces it.
+@MainActor @Observable
+final class ChatStream {
+    /// The answer so far (empty until the first words, and again at the end)
+    private(set) var text = ""
+    /// Which question this is waiting on, and the purge count when it was asked
+    private var asking: (id: UUID, purges: Int)?
+
+    /// A question was sent. Its id goes with every update, so words for an
+    /// earlier one land nowhere.
+    func begin() -> UUID {
+        let id = UUID()
+        asking = (id, ChatStore.purges)
+        text = ""
+        return id
+    }
+
+    /// Text was removed from a recording since `id` was asked (or it is no
+    /// longer the question waited on).
+    func purged(since id: UUID) -> Bool {
+        guard let asking, asking.id == id else { return true }
+        return ChatStore.purges != asking.purges
+    }
+
+    /// The answer so far. It only ever grows; once text was removed from a
+    /// recording, what was shown goes and nothing more comes.
+    func show(_ soFar: String, for id: UUID) {
+        guard asking?.id == id else { return }
+        if purged(since: id) {
+            text = ""
+            return
+        }
+        let shown = MeetingAI.chatPartial(soFar)
+        if shown.count >= text.count { text = shown }
+    }
+
+    func end(_ id: UUID) {
+        guard asking?.id == id else { return }
+        asking = nil
+        text = ""
     }
 }
 

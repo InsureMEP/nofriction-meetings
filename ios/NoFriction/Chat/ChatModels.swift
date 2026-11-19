@@ -181,6 +181,14 @@ enum ChatStore {
     static let memoryTurns = 8
     static let maxQuestionLength = 2000
 
+    /// Every purge, counted. An answer takes seconds to write: one that was
+    /// being written while text was removed from a recording may hold that
+    /// text, so it stops being shown and is not kept (`ChatStream`,
+    /// `ChatView.ask`).
+    private(set) static var purges = 0
+    /// What a question gets when text was removed while it was being answered.
+    static let purgedMeanwhile = "Text was removed from a recording while this was being answered, so the answer wasn't kept. Ask again."
+
     static func newThread(scope: ChatScope, context: ModelContext) -> ChatThread {
         let t = ChatThread(scope: scope)
         context.insert(t)
@@ -225,6 +233,7 @@ enum ChatStore {
     /// many messages were deleted. Doesn't save: the caller's transaction does.
     @discardableResult
     static func purge(meetingID: UUID, title: String?, deleted: Bool, context: ModelContext) -> Int {
+        purges += 1
         let threads = (try? context.fetch(FetchDescriptor<ChatThread>())) ?? []
         var removed = 0
         let what = title.map { "“\($0)”" } ?? "A recording"
