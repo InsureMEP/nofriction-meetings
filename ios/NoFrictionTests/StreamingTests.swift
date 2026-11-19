@@ -108,6 +108,11 @@ final class StreamParsingTests: XCTestCase {
         XCTAssertEqual(MeetingAI.chatPartial("See [the plan"), "See [the plan", "only a number is a citation")
         XCTAssertEqual(MeetingAI.chatPartial("<think>plan</think>Ship **Fri"), "Ship **Fri**")
         XCTAssertEqual(MeetingAI.chatPartial(""), "")
+        // Stars and backticks that are not marks are left as they are
+        XCTAssertEqual(MeetingAI.chatPartial("2 ** 8 is"), "2 ** 8 is")
+        XCTAssertEqual(MeetingAI.chatPartial("```swift"), "```swift")
+        XCTAssertEqual(MeetingAI.chatPartial("a ` b"), "a ` b")
+        for odd in ["[", "*", "**", "***", "`", "[[", "*[`", "\n[", "**\n*"] { _ = MeetingAI.chatPartial(odd) }
         // Whatever has arrived, no stars are left for the reader
         let whole = "They decided to **ship Friday** [1].\n\n- Budget: `10k` [2]\n- Owner: **Bo**"
         XCTAssertEqual(MeetingAI.chatPartial(whole), whole)
@@ -192,6 +197,27 @@ final class StreamingClientTests: XCTestCase {
             XCTAssertFalse(m.contains("stub-key-value-1234"))
         }
 
+        // Line and paragraph separators are legal inside a JSON string and
+        // are not line ends: nothing of the answer goes missing
+        let odd = "data: {\"choices\":[{\"delta\":{\"content\":\"One\u{2028}two\u{85}three\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+        StubURLProtocol.handler = { _ in (200, Data(odd.utf8)) }
+        let kept = try await client.complete(msgs, maxTokens: 300, endpoint: ep()) { _ in }
+        XCTAssertEqual(kept, "One\u{2028}two\u{85}three")
+        let plain = "{\"choices\":[{\"message\":{\"content\":\"One\u{2028}two\"},\"finish_reason\":\"stop\"}]}"
+        StubURLProtocol.handler = { _ in (200, Data(plain.utf8)) }
+        let json = try await client.complete(msgs, maxTokens: 300, endpoint: ep()) { _ in }
+        XCTAssertEqual(json, "One\u{2028}two")
+
+        // The 4 MB cap holds for a body with no line end in it
+        let endless = Data("data: ".utf8) + Data(repeating: UInt8(ascii: "a"), count: AIClient.maxResponseBytes + 1)
+        StubURLProtocol.handler = { _ in (200, endless) }
+        do {
+            _ = try await client.complete(msgs, maxTokens: 300, endpoint: ep()) { _ in }
+            XCTFail("an endless line must stop at the cap")
+        } catch {
+            XCTAssertEqual(error as? AIError, .tooLarge)
+        }
+
         // A stream that just stops is not an answer
         StubURLProtocol.handler = { _ in (200, Data("data: {\"choices\":[{\"delta\":{\"content\":\"They decided to\"}}]}\n\n".utf8)) }
         do {
@@ -205,43 +231,50 @@ final class StreamingClientTests: XCTestCase {
 
 @MainActor
 final class ChatStreamTests: XCTestCase {
-    func testOnlyTheQuestionWaitedOnIsShownAndItOnlyGrows() {
+    func testOnlyTheQuestionWaitedOnIsShownInTheOrderItWasWritten() {
         let stream = ChatStream()
         let first = stream.begin()
-        stream.show("They decided to **ship", for: first)
+        stream.show("They decided to **ship", for: first, order: stream.order.next())
         XCTAssertEqual(stream.text, "They decided to **ship**")
-        // An update that arrives late (shorter) doesn't take words back
-        stream.show("They", for: first)
-        XCTAssertEqual(stream.text, "They decided to **ship**")
+        // An update that arrives after a newer one is dropped
+        let early = stream.order.next()
+        stream.show("They decided to **ship Friday**", for: first, order: stream.order.next())
+        stream.show("They decided", for: first, order: early)
+        XCTAssertEqual(stream.text, "They decided to **ship Friday**")
+        // A fresh start by the model (its second try) replaces what was shown
+        stream.show("Ship", for: first, order: stream.order.next())
+        XCTAssertEqual(stream.text, "Ship")
         // The next question: words for the first land nowhere
         let second = stream.begin()
         XCTAssertEqual(stream.text, "")
-        stream.show("They decided to **ship Friday**", for: first)
+        stream.show("They decided to **ship Friday**", for: first, order: stream.order.next())
         XCTAssertEqual(stream.text, "")
-        stream.show("Marcus", for: second)
+        stream.show("Marcus", for: second, order: stream.order.next())
         XCTAssertEqual(stream.text, "Marcus")
         stream.end(first)
         XCTAssertEqual(stream.text, "Marcus", "ending an earlier question leaves this one")
         stream.end(second)
         XCTAssertEqual(stream.text, "")
-        stream.show("late", for: second)
+        stream.show("late", for: second, order: stream.order.next())
         XCTAssertEqual(stream.text, "")
     }
 
-    func testTextRemovedFromARecordingTakesTheAnswerOffTheScreen() throws {
+    func testTextRemovedFromARecordingTakesTheAnswerOffTheScreenAtOnce() throws {
         let container = try ModelContainer(for: Schema(Storage.modelTypes), configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let stream = ChatStream()
         let asked = stream.begin()
-        stream.show("Marcus owns", for: asked)
+        stream.show("Marcus owns", for: asked, order: stream.order.next())
+        XCTAssertEqual(stream.text, "Marcus owns")
         XCTAssertFalse(stream.purged(since: asked))
         ChatStore.purge(meetingID: UUID(), title: "Kickoff", deleted: false, context: container.mainContext)
+        XCTAssertEqual(stream.text, "", "gone with the purge, not with the model's next word")
         XCTAssertTrue(stream.purged(since: asked), "the finished answer is not kept (ChatView.ask)")
-        stream.show("Marcus owns the vendor contract", for: asked)
-        XCTAssertEqual(stream.text, "", "what was shown goes, and no more comes")
+        stream.show("Marcus owns the vendor contract", for: asked, order: stream.order.next())
+        XCTAssertEqual(stream.text, "", "and no more comes")
         stream.end(asked)
         // The next question is answered as ever
         let next = stream.begin()
-        stream.show("Friday", for: next)
+        stream.show("Friday", for: next, order: stream.order.next())
         XCTAssertEqual(stream.text, "Friday")
         XCTAssertFalse(stream.purged(since: next))
     }

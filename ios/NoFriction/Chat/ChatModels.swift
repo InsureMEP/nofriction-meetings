@@ -186,6 +186,9 @@ enum ChatStore {
     /// text, so it stops being shown and is not kept (`ChatStream`,
     /// `ChatView.ask`).
     private(set) static var purges = 0
+    /// Posted (on the main actor, at once) with every purge, so an answer
+    /// on screen while it is written goes without waiting for its next word.
+    static let purged = Notification.Name("ChatStore.purged")
     /// What a question gets when text was removed while it was being answered.
     static let purgedMeanwhile = "Text was removed from a recording while this was being answered, so the answer wasn't kept. Ask again."
 
@@ -234,6 +237,7 @@ enum ChatStore {
     @discardableResult
     static func purge(meetingID: UUID, title: String?, deleted: Bool, context: ModelContext) -> Int {
         purges += 1
+        NotificationCenter.default.post(name: purged, object: nil)
         let threads = (try? context.fetch(FetchDescriptor<ChatThread>())) ?? []
         var removed = 0
         let what = title.map { "“\($0)”" } ?? "A recording"

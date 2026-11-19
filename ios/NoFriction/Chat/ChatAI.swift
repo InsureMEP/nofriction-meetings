@@ -67,11 +67,18 @@ extension MeetingAI {
             last.removeSubrange(open...)
         }
         if last.hasSuffix("*"), !last.hasSuffix("**") { last.removeLast() }
-        if last.components(separatedBy: "**").count % 2 == 0 {
-            if last.hasSuffix("**") { last.removeLast(2) } else { last += "**" }
+        // An opening mark has a word right after it. A mark with a space
+        // after it ("2 ** 8") is text, and a code fence is not inline code
+        func opensAWord(_ mark: String) -> Bool {
+            guard let open = last.range(of: mark, options: .backwards), let next = last[open.upperBound...].first else { return false }
+            return !next.isWhitespace
         }
-        if last.filter({ $0 == "`" }).count % 2 == 1 {
-            if last.hasSuffix("`") { last.removeLast() } else { last += "`" }
+        if last.components(separatedBy: "**").count % 2 == 0 {
+            if last.hasSuffix("**") { last.removeLast(2) } else if opensAWord("**") { last += "**" }
+        }
+        let fence = last.trimmingCharacters(in: .whitespaces).hasPrefix("```")
+        if !fence, last.filter({ $0 == "`" }).count % 2 == 1 {
+            if last.hasSuffix("`") { last.removeLast() } else if opensAWord("`") { last += "`" }
         }
         var shown = String(text[..<cut]) + last
         while let end = shown.last, end.isWhitespace { shown.removeLast() }

@@ -526,8 +526,9 @@ Tests: `ios/NoFrictionTests/TopicsAndChatTests.swift`.
   embeddings; nothing is indexed outside the store.
 - **Streamed answers (2026-11-18).** The answer appears while the model
   writes it. `AIClient.complete(…, onText:)` sends the same request with
-  `stream: true` and reads the events line by line
-  (`ResponseParser.StreamedText`); Apple's on-device model streams through
+  `stream: true` and reads the events line by line (lines end at a line
+  feed only, and every byte counts against the cap;
+  `ResponseParser.StreamedText`); Apple's on-device model streams through
   `LanguageModelSession.streamResponse` (`AppleOnDevice.complete`). Same
   consent check, URL policy, timeout, 4 MB cap and redaction; a server
   that answers with plain JSON is read whole, one that refuses `stream` is
@@ -537,8 +538,9 @@ Tests: `ios/NoFrictionTests/TopicsAndChatTests.swift`.
   think blocks and closes a `**` or `` ` `` opened on the last line) in
   the answer's bubble; the stored answer with its citation chips replaces
   it. If text is removed from any recording meanwhile (`ChatStore.purges`),
-  what was shown goes and the finished answer is not kept
-  (`ChatStore.purgedMeanwhile`). Notes, the Review guide and topics are
+  what was shown goes at once (`ChatStore.purged` notification) and the
+  finished answer is not kept (`ChatStore.purgedMeanwhile`). **Chats** and
+  **New chat** wait while an answer is on its way. Notes, the Review guide and topics are
   not streamed. Not run on a device or with a real model: the unit tests
   use a stub and the simulator has no on-device model.
 - **Prompt.** `MeetingAI.chatSystem` (answer only from the passages, cite as

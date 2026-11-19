@@ -522,9 +522,12 @@ actor AIClient {
         case whole(Data, Int)
     }
 
-    /// Send a request that asks for a stream and read it line by line. A
-    /// body that starts with `{` is plain JSON whatever was asked for (every
-    /// event line starts with a field name or `:`), so it is handed back whole.
+    /// Send a request that asks for a stream and read it. A body that starts
+    /// with `{` is plain JSON whatever was asked for (every event line starts
+    /// with a field name or `:`), so it is handed back whole, byte for byte.
+    /// Lines end at a line feed only: `AsyncBytes.lines` also breaks at
+    /// U+2028, U+2029 and U+0085, which JSON allows inside a string, and a
+    /// line cut there would lose its text. Every byte counts against the cap.
     private func sendStreaming(_ req: URLRequest, secrets: [String], onText: Partial) async throws -> Streamed {
         let session = session(for: req)
         defer { session.finishTasksAndInvalidate() }
@@ -538,34 +541,45 @@ actor AIClient {
             var whole: Data?
             var sniffed = false
             var received = 0
+            var line: [UInt8] = []
             var shown = ""
-            for try await line in bytes.lines {
-                received += line.utf8.count + 1
-                if received > Self.maxResponseBytes { bytes.task.cancel(); throw AIError.tooLarge }
-                if !sniffed {
-                    let first = line.trimmingCharacters(in: .whitespaces)
-                    if first.isEmpty { continue }
-                    sniffed = true
-                    if first.hasPrefix("{") { whole = Data() }
-                }
-                if whole != nil {
-                    whole?.append(contentsOf: line.utf8)
-                    whole?.append(0x0A)
-                    continue
-                }
-                if parser.line(line) {
+            func take(_ raw: [UInt8]) {
+                var raw = raw[...]
+                if raw.last == 0x0D { raw = raw.dropLast() }
+                if parser.line(String(decoding: raw, as: UTF8.self)) {
                     let now = ResponseParser.visibleSoFar(parser.text)
                     if now != shown {
                         shown = now
                         onText(now)
                     }
                 }
+            }
+            for try await byte in bytes {
+                received += 1
+                if received > Self.maxResponseBytes { bytes.task.cancel(); throw AIError.tooLarge }
+                if !sniffed {
+                    if byte == 0x20 || byte == 0x09 || byte == 0x0A || byte == 0x0D { continue }
+                    sniffed = true
+                    if byte == UInt8(ascii: "{") { whole = Data() }
+                }
+                if whole != nil {
+                    whole?.append(byte)
+                    continue
+                }
+                if byte != 0x0A {
+                    line.append(byte)
+                    continue
+                }
+                take(line)
+                line.removeAll(keepingCapacity: true)
                 if parser.done || parser.failure != nil {
                     bytes.task.cancel()
                     break
                 }
             }
             if let whole { return .whole(whole, http.statusCode) }
+            // A last line may have come without its line feed
+            if !line.isEmpty { take(line) }
             let answer = try parser.result(secrets: secrets)
             if answer != shown { onText(answer) }
             return .text(answer)
