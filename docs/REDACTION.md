@@ -526,7 +526,8 @@ UI in `src/components/redaction/Redaction.tsx`.
   when the model is done and again inside the saving transaction); the
   user is told to ask again. This also closed a gap that was there before
   streaming: an answer made from text removed while the model was writing
-  used to be saved after the purge had run. A note put aside while a question is typed
+  used to be saved after the purge had run. iPhone and iPad Chat follows
+  the same rule (`ChatStore.purges`, `ChatStream`, `ChatView.ask`). A note put aside while a question is typed
   (`Session.note_draft`) is in memory until the note key, another
   recording or quit.
   **iPhone:** a typed note is a `MomentMarker` of kind `note`, deleted with

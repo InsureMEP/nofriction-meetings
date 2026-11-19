@@ -12,9 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 On `main`, not in a build yet.
 
 ### Changed
-- **Answers appear as they are written (Mac).** Chat, the Ask panel beside
-  a live recording and the Ask card over other apps (⌃⌥⌘A) show the answer
-  word by word instead of waiting for the whole of it. With Apple's
+- **Answers appear as they are written.** On the Mac, Chat, the Ask panel
+  beside a live recording and the Ask card over other apps (⌃⌥⌘A) show the
+  answer word by word instead of waiting for the whole of it; on iPhone
+  and iPad, Chat does. With Apple's
   on-device model the first words come after one to four seconds,
   depending on how much of the recording the question draws on. Your own
   AI endpoint streams the same way; one that can't is read as before.

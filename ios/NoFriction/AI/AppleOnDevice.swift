@@ -32,7 +32,10 @@ enum AppleOnDevice {
         return "Apple's on-device model needs iOS 26 or later."
     }
 
-    static func complete(_ messages: [ChatMessage], maxTokens: Int, temperature: Double) async throws -> String {
+    /// One answer from the on-device model. With `onText`, it is handed over
+    /// while it is written (the whole answer so far, each time it grows).
+    static func complete(_ messages: [ChatMessage], maxTokens: Int, temperature: Double,
+                         onText: (@Sendable (String) -> Void)? = nil) async throws -> String {
         if let reason = unavailableReason { throw AIError.onDevice(reason) }
         #if canImport(FoundationModels)
         if #available(iOS 26, *) {
@@ -44,10 +47,20 @@ enum AppleOnDevice {
                 let prompt = fitted.filter { $0.role != "system" }.map(\.content).joined(separator: "\n\n")
                 let session = LanguageModelSession(instructions: instructions.isEmpty ? nil : instructions)
                 do {
-                    let response = try await session.respond(
-                        to: prompt,
-                        options: GenerationOptions(temperature: temperature, maximumResponseTokens: answer))
-                    let text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let options = GenerationOptions(temperature: temperature, maximumResponseTokens: answer)
+                    var content = ""
+                    if let onText {
+                        for try await snapshot in session.streamResponse(to: prompt, options: options) {
+                            let soFar = snapshot.content
+                            if soFar != content {
+                                content = soFar
+                                onText(soFar.trimmingCharacters(in: .whitespacesAndNewlines))
+                            }
+                        }
+                    } else {
+                        content = try await session.respond(to: prompt, options: options).content
+                    }
+                    let text = content.trimmingCharacters(in: .whitespacesAndNewlines)
                     if text.isEmpty { throw AIError.emptyAnswer }
                     return text
                 } catch let error as LanguageModelSession.GenerationError {

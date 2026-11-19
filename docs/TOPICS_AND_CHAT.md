@@ -238,7 +238,8 @@ the model reading the prompt, which streaming does not shorten.
 - **A stream that breaks.** A body that ends without a finish reason or an
   end marker is an error ("Couldn't reach your AI"), never half an answer
   kept as a whole one.
-- **Not done.** The iPhone and iPad still wait for the whole answer.
+- **iPhone and iPad.** Chat streams the same way (see "Streamed answers"
+  under iOS below).
 
 ### Ask (2026-11-17)
 
@@ -523,6 +524,25 @@ Tests: `ios/NoFrictionTests/TopicsAndChatTests.swift`.
   When no term matches ("summarize everything"), the most recent
   recordings' notes and opening lines stand in. No network and no
   embeddings; nothing is indexed outside the store.
+- **Streamed answers (2026-11-18).** The answer appears while the model
+  writes it. `AIClient.complete(…, onText:)` sends the same request with
+  `stream: true` and reads the events line by line (lines end at a line
+  feed only, and every byte counts against the cap;
+  `ResponseParser.StreamedText`); Apple's on-device model streams through
+  `LanguageModelSession.streamResponse` (`AppleOnDevice.complete`). Same
+  consent check, URL policy, timeout, 4 MB cap and redaction; a server
+  that answers with plain JSON is read whole, one that refuses `stream` is
+  asked again without it, and a body that just stops is an error, never
+  half an answer. `ChatView` passes `MeetingAI.liveComplete(endpoint,
+  onText:)` and shows `ChatStream.text` (`MeetingAI.chatPartial` hides
+  think blocks and closes a `**` or `` ` `` opened on the last line) in
+  the answer's bubble; the stored answer with its citation chips replaces
+  it. If text is removed from any recording meanwhile (`ChatStore.purges`),
+  what was shown goes at once (`ChatStore.purged` notification) and the
+  finished answer is not kept (`ChatStore.purgedMeanwhile`). **Chats** and
+  **New chat** wait while an answer is on its way. Notes, the Review guide and topics are
+  not streamed. Not run on a device or with a real model: the unit tests
+  use a stub and the simulator has no on-device model.
 - **Prompt.** `MeetingAI.chatSystem` (answer only from the passages, cite as
   `[n]`, say what wasn't found, never guess at stricken text) +
   memory + `SCOPE: … PASSAGES: [n] Title · date · Transcript 12:34 ·

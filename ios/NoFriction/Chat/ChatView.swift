@@ -18,6 +18,8 @@ struct ChatView: View {
     @State private var scope: ChatScope = .all
     @State private var draft = ""
     @State private var working = false
+    /// The answer on its way, while the model writes it
+    @State private var stream = ChatStream()
     @State private var error: String?
     @State private var showThreads = false
     @State private var openCitation: ChatCitation?
@@ -52,11 +54,14 @@ struct ChatView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
+                    // The answer on its way belongs to the chat that is open
                     Button("Chats", systemImage: "list.bullet") { showThreads = true }
+                        .disabled(working)
                         .accessibilityIdentifier("chat-threads")
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button("New chat", systemImage: "square.and.pencil") { newChat() }
+                        .disabled(working)
                         .accessibilityIdentifier("chat-new")
                 }
             }
@@ -159,11 +164,23 @@ struct ChatView: View {
                             .id(m.id)
                     }
                     if working {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                            Text("Reading your recordings…").font(.footnote).foregroundStyle(.secondary)
+                        if stream.text.isEmpty {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                Text("Reading your recordings…").font(.footnote).foregroundStyle(.secondary)
+                            }
+                            .id("working")
+                        } else {
+                            // The answer, while it is written. VoiceOver reads it once, when it is whole
+                            Text(MarkdownText.attributed(stream.text))
+                                .font(.callout)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(14)
+                                .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                .accessibilityHidden(true)
+                                .accessibilityIdentifier("chat-streaming")
+                                .id("working")
                         }
-                        .id("working")
                     }
                     if let error {
                         Label(error, systemImage: "exclamationmark.triangle")
@@ -181,6 +198,11 @@ struct ChatView: View {
             }
             .onChange(of: working) { _, w in
                 if w { withAnimation { proxy.scrollTo("working", anchor: .bottom) } }
+            }
+            // The end is followed without easing: an animation restarted many
+            // times a second never arrives
+            .onChange(of: stream.text) { _, _ in
+                if working { proxy.scrollTo("working", anchor: .bottom) }
             }
         }
     }
@@ -283,11 +305,26 @@ struct ChatView: View {
         let sources = scoped.map(ChatSource.init(meeting:))
         let scopeLabel = scope.label
         working = true
+        let stream = stream
+        let asked = stream.begin()
         Task { @MainActor in
-            defer { working = false }
+            defer {
+                working = false
+                stream.end(asked)
+            }
             do {
+                let complete = MeetingAI.liveComplete(endpoint) { soFar in
+                    let n = stream.order.next()
+                    Task { @MainActor in stream.show(soFar, for: asked, order: n) }
+                }
                 let answer = try await MeetingAI.chat(question: q, scopeLabel: scopeLabel, sources: sources, memory: memory,
-                                                      contextTokens: endpoint.contextTokens, complete: MeetingAI.liveComplete(endpoint))
+                                                      contextTokens: endpoint.contextTokens, complete: complete)
+                // The model took its time. If text was removed from a
+                // recording meanwhile, this answer may hold it: it is not kept
+                guard !stream.purged(since: asked) else {
+                    self.error = ChatStore.purgedMeanwhile
+                    return
+                }
                 ChatStore.append(ChatThreadMessage(role: .assistant, content: answer.text, scopeLabel: scopeLabel, citations: answer.citations),
                                  to: t, context: context)
             } catch {
@@ -300,6 +337,69 @@ struct ChatView: View {
         guard let q = pendingQuestion else { return }
         pendingQuestion = nil
         if satisfied { ask(q) } else { draft = q }
+    }
+}
+
+/// The answer to the question the Chat tab is waiting on, while the model
+/// writes it. In memory only; the stored answer replaces it.
+@MainActor @Observable
+final class ChatStream {
+    /// Numbers the updates where they are made (off the main actor), so one
+    /// that arrives after a newer one is dropped whatever its length.
+    final class Order: @unchecked Sendable {
+        private let lock = NSLock()
+        private var n = 0
+        func next() -> Int { lock.withLock { n += 1; return n } }
+    }
+
+    /// The answer so far (empty until the first words, and again at the end)
+    private(set) var text = ""
+    @ObservationIgnored nonisolated let order = Order()
+    /// Which question this is waiting on, the purge count when it was asked,
+    /// and the newest update shown
+    @ObservationIgnored private var asking: (id: UUID, purges: Int, shown: Int)?
+    @ObservationIgnored private var observer: NSObjectProtocol?
+
+    init() {
+        // Text was removed from a recording: what is on screen goes now, not
+        // with the next word (the model may be between two, or stalled)
+        observer = NotificationCenter.default.addObserver(forName: ChatStore.purged, object: nil, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.text = "" }
+        }
+    }
+
+    deinit {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+    }
+
+    /// A question was sent. Its id goes with every update, so words for an
+    /// earlier one land nowhere.
+    func begin() -> UUID {
+        let id = UUID()
+        asking = (id, ChatStore.purges, 0)
+        text = ""
+        return id
+    }
+
+    /// Text was removed from a recording since `id` was asked (or it is no
+    /// longer the question waited on).
+    func purged(since id: UUID) -> Bool {
+        guard let asking, asking.id == id else { return true }
+        return ChatStore.purges != asking.purges
+    }
+
+    /// The answer so far, numbered by `order`. Once text was removed from a
+    /// recording, nothing more of the answer is shown.
+    func show(_ soFar: String, for id: UUID, order n: Int) {
+        guard let now = asking, now.id == id, n > now.shown else { return }
+        asking?.shown = n
+        text = purged(since: id) ? "" : MeetingAI.chatPartial(soFar)
+    }
+
+    func end(_ id: UUID) {
+        guard asking?.id == id else { return }
+        asking = nil
+        text = ""
     }
 }
 

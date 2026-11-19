@@ -55,6 +55,36 @@ extension MeetingAI {
         return ChatAnswer(text: text, citations: citations(in: text, passages: passages))
     }
 
+    /// An answer still being written, made fit to show: think blocks gone,
+    /// and on its last line (the only unfinished one) bold or code that was
+    /// opened is closed, so the words arrive bold instead of starred, and a
+    /// mark that has only begun (a lone `*`, `[1`) waits for the rest.
+    static func chatPartial(_ soFar: String) -> String {
+        let text = ResponseParser.visibleSoFar(soFar)
+        let cut = text.lastIndex(of: "\n").map { text.index(after: $0) } ?? text.startIndex
+        var last = String(text[cut...])
+        if let open = last.lastIndex(of: "["), last[last.index(after: open)...].allSatisfy({ $0.isNumber || $0 == "," || $0 == " " }) {
+            last.removeSubrange(open...)
+        }
+        if last.hasSuffix("*"), !last.hasSuffix("**") { last.removeLast() }
+        // An opening mark has a word right after it. A mark with a space
+        // after it ("2 ** 8") is text, and a code fence is not inline code
+        func opensAWord(_ mark: String) -> Bool {
+            guard let open = last.range(of: mark, options: .backwards), let next = last[open.upperBound...].first else { return false }
+            return !next.isWhitespace
+        }
+        if last.components(separatedBy: "**").count % 2 == 0 {
+            if last.hasSuffix("**") { last.removeLast(2) } else if opensAWord("**") { last += "**" }
+        }
+        let fence = last.trimmingCharacters(in: .whitespaces).hasPrefix("```")
+        if !fence, last.filter({ $0 == "`" }).count % 2 == 1 {
+            if last.hasSuffix("`") { last.removeLast() } else if opensAWord("`") { last += "`" }
+        }
+        var shown = String(text[..<cut]) + last
+        while let end = shown.last, end.isWhitespace { shown.removeLast() }
+        return shown
+    }
+
     /// `[n]` marks in the answer → the passages they point at, in order of
     /// first mention, each once; numbers with no passage are ignored.
     static func citations(in text: String, passages: [ChatPassage]) -> [ChatCitation] {
