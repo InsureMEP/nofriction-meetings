@@ -365,6 +365,16 @@ Welcome to noFriction for iPhone and iPad.
 
 ---
 
+### What's New in iOS 2.0.1 (limit 4000)
+
+**174 / 4000 characters**
+
+```text
+• Chat answers appear as they are written, instead of after a wait
+• If you delete or strike text while an answer is being written, that answer is not kept
+• Fixes and polish
+```
+
 ### What's New in iOS 2.0.0 (limit 4000)
 
 **1207 / 4000 characters**
@@ -490,6 +500,23 @@ combines words across the name, subtitle and keywords ("meeting" + "notes",
 
 ```text
 meeting,notes,transcription,recorder,slides,lecture,class,minutes,action items,flashcards,offline,AI
+```
+
+### What's New in macOS 4.1.0 (limit 4000)
+
+**983 / 4000 characters**
+
+```text
+Ask about the recording while it runs, and read answers as they are written.
+• Ask (Pro): while you record, ask what was just said, what you missed or what a term means. It answers from this recording, your notes and who is in the meeting, and only when you ask
+• Ask from any app (Pro): Control-Option-Command-A opens a field over your call and shows the answer in a few lines
+• Answers in Chat and Ask appear as they are written, instead of after a wait
+• Read the screens (Pro): pick which screens and photos from a recording your AI reads, see each one first, and keep what it reads as text beside the screen
+• A recording opens on Rewind: the calendar event and its people are one chip, so the screens, the timeline and what was said get the page
+• While you record, no screenshot is taken while a password app or a private browser window is in front
+• Fill in the blanks now goes into Export, the Obsidian export and Chat
+• Open a recording from the keyboard
+• Fixes and polish
 ```
 
 ### What's New in macOS 4.0.0 (limit 4000)
@@ -714,7 +741,51 @@ Optional attachment: a short screen recording of a recording → Make notes
 (iOS and Mac) → paywall → notes, if review asks how to reach a
 feature.
 
-#### macOS, for any build made from `main` after 2026-11-13
+#### macOS 4.1.0 (50)
+
+The notes submitted with Mac 4.1.0. They replace the 4.0.0 block above for this
+version: Ask and Read the screens are in, so "no image is ever sent" and "no AI
+runs during a recording" are gone. The iOS notes are unchanged for 2.0.1.
+
+**3964 / 4000 characters**
+
+```text
+ENTITLEMENT com.apple.security.network.server
+noFriction listens in two cases only. (1) Sync with your iPhone (Pro): when the user turns on Settings > Sync and pairs an iPhone, the Mac advertises a Bonjour service (_nofriction._tcp) and accepts TLS connections from the paired iPhone on the local network; no server. It runs only while Sync is on and Pro is active, refuses non-local addresses and authenticates each session with a secret set at pairing. (2) Sign in with OpenRouter (Settings > AI): while the user signs in, a listener on 127.0.0.1 waits for the browser's OAuth callback, then closes (10-minute limit).
+
+No noFriction account or login is required. The app provides no hosted AI model or cloud-provider account.
+
+SETUP AND RECORDING
+1. Setup is one screen: allow Microphone, Screen & System Audio Recording and Calendar. The speech model downloads in the background; later transcription works offline.
+2. On Record, click Record. Keep Meeting, pick a length (No limit is fine) and click Start recording.
+3. Type a few words in Type a note under the transcript and press Return. Click Mark, or press Control-Option-Command-M with another app in front.
+4. With another app in front, press Control-Option-Command-N: one text field opens over it; Return keeps the line as a note. These are registered hot keys (no Accessibility access, no key monitoring) and never start a recording.
+5. Click Stop. The recording opens on Notes.
+
+NEW IN 4.1.0
+• Ask (Pro): a panel beside the live transcript, and Control-Option-Command-A from another app. It sends one question the user types, with the recording's recent lines, notes and attendee names, to the user's own AI; same consent and Pro check as Make notes. Nothing is asked by itself. Answers in Ask and Chat appear as they are written.
+• Read the screens (Pro, Notes > On the screens): a picture of a screen or photo is sent to the user's own AI only when they press it; a dialog first shows each picture and the destination, and only the ticked ones go. Nothing else sends an image.
+• No screenshot is taken while a password app or a private browser window is in front.
+
+FROM 4.0.0
+• Up next: a card on Record offers a calendar event that is starting, a notebook usually recorded at this time, or a call when a call app starts using the microphone (the app asks macOS which apps hold the microphone; it reads no content).
+• Record by itself (Settings > Recording) is off by default; the menu-bar icon shows a recording is on.
+• Fill in the blanks (Pro, only when pressed) adds to the notes. Notifications are local.
+
+PRO AND RESTORE
+6. Settings (gear) > Subscription offers plans, Restore Purchases and Manage subscription. Without Pro, an AI action, Make lesson, Sync or Export to Obsidian opens the paywall naming that feature. Product IDs: com.nofriction.meetings.pro.monthly and com.nofriction.meetings.pro.yearly. All AI features, including local AI, require Pro; recording, transcription and typed notes don't.
+
+OFFLINE AI PATH
+On a Mac with macOS 26+ and Apple Intelligence enabled, the app uses Apple's on-device model; no cloud account or API key needed. Or Settings > AI > Find AI on this Mac finds a local OpenAI-compatible server (it asks 127.0.0.1 only, on click). Then Notes > Make notes, or ask in Chat. No AI runs by itself during a recording.
+
+REVIEW, MAKE LESSON AND EXPORT
+7. A Class recording offers Study guide and Make lesson (both Pro); taking lessons, including the built-in course, is free and offline. Export… (Command-E) is free; its AI buttons need Pro.
+
+AI CONNECTION
+Settings > AI: Sign in with OpenRouter (OAuth PKCE; the user's own key goes to the Keychain), Paste key and connect, or provider cards that only fill in the endpoint and model. The user supplies their own key or sign-in, nothing is sent until they consent, and no provider is active by default. Connect and Test connection send only the word "Hi". The speech model is a data file (Whisper weights), not code.
+```
+
+#### macOS, for any build made from `main` after 2026-11-13 (history: how the 4.1.0 notes were derived)
 
 Mac 4.0.0 (49) was built before Read the screens (#104) and the capture
 rule (#107) were merged, and the notes above are right for it. **A later

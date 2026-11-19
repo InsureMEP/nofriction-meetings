@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 On `main`, not in a build yet.
 
+## [Mac 4.1.0 (50) · iPhone and iPad 2.0.1 (15)] - 2026-11-18
+
+Built from `main` and submitted for review on 2026-11-18
+(docs/RELEASE_STATUS.md). On the Mac this is everything merged since
+4.0.0 (49): Read the screens, the capture rule, Ask and Ask from any
+app, the recording's page, and streamed answers. On iPhone and iPad it
+is 2.0.0 plus streamed Chat answers. Entries for #104 to #111 are
+under 4.0.0 below, where they were written while they waited for a build.
+
 ### Changed
 - **Answers appear as they are written.** On the Mac, Chat, the Ask panel
   beside a live recording and the Ask card over other apps (⌃⌥⌘A) show the

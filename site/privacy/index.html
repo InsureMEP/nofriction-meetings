@@ -45,7 +45,7 @@
 <main id="content" class="doc">
 
   <h1>Privacy Policy</h1>
-  <p class="meta">Effective October 23, 2026 · applies to noFriction for iPhone, iPad, Apple Watch and Mac</p>
+  <p class="meta">Effective November 18, 2026 · applies to noFriction for iPhone, iPad, Apple Watch and Mac</p>
 
   <p class="lede"><strong>noFriction doesn't collect any data from you.</strong> Recording and transcription work offline, and nothing leaves your device unless you want it to. noFriction has no app accounts and runs no servers for your recordings or for AI. Your recordings are stored on your device. If you choose optional AI with your own endpoint, the app sends content straight to the destination you set up; the details are below.</p>
 
@@ -59,7 +59,7 @@
   <h2>What is stored on your device</h2>
   <ul>
     <li>Audio recordings and transcripts. Transcription runs on your device: Apple's on-device speech recognition on iPhone and iPad, and a Whisper speech model on the Mac. Recordings made on Apple Watch are transcribed on your iPhone.</li>
-    <li>Each recording's details: its title, its type (Meeting, Class or Personal), its Notebook (such as "Acme project", "BIO 101" or "Health"), the length you chose, notes, photos, screenshots and the people list. On the Mac, screenshots are taken only of the displays or windows you choose, while you record, and any text the Mac reads from them is read and kept on your Mac.</li>
+    <li>Each recording's details: its title, its type (Meeting, Class or Personal), its Notebook (such as "Acme project", "BIO 101" or "Health"), the length you chose, notes, photos, screenshots and the people list. On the Mac, screenshots are taken only of the displays or windows you choose, while you record, and any text the Mac reads from them is read and kept on your Mac. From Mac version 4.1, no screenshot is taken while a password app or a private browser window is in front. The Mac recognises these from a fixed list of app names and window titles, so an app that isn't on the list is not recognised, and Safari doesn't mark private windows in their titles.</li>
     <li>Moment marks: Important, Question, and the third mark for the recording's type (Follow up, On the test or Remember), with their times and any note you add.</li>
     <li>Links: the web addresses said in a recording, which the app finds in its transcript, and the references you add (an address with an optional title and note). noFriction never visits these pages, not even for a title or an icon.</li>
     <li>AI notes and review guides (summary, key terms, flashcards, a practice quiz and questions to ask), once you make them.</li>
@@ -105,10 +105,11 @@
     If you choose <strong>Sign in with OpenRouter</strong>, you sign in on OpenRouter's own website (in your browser, or Apple's sign-in sheet on iPhone and iPad). OpenRouter then issues an API key from your own OpenRouter account and hands it back to the app through a one-time link that only works on your device; the app stores that key in the Keychain like any other. noFriction never sees your OpenRouter password, and OpenRouter's privacy policy governs your account.
     On the Mac, <strong>Find AI on this Mac</strong> asks AI servers already running on your Mac (such as Ollama or LM Studio) which models they have; it doesn't leave your Mac.
     That content can include the transcript, the recording's title, type and Notebook, your moment marks and their notes, attendee names, email addresses, companies and roster details, calendar invite notes and, for screen features on the Mac, screenshots. Deleted and stricken words are never sent.
+    From Mac version 4.1, a picture (a screenshot or a photo) is sent by one feature only, <strong>Read the screens</strong>: you press it, a dialog shows every picture that would go and where it would go, and only the ones you leave ticked are sent, one request each, with no text from the recording. Screens that look private (mail, messages, password apps, private browser windows) are not offered, by the same fixed list; look at each picture before you send it. What your AI reads is kept as text beside the screen on your Mac, and you can remove it.
     The app asks for your permission before it first sends recording content to a public endpoint, and you can revoke that permission in Settings. Changing the endpoint clears its previous consent and stored key; a new destination must be reviewed again.
   </p>
   <p>
-    On the Mac, once you've connected and approved an endpoint, noFriction uses it automatically to make notes after a recording longer than six minutes. You can turn that off in Settings → AI → Make notes automatically. From version 3.7, no AI runs while you record; earlier Mac versions could also show live insights during a recording, with their own switch in Settings → AI Engine.
+    On the Mac, once you've connected and approved an endpoint, noFriction uses it automatically to make notes after a recording longer than six minutes. You can turn that off in Settings → AI → Make notes automatically. From version 3.7, no AI runs by itself while you record; earlier Mac versions could also show live insights during a recording, with their own switch in Settings → AI Engine. From Mac version 4.1, <strong>Ask</strong> answers a question you type about the recording that is running, in the app or from the field that Control-Option-Command-A opens over another app. Only when you send a question, it sends your AI the last minutes and matching earlier lines of the transcript (each marked as coming from your microphone or the computer's audio), your notes and marks, the calendar event's title, place and notes, its people's names and companies (not their email addresses), and notes from related earlier recordings. The panel's <strong>What it's given</strong> lists this.
     If Apple's on-device model is available and no endpoint is selected, the Mac can use Apple's model instead; that inference runs on your Mac. Unsupported previously saved provider presets remain unavailable and do not select another remote service.
   </p>
   <p>
