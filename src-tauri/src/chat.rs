@@ -12,8 +12,9 @@
 //!   and time. No embeddings, no index service.
 //! - AI: one request through the same `Completer` the Review guide uses
 //!   (`ai::complete_text`: consent, endpoint policy and, in the Mac App
-//!   Store build, noFriction Pro). The client has no streaming; the UI
-//!   shows a thinking state.
+//!   Store build, noFriction Pro). The answer is streamed: the window gets
+//!   the text so far while the model writes (`STREAM_EVENT`), then the
+//!   stored turn.
 //! - Answer: Markdown with `[n]` citations; `citations` maps each number to
 //!   the passage (recording, time, excerpt). The UI renders the text as
 //!   text, never HTML.
@@ -33,7 +34,7 @@ pub mod retrieval;
 mod tests;
 
 use crate::ai::{AiError, Msg, Opts};
-use crate::study::{Completer, LiveCompleter};
+use crate::study::Completer;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqliteConnection;
@@ -107,6 +108,60 @@ pub async fn ensure_schema(conn: &mut SqliteConnection) -> Result<(), sqlx::Erro
     Ok(())
 }
 
+/// Purges, counted per library (the database file, so a purge in an app
+/// backup or in another test's database is not this one's). An answer
+/// takes seconds to write: one that was being written while text was
+/// removed from a recording may hold that text, so it stops being shown
+/// (`stream_sink`) and is not kept (`ask_as`).
+static PURGES: once_cell::sync::Lazy<parking_lot::Mutex<std::collections::HashMap<String, u64>>> =
+    once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
+
+/// The file of the database this connection is on ("" if it can't be read).
+async fn library_of(conn: &mut SqliteConnection) -> String {
+    sqlx::query_scalar::<_, String>("SELECT file FROM pragma_database_list WHERE name = 'main'")
+        .fetch_optional(&mut *conn)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+}
+
+/// Whether text has been removed from any recording of a library (Delete,
+/// Strike, a recording deleted) since this was started.
+#[derive(Debug, Clone)]
+pub struct PurgeWatch {
+    library: String,
+    mark: u64,
+}
+
+impl PurgeWatch {
+    pub async fn start(conn: &mut SqliteConnection) -> Self {
+        let library = library_of(conn).await;
+        let mark = PURGES.lock().get(&library).copied().unwrap_or(0);
+        Self { library, mark }
+    }
+    pub async fn of(pool: &Pool<Sqlite>) -> Result<Self, String> {
+        let mut conn = pool.acquire().await.map_err(err("Database busy"))?;
+        Ok(Self::start(&mut conn).await)
+    }
+    pub fn purged(&self) -> bool {
+        PURGES.lock().get(&self.library).copied().unwrap_or(0) != self.mark
+    }
+}
+
+/// What a question gets when text was removed while it was being answered.
+pub const PURGED_MEANWHILE: &str =
+    "Text was removed from a recording while this was being answered, so the answer wasn't kept. Ask again.";
+
+/// Wait for a write that is being committed right now (a Delete or Strike
+/// counts its purge before it commits): after this, what is read is what
+/// that write left.
+async fn wait_for_writers(conn: &mut SqliteConnection) -> Result<(), String> {
+    sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await.map_err(err("Database busy"))?;
+    sqlx::query("COMMIT").execute(&mut *conn).await.map_err(err("Database busy"))?;
+    Ok(())
+}
+
 async fn has_table(conn: &mut SqliteConnection, name: &str) -> Result<bool, sqlx::Error> {
     let exists: Option<i64> = sqlx::query_scalar("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
         .bind(name)
@@ -126,6 +181,9 @@ pub async fn purge_for_meeting(conn: &mut SqliteConnection, meeting_id: &str) ->
     // An answer about this recording that is still on the card over another
     // app (quick_note.rs) is one more copy: it goes first
     crate::quick_note::answer_purged(meeting_id);
+    // And one still being written stops being shown and is not kept
+    let library = library_of(conn).await;
+    *PURGES.lock().entry(library).or_insert(0) += 1;
     if !has_table(conn, "chat_message_sources").await? || !has_table(conn, "chat_messages").await? {
         return Ok(0);
     }
@@ -470,6 +528,9 @@ async fn ask_as(
     in_the_moment: Option<live::Mode>,
 ) -> Result<ChatTurn, String> {
     let mut conn = pool.acquire().await.map_err(err("Database busy"))?;
+    // Before anything of a recording is read
+    wait_for_writers(&mut conn).await?;
+    let watch = PurgeWatch::start(&mut conn).await;
     let (existing, hist) = match thread_id {
         Some(id) => {
             let t = get_thread_conn(&mut conn, id).await?;
@@ -482,6 +543,11 @@ async fn ask_as(
         (Some(mode), Some(meeting_id)) => live::answer(&mut conn, c, meeting_id, &hist, question, Utc::now(), mode).await?,
         _ => answer(&mut conn, c, scope, &hist, question).await?,
     };
+    // The model took its time. If text was removed from a recording
+    // meanwhile, this answer may hold it: it is not kept
+    if watch.purged() {
+        return Err(PURGED_MEANWHILE.into());
+    }
     let now = Utc::now().to_rfc3339();
     let mut tx = conn.begin().await.map_err(err("Database busy"))?;
     let thread = match existing {
@@ -585,6 +651,12 @@ async fn ask_as(
             .await
             .map_err(err("Couldn't save the chat"))?;
     }
+    // The write lock is this transaction's now. A purge has either finished
+    // (and is counted: nothing is kept) or runs after this commit and
+    // deletes the answer by its sources
+    if watch.purged() {
+        return Err(PURGED_MEANWHILE.into());
+    }
     tx.commit().await.map_err(err("Couldn't save the chat"))?;
     Ok(ChatTurn { thread, user, assistant })
 }
@@ -593,10 +665,88 @@ async fn ask_as(
 // Tauri commands
 // ═══════════════════════════════════════════════════════════════════════════
 
+/// `{ requestId, text }`: the answer to a question while it is written.
+/// `text` is the whole answer so far, cleaned like the finished one. The
+/// finished turn is the command's own result; this event carries nothing
+/// that isn't in it, and is never logged.
+pub const STREAM_EVENT: &str = "chat_stream";
+
+/// Lets a call through at most once per `every` (the first one at once).
+/// An answer so far replaces the one before it, so a skipped one is no loss.
+pub struct Throttle {
+    every: std::time::Duration,
+    last: parking_lot::Mutex<Option<std::time::Instant>>,
+}
+
+impl Throttle {
+    pub fn new(every: std::time::Duration) -> Self {
+        Self { every, last: parking_lot::Mutex::new(None) }
+    }
+    pub fn ready(&self) -> bool {
+        let mut last = self.last.lock();
+        if last.is_some_and(|t| t.elapsed() < self.every) {
+            return false;
+        }
+        *last = Some(std::time::Instant::now());
+        true
+    }
+}
+
+/// Where an answer goes while it is written: `show` gets the answer so far
+/// (cleaned like the finished one), a few times a second at most. Once text
+/// was removed from a recording of the library (`watch`) the answer may
+/// hold it: `show` gets one empty answer, which takes it off the screen,
+/// and then nothing more (`ask_as` drops the turn).
+pub fn stream_sink(every: std::time::Duration, watch: PurgeWatch, show: impl Fn(String) + Send + Sync) -> impl Fn(&str) + Send + Sync {
+    stream_sink_until(every, move || watch.purged(), show)
+}
+
+/// `stream_sink` with any "stop now".
+pub fn stream_sink_until(
+    every: std::time::Duration,
+    stop: impl Fn() -> bool + Send + Sync,
+    show: impl Fn(String) + Send + Sync,
+) -> impl Fn(&str) + Send + Sync {
+    let throttle = Throttle::new(every);
+    let stopped = std::sync::atomic::AtomicBool::new(false);
+    move |so_far: &str| {
+        if stopped.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        if stop() {
+            // What is on screen of it goes too: an empty answer so far
+            stopped.store(true, std::sync::atomic::Ordering::SeqCst);
+            show(String::new());
+            return;
+        }
+        if !throttle.ready() {
+            return;
+        }
+        let text = prompt::clean_partial(so_far);
+        if !text.is_empty() {
+            show(text);
+        }
+    }
+}
+
 pub mod commands {
     use super::*;
+    use crate::study::StreamingCompleter;
     use crate::AppState;
-    use tauri::State;
+    use tauri::{AppHandle, Emitter, State};
+
+    /// The window redraws the answer this often at most while it is written
+    const STREAM_EVERY: std::time::Duration = std::time::Duration::from_millis(40);
+
+    /// The sink for a question asked with a `requestId`: the answer so far
+    /// goes to the window as `STREAM_EVENT`.
+    fn to_window(app: AppHandle, watch: PurgeWatch, request_id: Option<String>) -> impl Fn(&str) + Send + Sync {
+        stream_sink(STREAM_EVERY, watch, move |text| {
+            if let Some(id) = &request_id {
+                let _ = app.emit(STREAM_EVENT, serde_json::json!({ "requestId": id, "text": text }));
+            }
+        })
+    }
 
     /// This recording is the one being recorded right now.
     fn recording_now(state: &AppState, meeting_id: &str) -> bool {
@@ -606,37 +756,50 @@ pub mod commands {
     /// Ask a question in a thread (None starts a new one). Consent and Pro
     /// are checked by `ai::complete_text`; the UI turns their errors into
     /// the dialogs.
+    ///
+    /// `request_id`: the window's name for this question. The answer so far
+    /// is sent to it as `STREAM_EVENT` while the model writes; without one,
+    /// nothing is sent until the turn is returned.
     #[tauri::command(rename_all = "camelCase")]
     pub async fn chat_ask(
+        app: AppHandle,
         state: State<'_, AppState>,
         thread_id: Option<String>,
         scope: Scope,
         message: String,
+        request_id: Option<String>,
     ) -> Result<ChatTurn, String> {
         log::info!("Chat: question of {} chars, scope {}", message.chars().count(), scope.kind.as_str());
+        let sink = to_window(app, PurgeWatch::of(state.database.pool()).await?, request_id);
+        let c = StreamingCompleter { on_text: &sink };
         // One recording: answered the way Ask does (its people, the user's
         // notes, the last minutes), and from that recording alone: the user
         // narrowed the chat to it
         if let (ScopeKind::Meeting, Some(meeting_id)) = (scope.kind, scope.value.as_deref()) {
             let mode = live::Mode { recording: recording_now(&state, meeting_id), related: false, glance: false };
-            return ask_recording(state.database.pool(), &LiveCompleter, thread_id.as_deref(), meeting_id, &message, mode).await;
+            return ask_recording(state.database.pool(), &c, thread_id.as_deref(), meeting_id, &message, mode).await;
         }
-        ask(state.database.pool(), &LiveCompleter, thread_id.as_deref(), &scope, &message).await
+        ask(state.database.pool(), &c, thread_id.as_deref(), &scope, &message).await
     }
 
     /// Ask about one recording in the moment, also while it is still being
     /// recorded. Only ever on the user's own question: nothing calls this
     /// by itself. Consent and Pro as for `chat_ask`.
+    /// `request_id` as for `chat_ask`.
     #[tauri::command(rename_all = "camelCase")]
     pub async fn chat_ask_recording(
+        app: AppHandle,
         state: State<'_, AppState>,
         thread_id: Option<String>,
         meeting_id: String,
         message: String,
+        request_id: Option<String>,
     ) -> Result<ChatTurn, String> {
         log::info!("Ask: question of {} chars about one recording", message.chars().count());
         let mode = live::Mode { recording: recording_now(&state, &meeting_id), related: true, glance: false };
-        ask_recording(state.database.pool(), &LiveCompleter, thread_id.as_deref(), &meeting_id, &message, mode).await
+        let sink = to_window(app, PurgeWatch::of(state.database.pool()).await?, request_id);
+        let c = StreamingCompleter { on_text: &sink };
+        ask_recording(state.database.pool(), &c, thread_id.as_deref(), &meeting_id, &message, mode).await
     }
 
     /// What a question about this recording would draw on (no AI call).

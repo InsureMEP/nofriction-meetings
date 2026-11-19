@@ -25,6 +25,7 @@ type Args = Record<string, any> | undefined;
 //   ?setup=1  first run: nothing allowed yet, the speech model downloading
 //   ?pro=0    not subscribed: AI calls fail with PRO_REQUIRED (the paywall)
 //   ?ai=none  no AI set up yet
+//   ?stream=slow|hold|off  how a chat answer arrives (default: streamed fast)
 //   ?match=1  the newest recording's row offers to be named after an event
 //   ?people=N a recording's calendar event with N other people (default 3;
 //             10 is the big-invite case); ?people=none no event matched;
@@ -1417,14 +1418,12 @@ function handle(cmd: string, args: Args): unknown {
         case "chat_ask":
             if (!isPro) throw "PRO_REQUIRED: noFriction Pro unlocks the AI features.";
             if (AI_OPENAI && !openaiConsent) throw "CONSENT_REQUIRED:custom";
-            return chatAnswer(a.threadId ?? null, a.scope, String(a.message ?? ""));
+            return streamedAnswer(a.requestId, chatAnswer(a.threadId ?? null, a.scope, String(a.message ?? "")));
         // Ask: a question about the recording you are in (chat/live.rs)
         case "chat_ask_recording":
             if (!isPro) throw "PRO_REQUIRED: noFriction Pro unlocks the AI features.";
             if (AI_OPENAI && !openaiConsent) throw "CONSENT_REQUIRED:custom";
-            return new Promise((resolve) =>
-                window.setTimeout(() => resolve(chatAnswer(a.threadId ?? null, { kind: "meeting", value: a.meetingId }, String(a.message ?? ""))), 900),
-            );
+            return streamedAnswer(a.requestId, chatAnswer(a.threadId ?? null, { kind: "meeting", value: a.meetingId }, String(a.message ?? "")));
         case "chat_recording_knows": {
             const running = live && live.id === a.meetingId;
             return {
@@ -1538,6 +1537,35 @@ function scopeSummary(scope: any) {
         notebooks: [...new Set(ms_.map((m) => m.class_name).filter(Boolean))],
         kinds: [...new Set(ms_.map((m) => m.recording_kind))],
     };
+}
+
+/**
+ * An answer the way the app gets it: a wait for the first words, then the
+ * text so far as `chat_stream` events while it is "written", then the turn.
+ * `?stream=slow` writes it slowly enough to look at; `?stream=hold` stops
+ * halfway and never finishes (for a picture of an answer being written);
+ * `?stream=off` sends no events, like a server that can't stream.
+ */
+function streamedAnswer<T extends { assistant: { content: string } }>(requestId: string | undefined, turn: T): Promise<T> {
+    const how = new URLSearchParams(window.location.search).get("stream");
+    const text = turn.assistant.content;
+    if (!requestId || how === "off") return new Promise((resolve) => window.setTimeout(() => resolve(turn), 900));
+    const words = text.split(/(?<=\s)/);
+    const step = how === "slow" || how === "hold" ? 110 : 35;
+    const stopAt = how === "hold" ? Math.ceil(words.length * 0.55) : words.length;
+    return new Promise((resolve) => {
+        let n = 0;
+        const tick = () => {
+            n += 1;
+            emitEvent("chat_stream", { requestId, text: words.slice(0, n).join("").trimEnd() });
+            if (n >= stopAt) {
+                if (how !== "hold") window.setTimeout(() => resolve(turn), step);
+                return;
+            }
+            window.setTimeout(tick, step);
+        };
+        window.setTimeout(tick, 600);
+    });
 }
 
 function chatAnswer(threadId: string | null, scope: any, message: string) {

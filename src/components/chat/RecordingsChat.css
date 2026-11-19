@@ -240,6 +240,43 @@
 }
 .rc-cite:hover { background: rgba(250, 204, 21, 0.25); }
 .rc-cite--dead { border-style: dashed; color: #737373; background: transparent; cursor: default; }
+/* In an answer still being written: the number, not yet a button */
+.rc-cite--pending { cursor: default; }
+.rc-cite--pending:hover { background: rgba(250, 204, 21, 0.1); }
+
+/* An answer while it is written: a caret after the last word */
+.rc-md--streaming > :last-child::after {
+    content: "";
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    margin-left: 2px;
+    vertical-align: -2px;
+    background: #facc15;
+    animation: rcCaret 1s steps(2, start) infinite;
+}
+.rc-md--streaming > ul:last-child::after,
+.rc-md--streaming > ol:last-child::after,
+.rc-md--streaming > pre:last-child::after { content: none; }
+.rc-md--streaming > ul:last-child > li:last-child::after,
+.rc-md--streaming > ol:last-child > li:last-child::after {
+    content: "";
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    margin-left: 2px;
+    vertical-align: -2px;
+    background: #facc15;
+    animation: rcCaret 1s steps(2, start) infinite;
+}
+@keyframes rcCaret { to { visibility: hidden; } }
+/* The bubble is already there when the words start: it doesn't slide in twice */
+.rc-msg--streaming { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+    .rc-md--streaming > :last-child::after,
+    .rc-md--streaming > ul:last-child > li:last-child::after,
+    .rc-md--streaming > ol:last-child > li:last-child::after { animation: none; }
+}
 
 /* Sources under an answer */
 .rc-sources { margin-top: 8px; padding: 0 4px; }

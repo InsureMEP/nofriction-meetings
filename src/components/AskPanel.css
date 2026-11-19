@@ -135,7 +135,9 @@
   line-height: 1.5;
 }
 
-.ask__answer .rc-msg__bubble {
+/* Plain text in the panel, not Chat's bubble: the selector has to outweigh
+   Chat's `.rc-msg.assistant .rc-msg__bubble`, or its border and fill stay */
+.ask .ask__answer.rc-msg .rc-msg__bubble {
   padding: 0;
   border: 0;
   background: none;

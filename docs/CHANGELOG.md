@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 On `main`, not in a build yet.
 
 ### Changed
+- **Answers appear as they are written (Mac).** Chat, the Ask panel beside
+  a live recording and the Ask card over other apps (⌃⌥⌘A) show the answer
+  word by word instead of waiting for the whole of it. With Apple's
+  on-device model the first words come after one to four seconds,
+  depending on how much of the recording the question draws on. Your own
+  AI endpoint streams the same way; one that can't is read as before.
+  Notes and the Review guide are made as before.
 - **A recording opens on its content (Mac).** The calendar event and its
   attendees are one chip beside the notebook ("Maya, Jordan +8"); click it
   for the event, everyone on the invite, the join link and the invite's
@@ -35,6 +42,8 @@ On `main`, not in a build yet.
   is the app's one accent.
 
 ### Fixed
+- **Ask answers are plain text in the panel (Mac).** They had a box drawn
+  tight around them, left over from Chat's bubbles.
 - **A recording opens from the keyboard (Mac).** In Recordings, Tab
   reaches a recording's name and Return or Space opens it; VoiceOver can
   press it.

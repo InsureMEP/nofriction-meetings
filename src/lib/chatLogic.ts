@@ -151,6 +151,25 @@ export function parseInline(text: string): Inline[] {
 }
 
 /**
+ * An answer still being written, made fit to render. Only its last line is
+ * unfinished: emphasis or code opened on it is closed, so the words are
+ * bold while they arrive instead of starred, and a mark that has only
+ * begun (a lone `*`, `[1`) waits for the rest. Inside an open code fence
+ * the text is left alone.
+ */
+export function partialAnswer(text: string): string {
+    const fences = text.split("\n").filter((l) => l.trim().startsWith("```")).length;
+    if (fences % 2 === 1) return text;
+    const cut = text.lastIndexOf("\n") + 1;
+    let last = text.slice(cut);
+    last = last.replace(/\[[\d,\s]*$/, "");
+    if (/(^|[^*])\*$/.test(last)) last = last.slice(0, -1);
+    if ((last.match(/\*\*/g)?.length ?? 0) % 2 === 1) last = last.endsWith("**") ? last.slice(0, -2) : `${last}**`;
+    if ((last.match(/`/g)?.length ?? 0) % 2 === 1) last = last.endsWith("`") ? last.slice(0, -1) : `${last}\``;
+    return text.slice(0, cut) + last;
+}
+
+/**
  * The block structure of an answer: paragraphs, headings, bullet and
  * numbered lists, fenced code. Output is data for React to render as text;
  * no HTML is ever produced.

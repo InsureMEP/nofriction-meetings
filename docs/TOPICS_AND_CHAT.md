@@ -163,10 +163,10 @@ Notes-tab editor), `src/components/chat/` (`RecordingsChat.tsx`,
   … SOURCES: [n] Title — date, Type, Notebook X — said at m:ss / marked
   at m:ss / from the saved notes … QUESTION: …`. `max_tokens` ≤ 900,
   scaled down for small windows. One request through `study::Completer`
-  (`LiveCompleter` → `ai::complete_text`: consent, endpoint policy, Pro in
-  the Mac App Store build); no streaming in the client, so the UI shows a
-  thinking state. The answer is `clean_answer`ed (think blocks, a wrapping
-  fence) and stored with `citations` = every passage sent (`Citation { n,
+  (`StreamingCompleter` → `ai::complete_text_stream`: consent, endpoint
+  policy, Pro in the Mac App Store build), streamed: the answer appears
+  while it is written (see "Streamed answers" below). The finished answer
+  is `clean_answer`ed (think blocks, a wrapping fence) and stored with `citations` = every passage sent (`Citation { n,
   meeting_id, title, timestamp_ms, excerpt, source }`). `ChatMarkdown`
   renders a Markdown subset (paragraphs, headings capped at h3, bullet and
   numbered lists, bold, code, fenced code) as React text nodes, never
@@ -188,6 +188,57 @@ Notes-tab editor), `src/components/chat/` (`RecordingsChat.tsx`,
   answers that drew on this recording: deleted") and in
   `DatabaseManager::delete_meeting`. Questions and answers are never
   logged.
+
+### Streamed answers (2026-11-18)
+
+The owner: "the AI is slow, it needs to be streaming text." An answer used
+to appear only when the model had finished it. Measured on the owner's Mac
+with Apple's on-device model (`cargo run --example stream_answer`, and the
+ignored tests in `store.rs`): the first words come after about half a
+second for a small prompt and 2.5 to 4 seconds for a full window; the whole
+answer takes two to several times that. The wait before the first words is
+the model reading the prompt, which streaming does not shorten.
+
+- **Where.** Chat, the Ask panel, and the Ask card over other apps. Notes,
+  the Review guide, topics, Fill in the blanks, lessons and Read the
+  screens are not streamed: their answers are JSON the app parses whole.
+- **Client (`ai/client.rs`).** `complete_stream` / `run_stream` send the
+  same request as `complete` with `stream: true` and read server-sent
+  events (`SseText`: OpenAI-compatible chunks and Anthropic Messages
+  events; reasoning and thinking deltas are skipped). The same Pro gate,
+  target resolution, consent, timeout, 4 MB cap and key redaction. A
+  server that answers with plain JSON is read whole; one that refuses
+  `stream` (a 400 naming it) is asked again without it. Apple's on-device
+  model streams through `nf_apple_generate_stream` in the Swift bridge
+  (`LanguageModelSession.streamResponse`).
+- **The sink.** The caller's `Sink` gets the whole answer so far each time
+  it grows, never a fragment, with think blocks hidden
+  (`visible_so_far`). `chat::stream_sink` cleans it like the finished
+  answer (`prompt::clean_partial`), lets it through a few times a second
+  (40 ms for the window, 90 ms for the card) and stops at a purge (below).
+- **To the window.** `chat_ask` and `chat_ask_recording` take a
+  `requestId` from the UI and emit `chat_stream { requestId, text }`.
+  `lib/chat.ts::withStream` listens for its own id; `StreamingAnswer`
+  renders the text so far with the same Markdown renderer
+  (`partialAnswer` closes a `**` or `` ` `` opened on the last line and
+  holds back a `[1` that hasn't finished), a caret after the last word,
+  and citation numbers that become chips when the stored turn replaces
+  it. The command's result is still the stored turn; the event carries
+  nothing that isn't in it.
+- **To the card.** `quick_note.rs::partial_on_main` puts the answer so far
+  on the card under the same conditions as the finished one (that
+  question still with the AI, the card up for that recording, no purge).
+- **A purge while it is written.** `purge_for_meeting` counts every purge
+  of its library (`PURGES`, by database file). A sink made before it shows
+  one empty answer (which takes the text off the window and the card) and
+  nothing after, and `ask_as` does not keep or return the finished answer
+  ("Text was removed from a recording while this was being answered…").
+  Any purge in the library counts, not only one of a recording the answer
+  drew on. The answer so far is in memory only and is never logged.
+- **A stream that breaks.** A body that ends without a finish reason or an
+  end marker is an error ("Couldn't reach your AI"), never half an answer
+  kept as a whole one.
+- **Not done.** The iPhone and iPad still wait for the whole answer.
 
 ### Ask (2026-11-17)
 

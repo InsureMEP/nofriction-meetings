@@ -205,6 +205,14 @@ these rules apply.
     what is given ("What it's given"); keep that list true when the
     context changes. Answers are chat messages with their sources, so
     Delete and Strike remove them (`chat::purge_for_meeting`).
+  - **Streamed answers are the same request, shown early** (Chat, the Ask
+    panel, the Ask card; docs/TOPICS_AND_CHAT.md "Streamed answers").
+    `ai::client::complete_stream` checks Pro and resolves the target
+    exactly as `complete` does; only `study::StreamingCompleter` calls it.
+    The sink gets the whole answer so far, never a fragment. That text is
+    in memory only: never log it, and `chat::stream_sink` stops showing it
+    when any recording's text is removed. Answers the app parses (notes,
+    the Review guide, topics, lessons, Read the screens) are not streamed.
   - **Ask from any app is the same one question** (`quick_note.rs`,
     ⌃⌥⌘A, File → Ask About This Recording, the menu-bar item; owner
     2026-11-18: "enhance these capabilities"). The note panel opens for a

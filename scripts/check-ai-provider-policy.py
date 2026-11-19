@@ -344,6 +344,37 @@ def audit(root):
                    r'let target = resolve\(kind\)\?;\s*if !allowed\(&target\.base_url, &target\.model\) \{\s*return Ok\(None\);\s*\}\s*'
                    r'run\(&target, msgs, opts\)', client_rs, re.S) is not None,
          'ai::client::complete_if must resolve once, ask `allowed` about that target, and send on the same target')
+    # --- Streamed answers (ai::client::complete_stream) ------------------------
+    # The same door as `complete`: the Pro gate first, one resolved target
+    # (so the same consent and URL rules), then the request. The answer so
+    # far goes to the window as one event from chat.rs, and is never logged.
+    need(re.search(r'pub async fn complete_stream\([^{]*\{\s*crate::entitlement::require_pro\(\)\.await\?;\s*'
+                   r'let target = resolve\(kind\)\?;\s*run_stream\(&target, msgs, opts, sink\)\.await\s*\}', client_rs, re.S) is not None,
+         'ai::client::complete_stream must check Pro, resolve the target once and stream on that target')
+    need(len(re.findall(r'\brequire_pro\(\)', client_rs)) == 3,
+         'ai::client has three ways in (complete, complete_stream, complete_if) and each checks Pro')
+    chat_rs = (root / 'src-tauri/src/chat.rs').read_text()
+    need(len(re.findall(r'emit\(STREAM_EVENT', chat_rs)) == 1,
+         'chat.rs sends the answer so far to the window in one place (chat_stream)')
+    sink = re.search(r'pub fn stream_sink_until\(.*?\n\}\n', chat_rs, re.S)
+    need(sink is not None and 'log::' not in sink.group(0) and 'if stop()' in sink.group(0),
+         'chat::stream_sink_until never logs an answer, and stops when text was removed from a recording')
+    purge_fn = re.search(r'pub async fn purge_for_meeting\(.*?\n\}\n', chat_rs, re.S)
+    need(purge_fn is not None and re.search(r'PURGES\.lock\(\)\.entry\(library\)\.or_insert\(0\) \+= 1', purge_fn.group(0)) is not None,
+         'chat::purge_for_meeting must count the purge, so an answer being written stops being shown and is not kept')
+    ask_fn = re.search(r'\nasync fn ask_as\(.*?\n\}\n', chat_rs, re.S)
+    need(ask_fn is not None
+         and re.search(r'wait_for_writers\(&mut conn\)\.await\?;\s*let watch = PurgeWatch::start\(&mut conn\)\.await;', ask_fn.group(0)) is not None
+         and len(re.findall(r'if watch\.purged\(\) \{\s*return Err\(PURGED_MEANWHILE\.into\(\)\);', ask_fn.group(0))) == 2
+         and re.search(r'if watch\.purged\(\) \{\s*return Err\(PURGED_MEANWHILE\.into\(\)\);\s*\}\s*tx\.commit\(\)', ask_fn.group(0)) is not None,
+         'chat::ask_as must not keep an answer written while text was removed: the watch starts before anything is read '
+         'and is checked after the model and again before the commit')
+    for path in sorted((root / 'src-tauri/src').rglob('*.rs')):
+        rel = path.relative_to(root).as_posix()
+        text = path.read_text()
+        if rel not in ('src-tauri/src/ai/client.rs', 'src-tauri/src/ai/mod.rs', 'src-tauri/src/study.rs'):
+            need(not re.search(r'\bcomplete_stream\(|\bcomplete_text_stream\(|\brun_stream\(', text),
+                 f'{rel}: streamed answers go through study::StreamingCompleter (Chat and Ask), nowhere else')
     # One caller in the UI: the confirmation's button
     ui_calls = []
     for path in sorted((root / 'src').rglob('*.ts*')):

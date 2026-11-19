@@ -36,6 +36,100 @@ fn answers_are_cleaned_and_titles_clipped() {
 }
 
 #[test]
+fn an_answer_being_written_is_cleaned_like_the_finished_one() {
+    assert_eq!(clean_partial("  They decided to **ship"), "They decided to **ship");
+    // A whole-answer fence: its opening line never shows, nor its closing one
+    assert_eq!(clean_partial("```"), "");
+    assert_eq!(clean_partial("```mark"), "");
+    assert_eq!(clean_partial("```markdown\n**Yes** [1]"), "**Yes** [1]");
+    assert_eq!(clean_partial("```markdown\n**Yes** [1]\n```"), "**Yes** [1]");
+    assert_eq!(clean_partial("```markdown\n**Yes** [1]\n```"), clean_answer("```markdown\n**Yes** [1]\n```"));
+    // Code inside a longer answer is not a wrapper
+    let mixed = "```js\nlet x = 1;\n```\nThat sets x.";
+    assert_eq!(clean_partial(mixed), mixed);
+}
+
+#[test]
+fn the_answer_so_far_is_shown_a_few_times_a_second_and_stops_at_a_purge() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Duration;
+    let t = Throttle::new(Duration::from_secs(3600));
+    assert!(t.ready(), "the first one at once");
+    assert!(!t.ready());
+    assert!(Throttle::new(Duration::ZERO).ready());
+
+    let shown: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let stop = Arc::new(AtomicBool::new(false));
+    let (to, flag) = (shown.clone(), stop.clone());
+    let sink = stream_sink_until(Duration::ZERO, move || flag.load(Ordering::SeqCst), move |text| to.lock().push(text));
+    sink("```markdown");
+    sink("```markdown\nShip");
+    sink("```markdown\nShip **Friday**");
+    assert_eq!(*shown.lock(), vec!["Ship", "Ship **Friday**"], "nothing while there is nothing to read");
+    // Text was removed from a recording: what is on screen goes, and no more comes
+    stop.store(true, Ordering::SeqCst);
+    sink("```markdown\nShip **Friday** [1]");
+    stop.store(false, Ordering::SeqCst);
+    sink("```markdown\nShip **Friday** [1], as agreed");
+    assert_eq!(*shown.lock(), vec!["Ship", "Ship **Friday**", ""]);
+
+    // The real sink: updates inside its interval are skipped, never queued
+    let shown: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let to = shown.clone();
+    let sink = stream_sink_until(Duration::from_secs(3600), || false, move |text| to.lock().push(text));
+    sink("One");
+    sink("One two");
+    assert_eq!(*shown.lock(), vec!["One"]);
+}
+
+/// A model that is still writing when text is removed from a recording.
+struct PurgedMeanwhile {
+    pool: Pool<Sqlite>,
+    meeting: &'static str,
+}
+
+#[async_trait::async_trait]
+impl Completer for PurgedMeanwhile {
+    async fn complete(&self, _msgs: Vec<Msg>, _opts: Opts) -> Result<String, AiError> {
+        let mut conn = self.pool.acquire().await.unwrap();
+        purge_for_meeting(&mut conn, self.meeting).await.unwrap();
+        Ok("They decided to **ship Friday** [1].".into())
+    }
+    fn context_tokens(&self) -> usize {
+        32_768
+    }
+}
+
+#[tokio::test]
+async fn an_answer_written_while_text_was_removed_is_not_kept() {
+    let f = fx().await;
+    let other = fx().await;
+    let mut conn = f.db.pool().acquire().await.unwrap();
+    let watch = PurgeWatch::start(&mut conn).await;
+    drop(conn);
+    let elsewhere = PurgeWatch::of(other.db.pool()).await.unwrap();
+    assert!(!watch.purged());
+    // The recording asked about, and one the answer never drew on: either
+    // way text left the library while the model was writing
+    for (meeting, question) in [("m2", "What did we decide about the launch?"), ("m3", "What did we decide about the launch?")] {
+        let c = PurgedMeanwhile { pool: f.db.pool().clone(), meeting };
+        let e = ask(f.db.pool(), &c, None, &Scope::notebook("Acme"), question).await.unwrap_err();
+        assert_eq!(e, PURGED_MEANWHILE);
+        let e = ask_recording(f.db.pool(), &c, None, "m2", question, live::Mode { recording: false, related: true, glance: false }).await.unwrap_err();
+        assert_eq!(e, PURGED_MEANWHILE);
+    }
+    assert!(list_threads(f.db.pool()).await.unwrap().is_empty(), "no thread, no question, no answer");
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM chat_messages").fetch_one(f.db.pool()).await.unwrap();
+    assert_eq!(n, 0);
+    assert!(watch.purged(), "and what was on screen of it goes");
+    // Another library (an app backup, another test) is not this one
+    assert!(!elsewhere.purged());
+    // Afterwards a question is answered and kept as ever
+    let turn = ask(f.db.pool(), &Mock::new("Friday [1]."), None, &Scope::notebook("Acme"), "When do we ship?").await.unwrap();
+    assert_eq!(turn.assistant.content, "Friday [1].");
+}
+
+#[test]
 fn scopes_parse_and_fall_back_to_all() {
     let s: Scope = serde_json::from_str(r#"{"kind": "notebook", "value": "BIO 101"}"#).unwrap();
     assert_eq!(s, Scope::notebook("BIO 101"));

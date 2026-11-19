@@ -7,6 +7,7 @@ import {
     defaultScope,
     parseAnswer,
     parseInline,
+    partialAnswer,
     sameScope,
     scopeLabel,
     suggestedQuestions,
@@ -91,6 +92,37 @@ test("answers split into paragraphs, headings, lists and code", () => {
     assert.deepEqual(citedNumbers("plain"), []);
     assert.deepEqual(parseAnswer(""), []);
     assert.deepEqual(parseAnswer("```\nopen"), [{ t: "pre", v: "open" }]);
+});
+
+test("an answer still being written renders without half-made marks", () => {
+    // Bold opened on the last line is closed, so the words arrive bold
+    assert.equal(partialAnswer("They decided to **ship Fri"), "They decided to **ship Fri**");
+    assert.deepEqual(parseInline(partialAnswer("They **ship Fri")), [{ t: "text", v: "They " }, { t: "bold", v: "ship Fri" }]);
+    // A mark that has only begun waits for the rest
+    assert.equal(partialAnswer("They decided to **"), "They decided to ");
+    assert.equal(partialAnswer("They decided to *"), "They decided to ");
+    assert.equal(partialAnswer("Ship Friday [1"), "Ship Friday ");
+    assert.equal(partialAnswer("Ship Friday [1, 2"), "Ship Friday ");
+    assert.equal(partialAnswer("Ship Friday ["), "Ship Friday ");
+    assert.equal(partialAnswer("Run `npm te"), "Run `npm te`");
+    assert.equal(partialAnswer("Run `"), "Run ");
+    // Finished lines and finished marks are left alone
+    assert.equal(partialAnswer("**Done** [1] and `x`"), "**Done** [1] and `x`");
+    assert.equal(partialAnswer("- **One** [1]\n- **Tw"), "- **One** [1]\n- **Tw**");
+    assert.equal(partialAnswer("See [the plan"), "See [the plan", "only a number is a citation");
+    assert.equal(partialAnswer("5 * 3 is"), "5 * 3 is");
+    assert.equal(partialAnswer(""), "");
+    // Inside an open code fence nothing is touched
+    assert.equal(partialAnswer("```\nlet x = a **"), "```\nlet x = a **");
+    assert.equal(partialAnswer("```\ncode\n```\nThen **bo"), "```\ncode\n```\nThen **bo**");
+    // Whatever arrives, the finished text is unchanged by it
+    const whole = "## Plan\n\nThey decided to **ship Friday** [1].\n\n- Budget: `10k` [2]\n- Owner: Bo";
+    assert.equal(partialAnswer(whole), whole);
+    for (let i = 0; i <= whole.length; i += 1) {
+        const blocks = parseAnswer(partialAnswer(whole.slice(0, i)));
+        const text = JSON.stringify(blocks);
+        assert.ok(!text.includes("**"), `stars shown at ${i}: ${text}`);
+    }
 });
 
 test("clock", () => {

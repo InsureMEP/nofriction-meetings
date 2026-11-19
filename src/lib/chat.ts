@@ -3,6 +3,7 @@
 // chatLogic.ts.
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { withAiConsent } from "./ai";
 import type { Scope, ScopeSummary } from "./chatLogic";
 
@@ -45,10 +46,47 @@ export interface ChatTurn {
     assistant: ChatMessage;
 }
 
+/**
+ * Run a question whose answer is streamed: `run` gets the name to ask
+ * under (the command's `requestId`), and `onText` gets the answer so far
+ * each time the backend sends more (`chat_stream`, src-tauri/src/chat.rs).
+ * The finished turn is what `run` resolves to. If the events can't be
+ * heard, the question is still asked; the answer just arrives whole.
+ */
+export async function withStream<T>(run: (requestId: string) => Promise<T>, onText: (text: string) => void): Promise<T> {
+    const requestId = crypto.randomUUID();
+    let off: (() => void) | null = null;
+    try {
+        off = await listen<{ requestId: string; text: string }>("chat_stream", (e) => {
+            if (e.payload.requestId === requestId) onText(e.payload.text);
+        });
+    } catch {
+        off = null;
+    }
+    try {
+        return await run(requestId);
+    } finally {
+        off?.();
+    }
+}
+
 export const chatApi = {
-    /** Ask in a thread (null starts one). Pro and consent come from the backend's AI client. */
-    ask: (threadId: string | null, scope: Scope, message: string) =>
-        withAiConsent(() => invoke<ChatTurn>("chat_ask", { threadId, scope, message }), "chat"),
+    /**
+     * Ask in a thread (null starts one). Pro and consent come from the
+     * backend's AI client. `onText` gets the answer while it is written.
+     */
+    ask: (threadId: string | null, scope: Scope, message: string, onText: (text: string) => void = () => {}) =>
+        withStream(
+            (requestId) => withAiConsent(() => invoke<ChatTurn>("chat_ask", { threadId, scope, message, requestId }), "chat"),
+            onText,
+        ),
+    /** Ask about one recording in the moment (the Ask panel), streamed the same way. */
+    askRecording: (threadId: string | null, meetingId: string, message: string, onText: (text: string) => void = () => {}) =>
+        withStream(
+            (requestId) =>
+                withAiConsent(() => invoke<ChatTurn>("chat_ask_recording", { threadId, meetingId, message, requestId }), "chat"),
+            onText,
+        ),
     threads: () => invoke<ChatThread[]>("list_chat_threads"),
     thread: (threadId: string) => invoke<{ thread: ChatThread; messages: ChatMessage[] }>("get_chat_thread", { threadId }),
     remove: (threadId: string) => invoke<void>("delete_chat_thread", { threadId }),

@@ -9,11 +9,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { friendlyAiError, isNoProviderError, withAiConsent } from "../lib/ai";
-import type { ChatMessage, ChatThread, ChatTurn, Citation } from "../lib/chat";
+import { friendlyAiError, isNoProviderError } from "../lib/ai";
+import { chatApi, type ChatMessage, type ChatThread, type Citation } from "../lib/chat";
 import { clockOf } from "../lib/chatLogic";
 import { askPlaceholder, givenList, knowsLine, suggestions, type Knows } from "../lib/askLogic";
-import { ChatMarkdown } from "./chat/ChatMarkdown";
+import { ChatMarkdown, StreamingAnswer } from "./chat/ChatMarkdown";
 import "./chat/RecordingsChat.css";
 import "./AskPanel.css";
 
@@ -30,6 +30,8 @@ export function AskPanel({ meetingId }: Props) {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState("");
     const [asking, setAsking] = useState<string | null>(null);
+    /** The answer so far, while the model writes it */
+    const [partial, setPartial] = useState("");
     const [error, setError] = useState<string | null>(null);
     const [showGiven, setShowGiven] = useState(false);
     /** The source a citation was pressed for, shown under its answer */
@@ -42,6 +44,12 @@ export function AskPanel({ meetingId }: Props) {
 
     /** A question is on its way (read by the refresh, which must not race it) */
     const busy = useRef(false);
+    /**
+     * Which question the panel is waiting on. It moves on with every
+     * question sent and every change of recording, so words or an answer
+     * for an earlier one (asked, left, come back) land nowhere.
+     */
+    const asked = useRef(0);
 
     const refresh = useCallback(async () => {
         try {
@@ -70,9 +78,11 @@ export function AskPanel({ meetingId }: Props) {
         setMessages([]);
         setInput("");
         setAsking(null);
+        setPartial("");
         setError(null);
         setShown(null);
         busy.current = false;
+        asked.current += 1;
         void refresh();
         const timer = window.setInterval(() => void refresh(), REFRESH_MS);
         return () => window.clearInterval(timer);
@@ -108,27 +118,30 @@ export function AskPanel({ meetingId }: Props) {
         // Before the first question the offered ones are read from the top
         if (messages.length === 0 && !asking) return;
         end.current?.scrollIntoView({ block: "end" });
-    }, [messages, asking]);
+    }, [messages, asking, partial]);
 
     const send = async (text: string) => {
         const question = text.trim();
         if (!question || asking) return;
         const forMeeting = meetingId;
+        const mine = (asked.current += 1);
+        const here = () => asked.current === mine && current.current === forMeeting;
         setError(null);
         setShown(null);
         setInput("");
         setAsking(question);
+        setPartial("");
         busy.current = true;
         try {
-            const turn = await withAiConsent(
-                () => invoke<ChatTurn>("chat_ask_recording", { threadId: thread?.id ?? null, meetingId: forMeeting, message: question }),
-                "chat",
-            );
-            if (current.current !== forMeeting) return;
+            const turn = await chatApi.askRecording(thread?.id ?? null, forMeeting, question, (text) => {
+                // Words for a question this panel is no longer waiting on are dropped
+                if (here()) setPartial(text);
+            });
+            if (!here()) return;
             setThread(turn.thread);
             setMessages((prev) => [...prev, turn.user, turn.assistant]);
         } catch (e) {
-            if (current.current !== forMeeting) return;
+            if (!here()) return;
             // The question isn't lost: it goes back into the field
             setInput(question);
             setError(
@@ -137,9 +150,10 @@ export function AskPanel({ meetingId }: Props) {
                     : friendlyAiError(e),
             );
         } finally {
-            if (current.current === forMeeting) {
+            if (here()) {
                 busy.current = false;
                 setAsking(null);
+                setPartial("");
                 void refresh();
                 // The next question can be typed straight away
                 field.current?.focus({ preventScroll: true });
@@ -220,14 +234,23 @@ export function AskPanel({ meetingId }: Props) {
                 {asking && (
                     <>
                         <p className="ask__question">{asking}</p>
-                        <div className="rc-thinking" role="status">
-                            <div className="rc-thinking__dots">
-                                <span />
-                                <span />
-                                <span />
+                        {partial ? (
+                            // The answer, while it is written. Read out once, when it is whole
+                            <div className="ask__answer rc-msg assistant rc-msg--streaming" aria-hidden="true">
+                                <div className="rc-msg__bubble">
+                                    <StreamingAnswer text={partial} />
+                                </div>
                             </div>
-                            <span className="rc-thinking__label">Asking your AI…</span>
-                        </div>
+                        ) : (
+                            <div className="rc-thinking" role="status">
+                                <div className="rc-thinking__dots">
+                                    <span />
+                                    <span />
+                                    <span />
+                                </div>
+                                <span className="rc-thinking__label">Asking your AI…</span>
+                            </div>
+                        )}
                     </>
                 )}
                 {error && (
