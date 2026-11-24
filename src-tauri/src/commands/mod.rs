@@ -690,9 +690,13 @@ pub async fn start_recording(
     let state_builder = state.state_builder.clone();
     let metrics_collector = state.metrics_collector.clone();
     let app_for_frames = app.clone();
+    // How this recording's screens are saved (Settings → Storage), read once
+    let smaller_screens = crate::space::smaller_from_setting(
+        state.settings.get(crate::space::SETTING_SCREEN_SIZE).await.ok().flatten().as_deref(),
+    );
 
-    // Estimated bytes per frame (for savings calculation)
-    const ESTIMATED_FRAME_BYTES: u64 = 50_000; // ~50KB per JPEG
+    // Estimated bytes a skipped duplicate would have taken (for the savings metric)
+    const ESTIMATED_FRAME_BYTES: u64 = 50_000;
 
     let frame_callback: Arc<dyn Fn(CapturedFrame) + Send + Sync> = Arc::new(move |frame| {
         let db = db_for_frames.clone();
@@ -761,11 +765,11 @@ pub async fn start_recording(
                         let filename = format!("state_{}.jpg", new_state_id);
                         let keyframe_path = dir.join(&filename);
 
-                        // Save keyframe as JPEG
-                        if let Err(e) = keyframe_image.to_rgb8().save(&keyframe_path) {
-                            log::warn!("Failed to save keyframe: {}", e);
-                        } else {
-                            metrics.record_image_write(ESTIMATED_FRAME_BYTES);
+                        // Save keyframe as JPEG (space.rs: at the size the setting says)
+                        match crate::space::save_screen(&keyframe_image, &keyframe_path, smaller_screens) {
+                            Err(e) => log::warn!("Failed to save keyframe: {}", e),
+                            Ok(written) => {
+                            metrics.record_image_write(written);
 
                             // Get state info for database insertion
                             let _state_record = {
@@ -821,6 +825,7 @@ pub async fn start_recording(
 
                             // Screens are never queued for an AI here: one goes to an
                             // AI only on the user's click (docs/AI_PROVIDERS.md)
+                            }
                         }
                     }
                 }
@@ -830,7 +835,7 @@ pub async fn start_recording(
                     let filename = format!("frame_{}.jpg", frame.frame_number);
                     let thumbnail_path = dir.join(&filename);
 
-                    if let Err(e) = frame.image.to_rgb8().save(&thumbnail_path) {
+                    if let Err(e) = crate::space::save_screen(&frame.image, &thumbnail_path, smaller_screens) {
                         log::warn!("Failed to save frame thumbnail: {}", e);
                         return;
                     }
@@ -938,6 +943,11 @@ pub async fn start_recording(
         });
     }
 
+    // The direct-download build has always kept the Mac awake while it
+    // records (it was held by the screen video, retired 2026-11-24)
+    #[cfg(not(feature = "mas"))]
+    let _ = state.power_manager.prevent_sleep("Recording").map_err(|e| log::warn!("Failed to prevent sleep: {}", e));
+
     Ok(meeting_id)
 }
 
@@ -990,6 +1000,8 @@ pub async fn stop_recording_core(state: &AppState) -> Result<(), String> {
         let engine = state.capture_engine.read();
         engine.stop()?;
     }
+    #[cfg(not(feature = "mas"))]
+    state.power_manager.release_assertion();
 
     // Stop transcription provider
     {
@@ -2525,6 +2537,12 @@ pub async fn start_video_recording(
     meeting_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    // Retired (build_info::VIDEO_RECORDING): nothing asks for it any more,
+    // and nothing may start it
+    if !crate::build_info::VIDEO_RECORDING {
+        let _ = (&meeting_id, &state);
+        return Err("Screen video is no longer recorded.".into());
+    }
     let recorder = get_video_recorder();
     recorder.write().start(&meeting_id)?;
 

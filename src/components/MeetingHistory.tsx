@@ -14,7 +14,9 @@ import { NotebookFilterChips, useRecentNotebooks } from "./Notebook";
 import { kindLabel, parseKind } from "../lib/recordingKind";
 import { groupByDay } from "../lib/topicsLogic";
 import { groupHits, SEARCH_PROMPT, type SearchGroup, type SearchHit } from "../lib/searchLogic";
-import { onSearchFocus, takeSearchFocus } from "../lib/navigation";
+import { onSearchFocus, openSettings, takeSearchFocus } from "../lib/navigation";
+import { formatBytes, useSpaceSizes } from "../lib/space";
+import "../features/settings/StorageSettings.css";
 import { useRecordPicker } from "./RecordPicker";
 import { useUndoDelete } from "./UndoToast";
 
@@ -95,6 +97,8 @@ export function MeetingHistory({
     const [renamingId, setRenamingId] = useState<string | null>(null);
     // Notebook chips come from the notebooks recordings have
     const notebooks = useRecentNotebooks(refreshKey);
+    // What each recording holds on disk (Settings → Storage has the rest)
+    const sizes = useSpaceSizes(refreshKey);
     const recordPicker = useRecordPicker();
     // The one search
     const [query, setQuery] = useState("");
@@ -362,11 +366,21 @@ export function MeetingHistory({
     }
 
     const groupsByDay = groupByDay(meetings);
+    // Every recording's files, whatever the list is narrowed to
+    const held = [...sizes.values()].reduce((n, b) => n + b, 0);
 
     return (
         <div className="meeting-history">
             {searchField}
             {filterChips}
+            {held >= 1e6 && (
+                <p className="space-line">
+                    <span>Your recordings use {formatBytes(held)} on this Mac.</span>
+                    <button type="button" className="space-line__go" onClick={() => openSettings("storage")}>
+                        Storage
+                    </button>
+                </p>
+            )}
             <div className="meeting-list scrollable">
                 {groupsByDay.map((group) => (
                     <div key={group.key} className="meeting-group">
@@ -426,6 +440,7 @@ export function MeetingHistory({
                                             <div className="meeting-date" title={formatDate(meeting.started_at)}>
                                                 {formatTime(meeting.started_at)}
                                                 {meeting.duration_seconds ? <span> · {formatDuration(meeting.duration_seconds)}</span> : null}
+                                                {(sizes.get(meeting.id) ?? 0) >= 1e6 && <span> · {formatBytes(sizes.get(meeting.id) ?? 0)}</span>}
                                             </div>
                                         </div>
                                         <button

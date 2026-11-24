@@ -1,0 +1,217 @@
+/* Settings → Storage. One accent (yellow) for the part that can be made
+   smaller; the rest of the bar is greys. */
+
+.space-total {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.space-total__n {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.space-total__what {
+  font-size: 15px;
+  color: var(--text-secondary);
+}
+.space-total__free {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.space-bar {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  border-radius: 7px;
+  overflow: hidden;
+  background: #1f1f1f;
+  margin-bottom: 8px;
+}
+.space-bar__part {
+  flex-basis: 0;
+  min-width: 3px;
+}
+.space-bar__part--screens,
+.space-dot--screens { background: var(--hazard-yellow, #facc15); }
+.space-bar__part--video,
+.space-dot--video { background: #d4d4d4; }
+.space-bar__part--models,
+.space-dot--models { background: #8a8a8a; }
+.space-bar__part--library,
+.space-dot--library { background: #636363; }
+.space-bar__part--leftover,
+.space-dot--leftover { background: #4a4a4a; }
+.space-bar__part--other,
+.space-dot--other { background: #383838; }
+
+/* One grid for the whole list, so every row's size sits in the same column
+   whatever its button is */
+.space-parts,
+.space-recs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto auto;
+  column-gap: 14px;
+}
+.space-recs {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+.space-part,
+.space-rec {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.space-part:last-child,
+.space-rec:last-child {
+  border-bottom: none;
+}
+.space-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+.space-part__what,
+.space-rec__what {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.space-rec__what .label-main {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.space-part__size,
+.space-rec__size {
+  text-align: right;
+  font-size: 15px;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.space-part__do,
+.space-rec__do {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.space-link {
+  background: none;
+  border: none;
+  padding: 4px 2px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.space-link:hover { color: var(--text-primary); }
+.space-link:focus-visible,
+.space-select:focus-visible {
+  outline: 2px solid var(--hazard-yellow, #facc15);
+  outline-offset: 2px;
+}
+.space-more { margin-top: 8px; }
+.space-foot { margin: 14px 0 0; }
+
+.space-progress {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The second click, asked in place of the button */
+.space-ask {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  max-width: 360px;
+}
+.space-ask__q {
+  flex-basis: 100%;
+  text-align: right;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+.space-ask__yes {
+  border-color: #b45309;
+  color: #fbbf24;
+}
+
+.space-select {
+  background: var(--bg-card, #141414);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14px;
+  min-width: 190px;
+}
+
+.space-keep-ask {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  padding: 12px 14px;
+  border: 1px solid #b45309;
+  border-radius: 10px;
+}
+.space-keep-ask p {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+/* Recordings list: how much the recordings hold, and the way to Storage */
+.space-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.space-line__go {
+  background: none;
+  border: none;
+  padding: 2px;
+  font: inherit;
+  color: var(--text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.space-line__go:hover { color: var(--text-primary); }
+.space-line__go:focus-visible {
+  outline: 2px solid var(--hazard-yellow, #facc15);
+  outline-offset: 2px;
+}

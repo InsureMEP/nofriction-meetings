@@ -13,6 +13,7 @@ import { AIProviderSettings } from "./AIProviderSettings";
 import { TranscriptionSettings } from "./TranscriptionSettings";
 import { SubscriptionSettings } from "./SubscriptionSettings";
 import { SyncSettings } from "./SyncSettings";
+import { StorageSettings } from "./StorageSettings";
 import { isProRequiredError, useCapabilities, useIsPro, withPro, PRIVACY_URL, SUPPORT_EMAIL, SUPPORT_URL, TERMS_URL } from "../../lib/build";
 import { openHelp, type SettingsCategory } from "../../lib/navigation";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -46,6 +47,7 @@ export function Settings({ initialCategory = "recording" }: SettingsProps) {
         { id: "transcription", label: "Transcription" },
         { id: "ai", label: "AI" },
         { id: "sync", label: "Sync" },
+        { id: "storage", label: "Storage" },
         ...(caps?.storekit ? [{ id: "subscription" as const, label: "Subscription" }] : []),
         { id: "about", label: "About" },
     ];
@@ -77,6 +79,7 @@ export function Settings({ initialCategory = "recording" }: SettingsProps) {
                 {shown === "transcription" && <TranscriptionSettings />}
                 {shown === "ai" && <AIProviderSettings />}
                 {shown === "sync" && <SyncSettings />}
+                {shown === "storage" && <StorageSettings showToast={showToast} />}
                 {shown === "subscription" && <SubscriptionSettings />}
                 {shown === "about" && <About />}
             </div>
