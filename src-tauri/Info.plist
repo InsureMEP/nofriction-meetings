@@ -39,6 +39,20 @@
     <!-- Set to false to show in Dock; true for menu bar only -->
     <key>LSUIElement</key>
     <false/>
+
+    <!-- nofriction://settings/<page> opens Settings at that page
+         (src-tauri/src/app_link.rs). A link only opens a page. -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.nofriction.meetings</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>nofriction</string>
+            </array>
+        </dict>
+    </array>
     
     <!-- Privacy Permission Descriptions (required by macOS) -->
     

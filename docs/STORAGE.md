@@ -71,6 +71,14 @@ Anything that removes asks once more in place before it does.
 - `space_changed` is emitted after every action; the list and the page
   read the sizes again.
 
+### A link that opens it
+
+`nofriction://settings/storage` opens Settings at Storage
+(`src-tauri/src/app_link.rs`; the scheme is in `Info.plist`). Any Settings
+page works: `nofriction://settings/<recording | transcription | ai | sync |
+storage | subscription | about>`. A link only opens a page: it carries
+nothing into the app and starts nothing, and anything else is ignored.
+
 ### Rules
 
 - **A smaller picture never brings a deleted one back.** The new encoding
