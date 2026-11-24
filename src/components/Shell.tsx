@@ -2,6 +2,7 @@
 // (Record / Recordings / Lessons / Chat), and the Settings and Help windows.
 
 import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { TopBar } from "./TopBar";
@@ -58,6 +59,29 @@ export function Shell({
             }),
         [],
     );
+    // A link into the app (nofriction://settings/storage, src-tauri/src/app_link.rs)
+    // opens Settings at its page: asked for at launch, and whenever one arrives
+    useEffect(() => {
+        const take = () =>
+            invoke<SettingsCategory | null>("take_app_link")
+                .then((page) => {
+                    if (page) {
+                        setSettingsCategory(page);
+                        setSettingsOpen(true);
+                    }
+                })
+                .catch(() => {});
+        take();
+        let off: (() => void) | null = null;
+        let disposed = false;
+        listen("app_link", take)
+            .then((stop) => (disposed ? stop() : (off = stop)))
+            .catch(() => {});
+        return () => {
+            disposed = true;
+            off?.();
+        };
+    }, []);
     useEffect(() => onOpenHelp(() => setHelpOpen(true)), []);
     // Recordings → Make lesson opens Lessons, which takes the request
     useEffect(() => onMakeLessonRequest(() => onModeChange("lessons")), [onModeChange]);

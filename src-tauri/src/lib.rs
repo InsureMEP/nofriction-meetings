@@ -104,6 +104,7 @@ pub mod lessons;
 // Topics and chat with your recordings (docs/TOPICS_AND_CHAT.md)
 pub mod chat;
 pub mod space;
+pub mod app_link;
 pub mod topics;
 // The one search at the top of Recordings
 pub mod search;
@@ -936,6 +937,7 @@ pub fn run() {
             topics::commands::get_meeting_topics,
             topics::commands::set_meeting_topics,
             topics::commands::find_topics,
+            app_link::take_app_link,
             space::commands::space_overview,
             space::commands::space_sizes,
             space::commands::space_make_smaller,
@@ -1057,6 +1059,13 @@ pub fn run() {
                     for e in errors {
                         log::error!("Pending delete could not be applied on quit: {}", e);
                     }
+                }
+            }
+            // nofriction://settings/<page> (app_link.rs)
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Opened { urls } => {
+                for url in urls {
+                    app_link::open(app_handle, url.as_str());
                 }
             }
             tauri::RunEvent::Reopen { .. } => {

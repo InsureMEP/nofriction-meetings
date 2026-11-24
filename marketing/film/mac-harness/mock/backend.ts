@@ -1417,6 +1417,8 @@ function handle(cmd: string, args: Args): unknown {
             return scopeSummary(a.scope);
         // Storage (space.rs). ?space=small: little to do; default: a library
         // with full-size screens and old screen video, as on the owner's Mac
+        case "take_app_link":
+            return null;
         case "space_overview":
             return spaceOverview();
         case "space_sizes":

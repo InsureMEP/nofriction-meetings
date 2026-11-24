@@ -24,6 +24,8 @@ On `main`, not in a build yet.
   choose it).
 - **Each recording shows its size (Mac)** in the Recordings list, with the
   total above the list and a link to Storage.
+- **Links to a Settings page (Mac):** `nofriction://settings/storage` opens
+  Settings at Storage, and the same for the other pages.
 - **Storage (iPhone and iPad).** Settings → Storage shows what noFriction
   uses and what is free on the device, split into audio, photos and
   screens, and the rest, with the largest recordings listed. **Remove
