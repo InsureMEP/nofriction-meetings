@@ -214,6 +214,16 @@ these rules apply.
     in memory only: never log it, and `chat::stream_sink` stops showing it
     when any recording's text is removed. Answers the app parses (notes,
     the Review guide, topics, lessons, Read the screens) are not streamed.
+  - **Storage is measured, and a prune is a Delete** (`space.rs`,
+    Settings → Storage; docs/STORAGE.md; owner 2026-11-24). Sizes come
+    from the files. Making a picture smaller keeps its row and path and
+    swaps the new encoding in under the redaction lock, only if the
+    picture is still there. "Remove screens" and "Keep screens for" go
+    through `redaction::prune_screens` and never take pictures that came
+    from the iPhone. No screen video is recorded by any build
+    (`build_info::VIDEO_RECORDING`); new screens are saved at 1600 px
+    unless the user chose Full size. Any new place that writes files must
+    be added to `space::measure` so the total stays true.
   - **Ask from any app is the same one question** (`quick_note.rs`,
     ⌃⌥⌘A, File → Ask About This Recording, the menu-bar item; owner
     2026-11-18: "enhance these capabilities"). The note panel opens for a

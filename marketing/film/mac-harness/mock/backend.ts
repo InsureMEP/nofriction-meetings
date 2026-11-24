@@ -1415,6 +1415,26 @@ function handle(cmd: string, args: Args): unknown {
             return null;
         case "chat_scope_summary":
             return scopeSummary(a.scope);
+        // Storage (space.rs). ?space=small: little to do; default: a library
+        // with full-size screens and old screen video, as on the owner's Mac
+        case "space_overview":
+            return spaceOverview();
+        case "space_sizes":
+            return spaceOverview().recordings.map((r: any) => [r.meeting_id, r.total_bytes]);
+        case "space_make_smaller":
+            return spaceRun(a.meetingId ?? null, "smaller");
+        case "space_remove_video":
+            return spaceRun(a.meetingId ?? null, "video");
+        case "space_remove_screens":
+            return spaceRun(a.meetingId, "screens");
+        case "space_clear_leftovers":
+            return spaceRun(null, "leftover");
+        case "space_set_screen_size":
+            spaceState.screen_size = a.size === "full" ? "full" : "smaller";
+            return null;
+        case "space_set_keep_screens":
+            spaceState.keep = Number(a.days) || 0;
+            return spaceRun(null, "keep");
         case "chat_ask":
             if (!isPro) throw "PRO_REQUIRED: noFriction Pro unlocks the AI features.";
             if (AI_OPENAI && !openaiConsent) throw "CONSENT_REQUIRED:custom";
@@ -1537,6 +1557,107 @@ function scopeSummary(scope: any) {
         notebooks: [...new Set(ms_.map((m) => m.class_name).filter(Boolean))],
         kinds: [...new Set(ms_.map((m) => m.recording_kind))],
     };
+}
+
+// ── Storage (space.rs) ───────────────────────────────────────────────
+
+const SPACE_SMALL = new URLSearchParams(window.location.search).get("space") === "small";
+const spaceState = {
+    screen_size: "smaller",
+    keep: 0,
+    /** Per recording: [screens bytes, pictures, video bytes, what smaller saves] */
+    recs: new Map<string, [number, number, number, number]>(),
+    leftover: SPACE_SMALL ? 0 : 3_400_000,
+};
+
+function spaceOverview(): any {
+    const all: any[] = meetings;
+    if (spaceState.recs.size === 0) {
+        all.forEach((m: any, i: number) => {
+            const mins = Math.max(5, Math.round((m.duration_seconds ?? 1800) / 60));
+            const pictures = Math.round(mins * 1.7);
+            const screens = pictures * (SPACE_SMALL ? 150_000 : 430_000);
+            spaceState.recs.set(m.id, [screens, pictures, SPACE_SMALL || i % 4 === 3 ? 0 : 110_000_000, SPACE_SMALL ? 0 : Math.round(screens * 0.58)]);
+        });
+    }
+    const recordings = all
+        .map((m: any) => {
+            const [screens, pictures, video, saves] = spaceState.recs.get(m.id) ?? [0, 0, 0, 0];
+            return {
+                meeting_id: m.id,
+                title: m.title,
+                started_at: m.started_at,
+                screens_bytes: screens,
+                screens_count: pictures,
+                video_bytes: video,
+                total_bytes: screens + video,
+                saves_bytes: saves,
+                recording: !!(live && live.id === m.id),
+            };
+        })
+        .sort((x: any, y: any) => y.total_bytes - x.total_bytes);
+    const sum = (k: string) => recordings.reduce((n: number, r: any) => n + r[k], 0);
+    const o = {
+        free_bytes: 21_400_000_000,
+        screens_bytes: sum("screens_bytes"),
+        screens_count: sum("screens_count"),
+        video_bytes: sum("video_bytes"),
+        models_bytes: 547_000_000,
+        database_bytes: 10_500_000,
+        leftover_bytes: spaceState.leftover,
+        other_bytes: 1_200_000,
+        shrink: { pictures: recordings.filter((r: any) => r.saves_bytes > 0).reduce((n: number, r: any) => n + r.screens_count, 0), saves_bytes: sum("saves_bytes") },
+        recordings,
+        screen_size: spaceState.screen_size,
+        keep_screens_days: spaceState.keep,
+    };
+    return { ...o, total_bytes: o.screens_bytes + o.video_bytes + o.models_bytes + o.database_bytes + o.leftover_bytes + o.other_bytes };
+}
+
+/** One storage action on the mock library, with progress for "Make smaller". */
+function spaceRun(meetingId: string | null, what: "smaller" | "video" | "screens" | "leftover" | "keep"): Promise<any> {
+    spaceOverview();
+    const ids = meetingId ? [meetingId] : [...spaceState.recs.keys()];
+    let items = 0;
+    let bytes = 0;
+    if (what === "leftover") {
+        bytes = spaceState.leftover;
+        spaceState.leftover = 0;
+    }
+    const cutoff = Date.now() - spaceState.keep * 86_400_000;
+    for (const id of ids) {
+        const r = spaceState.recs.get(id);
+        if (!r) continue;
+        if (what === "smaller" && r[3] > 0) {
+            items += r[1];
+            bytes += r[3];
+            r[0] -= r[3];
+            r[3] = 0;
+        } else if (what === "video") {
+            bytes += r[2];
+            r[2] = 0;
+        } else if (what === "screens" || (what === "keep" && spaceState.keep > 0 && new Date(meetingById(id)?.started_at ?? Date.now()).getTime() < cutoff)) {
+            items += r[1];
+            bytes += r[0] + r[2];
+            spaceState.recs.set(id, [0, 0, 0, 0]);
+        }
+    }
+    const done = () => {
+        emitEvent("space_changed", null);
+        return { items, bytes };
+    };
+    if (what !== "smaller" || items === 0) return new Promise((resolve) => window.setTimeout(() => resolve(done()), 300));
+    return new Promise((resolve) => {
+        let n = 0;
+        const step = Math.max(1, Math.round(items / 12));
+        const tick = () => {
+            n = Math.min(items, n + step);
+            emitEvent("space_progress", { done: n, total: items, bytes: Math.round((bytes * n) / items) });
+            if (n >= items) return void window.setTimeout(() => resolve(done()), 150);
+            window.setTimeout(tick, 140);
+        };
+        window.setTimeout(tick, 200);
+    });
 }
 
 /**

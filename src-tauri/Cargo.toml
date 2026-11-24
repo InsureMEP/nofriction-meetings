@@ -107,6 +107,11 @@ default = []
 # See docs/MAC_APP_STORE_BUILD.md.
 mas = []
 
+# Resizing and JPEG encoding of screens (space.rs, vlm_client.rs) are many
+# times slower unoptimized: tests that re-save pictures need this
+[profile.dev.package.image]
+opt-level = 3
+
 [profile.release]
 strip = true
 lto = true

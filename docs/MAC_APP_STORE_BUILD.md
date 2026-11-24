@@ -14,7 +14,7 @@ The Mac app ships in two flavors from one codebase:
 | Signing | Developer ID Application, notarized DMG | Apple Distribution + embedded provisioning profile, `.pkg` signed with 3rd Party Mac Developer Installer |
 | Data folder | `~/Library/Application Support/com.nofriction.meetings` | `~/Library/Containers/com.nofriction.meetings/Data/Library/Application Support/com.nofriction.meetings` |
 | AI features | always on (owner's build) | need **noFriction Pro** (StoreKit 2) |
-| Screen video (ffmpeg) | yes | no; screenshots still feed the timeline |
+| Screen video (ffmpeg) | retired 2026-11-24 (docs/STORAGE.md); earlier versions recorded it | no; screenshots still feed the timeline |
 | Accessibility text capture | yes | no |
 | Admin console (owner tools) | yes (Settings → Admin Console) | hidden |
 

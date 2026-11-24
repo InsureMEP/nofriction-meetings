@@ -103,6 +103,7 @@ pub mod study;
 pub mod lessons;
 // Topics and chat with your recordings (docs/TOPICS_AND_CHAT.md)
 pub mod chat;
+pub mod space;
 pub mod topics;
 // The one search at the top of Recordings
 pub mod search;
@@ -492,6 +493,8 @@ pub fn run() {
             quick_note::init(&handle);
             // Notification clicks (app activation) bring the window back
             notifications::init(&handle);
+            // Storage: clear what a cut-short run left, apply "Keep screens for"
+            space::commands::start_housekeeping(handle.clone());
             // Up next: the calendar, the user's routine and call apps (up_next.rs)
             up_next::live::start_monitor(handle.clone());
             // StoreKit: start the Transaction.updates listener and load the
@@ -933,6 +936,14 @@ pub fn run() {
             topics::commands::get_meeting_topics,
             topics::commands::set_meeting_topics,
             topics::commands::find_topics,
+            space::commands::space_overview,
+            space::commands::space_sizes,
+            space::commands::space_make_smaller,
+            space::commands::space_remove_video,
+            space::commands::space_remove_screens,
+            space::commands::space_clear_leftovers,
+            space::commands::space_set_screen_size,
+            space::commands::space_set_keep_screens,
             chat::commands::chat_ask,
             chat::commands::chat_ask_recording,
             chat::commands::chat_recording_knows,

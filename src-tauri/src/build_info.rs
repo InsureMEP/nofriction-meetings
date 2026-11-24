@@ -14,8 +14,12 @@ pub const FLAVOR: &str = "mas";
 pub const FLAVOR: &str = "dmg";
 
 pub const IS_MAS: bool = cfg!(feature = "mas");
-/// m1: ffmpeg screen video + frame extraction
-pub const VIDEO_RECORDING: bool = !IS_MAS;
+/// m1: ffmpeg screen video + frame extraction. Retired 2026-11-24: the
+/// direct-download build recorded the main display at about 22 MB a minute
+/// and no screen of the app ever showed it (Rewind uses the screens). No
+/// build records it now. Video made by earlier versions is still blanked by
+/// a Strike of a screen and can be removed in Settings → Storage (space.rs).
+pub const VIDEO_RECORDING: bool = false;
 /// m2: Accessibility (AX) text capture from other apps
 pub const ACCESSIBILITY_CAPTURE: bool = !IS_MAS;
 /// m14: admin console / dev tools (hidden in the App Store build)

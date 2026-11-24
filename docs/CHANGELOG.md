@@ -11,6 +11,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 On `main`, not in a build yet.
 
+### Added
+- **Storage (Mac).** Settings → Storage shows what noFriction keeps on
+  this Mac, measured from the files: the total, the free space on the
+  disk, and how much is screens, old screen video, the speech model and
+  the rest, with your recordings listed largest first. **Make smaller**
+  re-saves full-size screens at 1600 pixels (about 40% of the space on a
+  Retina Mac) without changing anything else about the recording.
+  **Remove screens** takes a recording's screens away and keeps its
+  transcript and notes, and **Keep screens for** can do that by itself
+  for recordings older than a year, 90 days or 30 days (off unless you
+  choose it).
+- **Each recording shows its size (Mac)** in the Recordings list, with the
+  total above the list and a link to Storage.
+
+### Changed
+- **New screens are saved smaller (Mac):** 1600 pixels on the long side
+  instead of the full Retina size. Settings → Storage → Save screens has
+  Full size if you want it.
+- **The direct-download Mac build no longer records screen video.** It
+  took about 22 MB a minute and nothing in the app showed it. Video from
+  earlier versions can be removed in Settings → Storage; nothing else is
+  lost with it. The Mac App Store build never recorded it.
+
 ## [Mac 4.1.0 (50) · iPhone and iPad 2.0.1 (15)] - 2026-11-18
 
 Built from `main` (`7029307`), uploaded and submitted for review on

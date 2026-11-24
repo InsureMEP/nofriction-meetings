@@ -30,7 +30,8 @@ export interface BuildCapabilities {
 export const DEFAULT_CAPABILITIES: BuildCapabilities = {
     flavor: "dmg",
     sandboxed: false,
-    video_recording: true,
+    // Retired in every build (src-tauri/src/build_info.rs)
+    video_recording: false,
     accessibility_capture: true,
     owner_infra: true,
     storekit: false,

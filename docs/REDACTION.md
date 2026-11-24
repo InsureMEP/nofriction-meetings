@@ -568,6 +568,14 @@ UI in `src/components/redaction/Redaction.tsx`.
   screens.").
 - **Screen purge** also deletes the data editor's history (`data_versions`
   rows for the removed text snapshots and episodes).
+- **Storage (docs/STORAGE.md).** Making pictures smaller writes a new
+  encoding of a screen beside it (`.shrink-<uuid>.part`) and swaps it in
+  under `LOCK`, only if the screen is still there: a screen a Delete or
+  Strike removed is never written back, and the part is deleted. Parts
+  left by a quit are removed at launch. "Remove screens" and "Keep screens
+  for" are a Delete of screens through `prune_screens` (the same purge);
+  removing the old screen video deletes the chunks, their sidecar files,
+  the cached pictures cut from them and the blanking jobs for them.
 - **Lock scope.** `LOCK` covers database work only. Screen video blanking is
   `redaction/video_jobs.rs` (durable queue, single worker, backoff, resume at
   launch, `video_blank_progress` events, `list_video_blank_jobs` /
