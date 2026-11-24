@@ -427,6 +427,31 @@ features. A tick is kept on the device you made it on; it doesn't sync.
 
 ---
 
+## Storage
+
+noFriction shows how much room it takes, and lets you take some back.
+
+**Mac.** Each recording in **Recordings** shows its size, and the line
+above the list says what all your recordings use. Open **Settings →
+Storage** for the whole picture: the total, what is free on your disk, and
+how much is screens, the speech model and the rest.
+
+- **Make smaller** re-saves screens that were kept at full screen size at
+  1600 pixels. They stay easy to read and nothing else about the
+  recording changes. New screens are saved this way already; **Save
+  screens → Full size** changes that.
+- **Screen video → Remove.** Earlier versions of the direct-download app
+  recorded a video of your screen that nothing in the app showed. It is no
+  longer recorded, and you can remove what is there. Your screens,
+  transcripts and notes stay.
+- **Remove screens** on a recording takes its screens away and keeps the
+  transcript, the notes and the photos from your iPhone. What your AI
+  read from those screens goes with them, and a paired iPhone removes its
+  copies.
+- **Keep screens for** does that by itself for recordings older than the
+  time you pick. It is set to Forever until you change it, and it tells
+  you what it would remove before it starts.
+
 ## Connect your AI
 
 Open **Settings → AI** (Mac) or the **Settings tab** (iPhone/iPad), under

@@ -49,7 +49,7 @@ One codebase, two builds. The UI asks the backend what it can do
 | | Developer ID DMG | Mac App Store (`--features mas`) |
 |---|---|---|
 | Sandbox | no (hardened runtime) | App Sandbox |
-| Screen video (ffmpeg) | yes | no; screenshots only |
+| Screen video (ffmpeg) | retired 2026-11-24 (docs/STORAGE.md): no build records it; old video can be removed in Settings → Storage | no; screenshots only |
 | Accessibility text capture | yes (optional) | no |
 | Admin console | yes | hidden |
 | StoreKit / Pro gating | none | AI gated behind noFriction Pro |

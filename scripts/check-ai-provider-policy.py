@@ -378,6 +378,33 @@ def audit(root):
         if rel not in ('src-tauri/src/ai/client.rs', 'src-tauri/src/ai/mod.rs', 'src-tauri/src/study.rs'):
             need(not re.search(r'\bcomplete_stream\(|\bcomplete_text_stream\(|\brun_stream\(', text),
                  f'{rel}: streamed answers go through study::StreamingCompleter (Chat and Ask), nowhere else')
+    # --- Storage (space.rs, docs/STORAGE.md) -----------------------------------
+    # Local file work only; a smaller picture is swapped in under the
+    # redaction lock; a prune never takes the iPhone's photos; no build
+    # records the screen video.
+    space_rs = (root / 'src-tauri/src/space.rs').read_text()
+    need(not re.search(r'\breqwest\b|\bai::|complete_text|complete_vision|https?://', space_rs),
+         'space.rs measures and re-saves files on this Mac: no network and no AI call')
+    need(re.search(r'let _lock = crate::redaction::lock\(\)\.await;\s*if let Shrunk::Smaller \{ before, after \} = swap_in\(', space_rs) is not None
+         and len(re.findall(r'\bswap_in\(', space_rs)) == 2,
+         'space.rs swaps a smaller picture in only under the redaction lock (one call, in make_smaller)')
+    need('libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_SWAP)' in space_rs
+         and re.search(r'pub fn swap_in\([^{]*\{\s*let done = exchange\(part, path\);', space_rs) is not None,
+         'space::swap_in exchanges the two files in one step that fails when the picture is gone: a deleted picture is never written back')
+    redaction_rs = (root / 'src-tauri/src/redaction.rs').read_text()
+    prune_fn = re.search(r'pub async fn prune_screens\(.*?\n\}\n', redaction_rs, re.S)
+    need(prune_fn is not None and "COALESCE(source_key, '') != 'sync'" in prune_fn.group(0)
+         and prune_fn.group(0).find('LOCK.lock().await') < prune_fn.group(0).find('SELECT state_id')
+         and 'crate::redaction::prune_screens(' in space_rs,
+         "Storage removes only screens this Mac captured (never the iPhone's photos), listed under the redaction lock")
+    need("status = 'running'" in space_rs and '.filter(|id| meeting_id.is_none_or(|m| m == id))' in space_rs,
+         "space::remove_video removes only a real recording's folder, and not while a Strike is being cut out of its video")
+    need('fn cut_picture_dirs' in space_rs and 'remove_dir_all(&cache' not in space_rs and 'remove_dir_all(cache)' not in space_rs,
+         "Storage clears only its own folders in the cache folder, never the web view's cache")
+    need(not re.search(r'log::\w+!\([^;]*(title|path|file_name|\.display\(\))', space_rs),
+         'space.rs logs counts and sizes, never a title or a path')
+    need('pub const VIDEO_RECORDING: bool = false;' in (root / 'src-tauri/src/build_info.rs').read_text(),
+         'No build records the screen video (build_info::VIDEO_RECORDING)')
     # One caller in the UI: the confirmation's button
     ui_calls = []
     for path in sorted((root / 'src').rglob('*.ts*')):

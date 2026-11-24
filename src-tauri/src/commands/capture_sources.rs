@@ -61,9 +61,9 @@ pub struct Snapshot {
     pub meeting_id: Option<String>,
 }
 
-/// Capture one display/window right now at full resolution. During a
-/// recording it's filed into the meeting's timeline; otherwise it's saved
-/// to the snapshots folder.
+/// Capture one display/window right now, saved at the size Settings →
+/// Storage says (space.rs). During a recording it's filed into the meeting's
+/// timeline; otherwise it's saved to the snapshots folder.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn snap_capture_target(
     app: AppHandle,
@@ -99,7 +99,10 @@ pub async fn snap_capture_target(
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(format!("snap_{}.jpg", state_id));
     let save_path = path.clone();
-    tokio::task::spawn_blocking(move || image.to_rgb8().save(&save_path))
+    let smaller = crate::space::smaller_from_setting(
+        state.settings.get(crate::space::SETTING_SCREEN_SIZE).await.ok().flatten().as_deref(),
+    );
+    tokio::task::spawn_blocking(move || crate::space::save_screen(&image, &save_path, smaller))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| format!("Failed to save snapshot: {}", e))?;

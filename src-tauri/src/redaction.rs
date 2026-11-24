@@ -2213,6 +2213,45 @@ pub async fn strike_screens(
 
 // ── Sync with your iPhone (docs/SYNC.md) ──────────────────────────────────
 
+/// The lock every Delete and Strike holds while it removes rows and files.
+/// Storage (space.rs) takes it to swap a smaller picture in for the
+/// original, so that swap can never put back a picture a Delete just removed.
+pub(crate) async fn lock() -> tokio::sync::MutexGuard<'static, ()> {
+    LOCK.lock().await
+}
+
+/// Storage's "Remove screens" and "Keep screens for" (space.rs): a Delete,
+/// applied at once, of the screens this Mac captured for a recording, with
+/// the same purge as any Delete of screens. Pictures that came from the
+/// iPhone (`source_key = 'sync'`) are the user's own photos and are never
+/// part of it. The screens are listed under the lock, after a Delete still
+/// in its undo window was committed, so none of them is already gone.
+/// Returns how many screens were removed. Refused while the recording runs.
+pub async fn prune_screens(pool: &Pool<Sqlite>, env: &RedactionEnv, meeting_id: &str) -> Result<usize, String> {
+    let _g = LOCK.lock().await;
+    flush_overlapping_locked(pool, env, meeting_id, Scope::Screens).await?;
+    let mut ids: Vec<String> = sqlx::query_scalar(
+        "SELECT state_id FROM screen_states WHERE meeting_id = ? AND keyframe_path IS NOT NULL \
+         AND COALESCE(source_key, '') != 'sync'",
+    )
+    .bind(meeting_id)
+    .fetch_all(pool)
+    .await
+    .map_err(err("Couldn't read the screens"))?;
+    // The legacy table never held a picture from the iPhone
+    let frames: Vec<i64> = sqlx::query_scalar("SELECT id FROM frames WHERE meeting_id = ?")
+        .bind(meeting_id)
+        .fetch_all(pool)
+        .await
+        .map_err(err("Couldn't read the screens"))?;
+    ids.extend(frames.into_iter().map(|id| id.to_string()));
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    apply_screens_locked(pool, env, meeting_id, &ids, Action::Delete, None, &new_id()).await?;
+    Ok(ids.len())
+}
+
 /// Another device deleted or struck these screens (`ids` as the timeline
 /// names them: a `frames` id or a `screen_states` id): the same purge as a
 /// local Delete of screens (rows, derived rows, files, and on the DMG build
