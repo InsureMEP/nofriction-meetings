@@ -115,4 +115,60 @@ Anything that removes asks once more in place before it does.
 
 ## iPhone and iPad
 
-See the section added with the iPhone change (`ios/NoFriction/Space/`).
+`ios/NoFriction/Space/`: `SpaceUsage.swift` (sizes, `SpaceIndex`),
+`PictureShrinker.swift`, `SpacePrune.swift`, `SpaceView.swift`.
+
+### What changed for new recordings
+
+- **New photos are saved smaller.** A camera or library photo added while
+  recording is saved with its long side at 2048 px, JPEG quality 0.75,
+  upright, with no location or camera details in the file
+  (`PictureShrinker.shrunk`, called from `RecordingSession.addSnapshot`).
+  Settings → Storage → **New photos** offers **Original**
+  (`space.photoSize`). Screens from screen capture were already 1280 px.
+
+### Settings → Storage
+
+"noFriction uses X" and "Y free on this iPhone", then Audio, Photos and
+screens, and Everything else (the store, Apple Watch recordings still
+arriving, what Sync remembers), measured from the files.
+
+| Action | What it does | What it doesn't |
+|---|---|---|
+| **Make photos smaller** (all, or one recording) | Re-saves JPEGs over 2048 px at that size, in place. "Saves about X" is an estimate; "Freed X" is what happened | The `Snapshot` row, so nothing is re-sent by Sync and the Mac keeps the copy it has. PNGs. The recording being recorded |
+| **Remove audio** (one recording) | Deletes the audio file and sets `Meeting.audioRemovedAt`. The recording's page says "Audio removed to save space on <date>. The transcript is kept." where playback was | The transcript, notes, photos and screens. Refused while the recording is being recorded or still being transcribed |
+| **Keep audio for** Forever / 1 year / 90 days / 30 days | With anything but Forever (the default), Remove audio is applied to saved recordings that ended longer ago than that: when it is chosen (after a confirmation that names how many recordings and how much), at launch and when the Storage screen opens | Nothing by default. Nothing still importing or being recorded |
+| **Delete recording** | The existing delete, with its confirmation | |
+
+### The size is on the main screen
+
+- Each row of the Recordings list shows the recording's size from 1 MB up.
+- Under the list: "N recordings · X on this iPhone", which opens Storage.
+
+### Rules
+
+- **Space is never saved by deleting a row.** A deleted `Snapshot` or
+  `Meeting` row would be deleted on the Mac at the next sync. Only Delete
+  recording does that.
+- **Audio never leaves the iPhone**, so removing it changes nothing on the
+  Mac. It can't be played again afterwards; the confirmation says so.
+- **Removed audio is not put back.** A watch recording delivered again is
+  treated as already imported when `audioRemovedAt` is set
+  (`WatchImporter`). A file that a Strike from the Mac re-created while the
+  audio was being removed is swept at launch and when Storage opens
+  (`sweepRemovedAudio`), and goes with Delete recording
+  (`RecordingDeletion`, by the recording's own file names).
+- **A smaller photo never brings a deleted one back.** The new file is
+  written beside the original as `.shrinking-<uuid>.jpg` and exchanged with
+  it in one step that fails if the original is gone
+  (`renamex_np(RENAME_SWAP)`). Files left by a kill are removed at launch.
+- The privacy manifest declares the free-space API (DiskSpace, 85F4.1:
+  shown to the user).
+
+### Not done, not verified
+
+- Run on the simulator only (unit tests and one UI test): not on a real
+  iPhone or iPad, not with real camera photos, not while a sync is running.
+- Removing audio ends the undo window of a Delete that is still pending
+  (pending edits are finished first).
+- A new photo is made smaller on the main actor when it is added.

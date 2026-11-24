@@ -19,6 +19,15 @@
 				<string>1C8F.1</string>
 			</array>
 		</dict>
+		<dict>
+			<!-- Free space on the device, shown to the user in Settings → Storage -->
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryDiskSpace</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>85F4.1</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>

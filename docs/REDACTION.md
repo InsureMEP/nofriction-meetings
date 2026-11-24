@@ -576,6 +576,13 @@ UI in `src/components/redaction/Redaction.tsx`.
   for" are a Delete of screens through `prune_screens` (the same purge);
   removing the old screen video deletes the chunks, their sidecar files,
   the cached pictures cut from them and the blanking jobs for them.
+- **Storage on iPhone and iPad (docs/STORAGE.md).** Make photos smaller
+  writes `.shrinking-<uuid>.jpg` beside a photo and exchanges the two files
+  in one step that fails if the photo is gone, so a deleted or stricken
+  photo is never written back; leftovers are removed at launch. Remove
+  audio deletes the audio file and keeps the transcript; Delete recording
+  also removes any audio file under the recording's own names, in case a
+  Strike re-created one while the audio was being removed.
 - **Lock scope.** `LOCK` covers database work only. Screen video blanking is
   `redaction/video_jobs.rs` (durable queue, single worker, backoff, resume at
   launch, `video_blank_progress` events, `list_video_blank_jobs` /

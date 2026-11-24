@@ -76,7 +76,15 @@ struct MeetingDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
                     header
-                    if meeting.audioFileName != nil { playback }
+                    if meeting.audioFileName != nil {
+                        playback
+                    } else if let removed = meeting.audioRemovedAt {
+                        // Settings → Storage removed the audio; everything else is here
+                        Text(SpacePrune.removedCaption(removed))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("audio-removed")
+                    }
                     // Notes open with what the user wrote, so they show even with no transcript
                     if !meeting.segments.isEmpty || !meeting.typedNotes.isEmpty {
                         // A marker at the section's top edge is what "open on Notes" scrolls to

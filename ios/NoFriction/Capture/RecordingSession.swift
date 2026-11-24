@@ -238,9 +238,14 @@ final class RecordingSession {
     // MARK: - Snapshots
 
     /// File a photo (slide, whiteboard, screen) into the live meeting.
+    /// Saved smaller unless Settings → Storage → New photos says Original:
+    /// a camera photo at full size is several megabytes.
     func addSnapshot(_ image: UIImage) {
         guard let meeting, let context else { return }
-        guard let data = image.jpegData(compressionQuality: 0.85) else { return }
+        guard var data = image.jpegData(compressionQuality: 0.85) else { return }
+        if SpaceSettings.newPhotosSmaller(), let smaller = PictureShrinker.shrunk(data), smaller.count < data.count {
+            data = smaller
+        }
         let name = "\(UUID().uuidString).jpg"
         do {
             try data.write(to: Storage.snapshots.appending(path: name), options: .atomic)

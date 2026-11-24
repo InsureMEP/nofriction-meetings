@@ -20,6 +20,8 @@ struct MeetingsView: View {
     @State private var notebookFilter: String?
     /// "Open this recording" from elsewhere (the recording the user just stopped)
     @Environment(AppRouter.self) private var router
+    /// Sizes, by recording and in total (Settings → Storage)
+    @Environment(SpaceIndex.self) private var space
 
     /// Notebooks of saved recordings, most recent first
     private var notebooks: [String] { Notebook.recent(meetings.map { ($0.courseName, $0.startedAt) }, limit: 50) }
@@ -60,6 +62,19 @@ struct MeetingsView: View {
         try? await Task.sleep(for: .milliseconds(150))
         guard !Task.isCancelled else { return }
         lineHits = RecordingSearch.group(RecordingSearch.lines(matching: key.query, in: context, excluding: key.excluding))
+    }
+
+    /// "12 recordings · 1.4 GB on this iPhone": under the list, opens Storage
+    private var spaceSummary: String {
+        let count = meetings.count == 1 ? "1 recording" : "\(meetings.count) recordings"
+        guard let totals = space.totals else { return count }
+        return "\(count) · \(SpaceFormat.bytes(totals.total)) on this \(DeviceName.current)"
+    }
+
+    private var spaceSummarySpoken: String {
+        let count = meetings.count == 1 ? "1 recording" : "\(meetings.count) recordings"
+        guard let totals = space.totals else { return count }
+        return "\(count), \(SpaceFormat.spoken(totals.total)) on this \(DeviceName.current)"
     }
 
     /// Sections by day, newest first (`RecordingsGrouping`)
@@ -167,6 +182,23 @@ struct MeetingsView: View {
                         }
                     }
                 }
+                // How much room it all takes; Storage is where to free some
+                if !meetings.isEmpty && query.isEmpty {
+                    Section {
+                        NavigationLink {
+                            SpaceView()
+                        } label: {
+                            Label {
+                                Text(spaceSummary)
+                            } icon: {
+                                Image(systemName: "internaldrive").foregroundStyle(Theme.accent)
+                            }
+                        }
+                        .accessibilityLabel(spaceSummarySpoken)
+                        .accessibilityHint("Shows what takes space and how to free it")
+                        .accessibilityIdentifier("recordings-storage")
+                    }
+                }
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
@@ -176,6 +208,9 @@ struct MeetingsView: View {
             .navigationTitle("Recordings")
             .searchable(text: $query, prompt: "Titles, people, topics, or anything said")
             .task(id: searchKey) { await runSearch(searchKey) }
+            // Sizes are read off the main actor: when the list appears, and
+            // when a recording is added, removed or stops
+            .task(id: "\(meetings.count) \(session.phase == .idle)") { await space.refresh(context: context) }
             .onAppear { openRequested() }
             .onChange(of: router.openRecording) { _, _ in openRequested() }
             .onChange(of: router.openNotebook) { _, _ in openRequested() }
@@ -273,6 +308,12 @@ private struct SearchLineRow: View {
 
 private struct MeetingRow: View {
     let meeting: Meeting
+    @Environment(SpaceIndex.self) private var space
+
+    /// Shown from 1 MB: a transcript alone takes next to nothing
+    private var bytes: Int64? {
+        space.bytes(for: meeting.id).flatMap { $0 >= 1_000_000 ? $0 : nil }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -283,6 +324,11 @@ private struct MeetingRow: View {
             HStack(spacing: 8) {
                 Text([meeting.startedAt.formatted(date: .omitted, time: .shortened), meeting.duration?.minutesLabel]
                     .compactMap { $0 }.joined(separator: " · "))
+                if let bytes {
+                    Text("· \(SpaceFormat.bytes(bytes))")
+                        .accessibilityLabel(SpaceFormat.spoken(bytes))
+                        .accessibilityIdentifier("meeting-row-size")
+                }
                 if !meeting.snapshots.isEmpty {
                     Label("\(meeting.snapshots.count)", systemImage: "photo").labelStyle(.titleAndIcon)
                 }

@@ -20,6 +20,8 @@ struct NoFrictionApp: App {
     @State private var sync: SyncCenter
     /// Notes made by themselves after a recording stops (Settings → Make notes automatically)
     @State private var autoNotes = AutoNotes()
+    /// How much room each recording and the whole app take (Settings → Storage)
+    @State private var space = SpaceIndex()
 
     init() {
         Storage.prepare()
@@ -48,6 +50,8 @@ struct NoFrictionApp: App {
         RecordingKindBackfill.run(container.mainContext)
         // Before any UI: a recording from the watch may be what launched us
         importer.removeLeftoverTemporaryFiles()
+        // A photo that was being made smaller when the app was killed
+        PictureShrinker.removeLeftoverTemporaryFiles()
         importer.retryFailedOnLaunch()
         PhoneWatchLink.shared.importer = importer
         PhoneWatchLink.shared.activate()
@@ -83,6 +87,7 @@ struct NoFrictionApp: App {
                 .environment(sync)
                 .modifier(SyncTriggers(center: sync, session: session))
                 .environment(autoNotes)
+                .environment(space)
                 // Stop opens the recording; a notebook's Record and Ask; a reminder's tap; the Start recording shortcut
                 .environment(AppRouter.shared)
                 .preferredColorScheme(.dark)

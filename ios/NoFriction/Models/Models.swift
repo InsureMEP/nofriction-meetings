@@ -20,6 +20,10 @@ final class Meeting {
 
     /// File name of the recorded audio (in Documents/Audio)
     var audioFileName: String?
+    /// When the audio was removed to save space (Settings → Storage); the
+    /// transcript, notes and photos are kept. nil = never removed. Optional,
+    /// so older stores migrate without a schema version.
+    var audioRemovedAt: Date?
 
     /// Summary / decisions / action items from the user's AI provider (Markdown)
     var aiNotes: String?

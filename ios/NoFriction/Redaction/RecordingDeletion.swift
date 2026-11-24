@@ -11,6 +11,12 @@ enum RecordingDeletion {
         // A package made for sharing holds a copy of it (docs/EXPORT.md)
         ExportPackage.clearWorkFolder()
         if let name = meeting.audioFileName { try? FileManager.default.removeItem(at: Storage.audio.appending(path: name)) }
+        // And any file under the recording's own names: a Strike from the Mac
+        // that was rewriting the audio while it was removed to save space
+        // (Settings → Storage) can leave one that no property points to
+        for name in SpacePrune.audioFileNames(of: meeting) {
+            try? FileManager.default.removeItem(at: Storage.audio.appending(path: name))
+        }
         // An Apple Watch recording: any copy still staged from the watch goes
         // too, and the import log keeps a re-delivery from bringing it back
         if let id = meeting.sourceRecordingID.flatMap(UUID.init(uuidString:)) { WatchInbox.shared.remove(id) }
