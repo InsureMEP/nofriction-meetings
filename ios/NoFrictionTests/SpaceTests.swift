@@ -443,6 +443,32 @@ final class SpaceTests: XCTestCase {
         XCTAssertEqual(m.audioRemovedAt, when)
     }
 
+    /// A Strike from the Mac that was rewriting the audio while it was
+    /// removed can leave a file no property points to. Delete recording
+    /// takes it with the rest (and every other file of the recording).
+    @MainActor
+    func testDeleteRecordingRemovesAudioLeftUnderItsOwnName() throws {
+        let m = makeMeeting()
+        let audio = try addAudio(m)
+        let photo = try addPicture(m, Data(repeating: 3, count: 900))
+        let other = makeMeeting()
+        let otherAudio = try addAudio(other)
+        try SpacePrune.removeAudio(from: m, context: context)
+        // The silencer finished afterwards and wrote the file back
+        let orphan = Storage.audio.appending(path: "\(m.id.uuidString).m4a")
+        try Data(repeating: 1, count: 2_000).write(to: orphan)
+        created.append(orphan)
+        XCTAssertNil(m.audioFileName)
+
+        RecordingDeletion.delete(m, context: context, redactions: nil, screenCapture: nil)
+
+        XCTAssertFalse(exists(orphan), "nothing of a deleted recording stays")
+        XCTAssertFalse(exists(audio))
+        XCTAssertFalse(exists(photo.fileURL))
+        XCTAssertTrue(exists(otherAudio), "another recording's audio is untouched")
+        XCTAssertEqual(try context.fetch(FetchDescriptor<Meeting>()).count, 1)
+    }
+
     func testRemovingAudioIsRefusedWhileTheRecordingIsBeingTranscribed() throws {
         let m = makeMeeting()
         let audio = try addAudio(m)

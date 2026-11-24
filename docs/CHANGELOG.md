@@ -24,11 +24,22 @@ On `main`, not in a build yet.
   choose it).
 - **Each recording shows its size (Mac)** in the Recordings list, with the
   total above the list and a link to Storage.
+- **Storage (iPhone and iPad).** Settings → Storage shows what noFriction
+  uses and what is free on the device, split into audio, photos and
+  screens, and the rest, with the largest recordings listed. **Remove
+  audio** frees a recording's audio and keeps its transcript, notes and
+  photos; **Keep audio for** can do that for recordings older than a year,
+  90 days or 30 days (off unless you choose it). **Make photos smaller**
+  re-saves full-size camera photos at 2048 pixels. Each recording shows
+  its size in the list, with the total under it.
 
 ### Changed
 - **New screens are saved smaller (Mac):** 1600 pixels on the long side
   instead of the full Retina size. Settings → Storage → Save screens has
   Full size if you want it.
+- **New photos are saved smaller (iPhone and iPad):** 2048 pixels on the
+  long side instead of the camera's full size, with no location or camera
+  details in the file. Settings → Storage → New photos has Original.
 - **The direct-download Mac build no longer records screen video.** It
   took about 22 MB a minute and nothing in the app showed it. Video from
   earlier versions can be removed in Settings → Storage; nothing else is

@@ -452,6 +452,23 @@ how much is screens, the speech model and the rest.
   time you pick. It is set to Forever until you change it, and it tells
   you what it would remove before it starts.
 
+**iPhone and iPad.** Each recording in **Recordings** shows its size, and
+the line under the list ("10 recordings · 240 MB on this iPhone") opens
+**Settings → Storage**: what noFriction uses, what is free, and how much is
+audio and how much is photos and screens.
+
+- **Remove audio** (in a recording's menu under Largest recordings) frees
+  its audio and keeps the transcript, notes, photos and screens. The audio
+  is only for playing the recording back, it is on this iPhone only, and
+  it can't be played again once removed.
+- **Keep audio for** does that by itself for recordings older than the
+  time you pick. It is set to Forever until you change it, and it tells
+  you what it would remove first.
+- **Make photos smaller** re-saves full-size camera photos at 2048 pixels:
+  a slide or a whiteboard stays readable in a fraction of the space. New
+  photos are saved this way already; **New photos → Original** changes
+  that. Photos already synced to your Mac are not changed there.
+
 ## Connect your AI
 
 Open **Settings → AI** (Mac) or the **Settings tab** (iPhone/iPad), under

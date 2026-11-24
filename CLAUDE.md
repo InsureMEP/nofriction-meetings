@@ -223,7 +223,11 @@ these rules apply.
     from the iPhone. No screen video is recorded by any build
     (`build_info::VIDEO_RECORDING`); new screens are saved at 1600 px
     unless the user chose Full size. Any new place that writes files must
-    be added to `space::measure` so the total stays true.
+    be added to `space::measure` so the total stays true. On iPhone and
+    iPad (`ios/NoFriction/Space/`) space is never saved by deleting a
+    `Snapshot` or `Meeting` row (that would delete it on the Mac too):
+    audio can be removed (`Meeting.audioRemovedAt`, never put back) and
+    photos re-saved smaller in place.
   - **Ask from any app is the same one question** (`quick_note.rs`,
     ⌃⌥⌘A, File → Ask About This Recording, the menu-bar item; owner
     2026-11-18: "enhance these capabilities"). The note panel opens for a
