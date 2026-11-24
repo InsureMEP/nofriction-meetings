@@ -47,9 +47,12 @@ struct RootView: View {
             session.attach(context)
             // Finish any Delete cut short by the app being killed in its undo window
             redactions.recover(context: context)
+            // Storage → Keep audio for: older audio goes (never with the default, Forever)
+            Task { await SpacePrune.applyRetention(context: context, session: session, redactions: redactions) }
             #if DEBUG
             DemoData.seedIfRequested(context)
             DemoData.seedWatchDemoIfRequested(context)
+            SpaceDemo.seedIfRequested(context)
             if ProcessInfo.processInfo.arguments.contains("-NFDemoLive") {
                 DemoData.showLiveMeeting(session: session, context: context)
             }

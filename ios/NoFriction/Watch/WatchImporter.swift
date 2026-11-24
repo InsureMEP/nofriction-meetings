@@ -88,11 +88,13 @@ final class WatchImporter {
     }
 
     /// Staged files of a recording imported before: a duplicate delivery
-    /// (its meeting has its audio), or a meeting the user has since deleted
-    /// (Delete purges everywhere, so it isn't brought back).
+    /// (its meeting has its audio), a meeting whose audio the user removed
+    /// to save space (Settings → Storage: it isn't put back), or a meeting
+    /// the user has since deleted (Delete purges everywhere, so it isn't
+    /// brought back).
     private func discardAlreadyImported() {
         for id in env.inbox.stagedRecordingIDs() where env.importLog.contains(id) {
-            if let existing = meeting(sourceRecordingID: id.uuidString) {
+            if let existing = meeting(sourceRecordingID: id.uuidString), existing.audioRemovedAt == nil {
                 let audio = existing.audioFileName.map { env.audioDirectory.appending(path: $0) }
                 // Saved but its audio never placed: let the import finish it
                 guard let audio, FileManager.default.fileExists(atPath: audio.path(percentEncoded: false)) else { continue }
@@ -120,9 +122,10 @@ final class WatchImporter {
 
         let record: Meeting
         if let existing = self.meeting(sourceRecordingID: key) {
-            guard !hasAudio else {
+            guard !hasAudio, existing.audioRemovedAt == nil else {
                 // Delivered again after its import: a duplicate. Nothing is
-                // re-applied (the user may have changed its notebook or markers).
+                // re-applied (the user may have changed its notebook or markers),
+                // and audio removed to save space is not put back.
                 env.inbox.remove(metadata.recordingID)
                 for url in audio { try? FileManager.default.removeItem(at: url) }
                 return existing

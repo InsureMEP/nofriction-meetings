@@ -408,6 +408,39 @@ final class WatchImporterTests: XCTestCase {
         XCTAssertTrue(inbox.stagedRecordingIDs().isEmpty)
     }
 
+    func testAudioRemovedToSaveSpaceIsNotPutBackByARedelivery() async throws {
+        let id = UUID()
+        let importer = makeImporter(ScriptedTranscriber { i, _ in [ScriptedTranscriber.line("Chunk \(i) words here.", at: 1)] })
+        try stageRecording(seconds: 3, id: id)
+        await importer.runQueue()
+        let m = try XCTUnwrap(meetings().first)
+        XCTAssertNil(m.importState, "transcribed")
+        let lines = m.orderedSegments.map(\.text)
+        XCTAssertFalse(lines.isEmpty)
+        let audio = audioDir.appending(path: try XCTUnwrap(m.audioFileName))
+        // Settings → Storage → Remove audio
+        try SpacePrune.removeAudio(from: m, context: context, audioDirectory: audioDir)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: audio.path(percentEncoded: false)))
+
+        // The watch sends it again (its confirmation was lost)
+        try stageRecording(seconds: 3, id: id)
+        await importer.runQueue()
+        XCTAssertTrue(inbox.stagedRecordingIDs().isEmpty, "the re-delivery is discarded")
+        // And if it reaches the import itself, that discards it too
+        try stageRecording(seconds: 3, id: id)
+        let item = try XCTUnwrap(inbox.pending().first)
+        let again = try await importer.importRecording(item.metadata, audio: item.audioURLs)
+        XCTAssertEqual(again.id, m.id)
+        XCTAssertTrue(inbox.stagedRecordingIDs().isEmpty)
+
+        XCTAssertEqual(meetings().count, 1)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: audioDir.path(percentEncoded: false)), [], "the audio is not put back")
+        XCTAssertNil(m.audioFileName)
+        XCTAssertNotNil(m.audioRemovedAt)
+        XCTAssertNil(m.importState, "nothing left to transcribe")
+        XCTAssertEqual(m.orderedSegments.map(\.text), lines, "the transcript is kept, once")
+    }
+
     func testLatePartOfAnImportedRecordingIsDiscarded() async throws {
         let id = UUID()
         let meta = WatchRecordingMetadata(recordingID: id, startedAt: start, endedAt: start.addingTimeInterval(10),
