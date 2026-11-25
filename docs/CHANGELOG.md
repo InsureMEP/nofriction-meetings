@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 On `main`, not in a build yet.
 
+## [Mac 4.2.0 (51) · iPhone and iPad 2.1.0 (16)] - 2026-11-24
+
+Storage on both apps (docs/STORAGE.md). Built from `main` and uploaded on
+2026-11-24; see docs/RELEASE_STATUS.md for whether it has been submitted.
+
 ### Added
 - **Storage (Mac).** Settings → Storage shows what noFriction keeps on
   this Mac, measured from the files: the total, the free space on the
