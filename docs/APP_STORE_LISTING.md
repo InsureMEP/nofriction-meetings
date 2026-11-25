@@ -365,6 +365,19 @@ Welcome to noFriction for iPhone and iPad.
 
 ---
 
+### What's New in iOS 2.1.0 (limit 4000)
+
+**506 / 4000 characters**
+
+```text
+See how much room noFriction takes, and take some back.
+• Storage: Settings → Storage shows what noFriction uses on your iPhone or iPad and what is free, with your largest recordings
+• Each recording shows its size in Recordings
+• Remove audio: free a recording's audio and keep its transcript, notes and photos. Or choose how long audio is kept
+• Photos are saved smaller, with no location or camera details in the file. Make photos smaller does the same for the photos you already have
+• Fixes and polish
+```
+
 ### What's New in iOS 2.0.1 (limit 4000)
 
 **174 / 4000 characters**
@@ -500,6 +513,19 @@ combines words across the name, subtitle and keywords ("meeting" + "notes",
 
 ```text
 meeting,notes,transcription,recorder,slides,lecture,class,minutes,action items,flashcards,offline,AI
+```
+
+### What's New in macOS 4.2.0 (limit 4000)
+
+**518 / 4000 characters**
+
+```text
+See how much room noFriction takes, and take some back.
+• Storage: Settings → Storage shows what noFriction keeps on your Mac and what is free on your disk, with your recordings listed largest first
+• Each recording shows its size in Recordings
+• Screens are saved smaller: about 40% of the space on a Retina Mac, and still easy to read. Make smaller does the same for the screens you already have
+• Remove a recording's screens and keep its transcript and notes, or choose how long screens are kept
+• Fixes and polish
 ```
 
 ### What's New in macOS 4.1.0 (limit 4000)
@@ -740,6 +766,98 @@ Settings > AI: Sign in with OpenRouter (OAuth PKCE; the user's own key goes to t
 Optional attachment: a short screen recording of a recording → Make notes
 (iOS and Mac) → paywall → notes, if review asks how to reach a
 feature.
+
+#### macOS 4.2.0 (51) and iOS 2.1.0 (16): Storage
+
+The notes for the Storage release. Only the NEW IN and FROM blocks differ from the
+versions before; the rest is unchanged.
+
+macOS, **3999 / 4000 characters**
+
+```text
+ENTITLEMENT com.apple.security.network.server
+noFriction listens in two cases only. (1) Sync with your iPhone (Pro): when the user turns on Settings > Sync and pairs an iPhone, the Mac advertises a Bonjour service (_nofriction._tcp) and accepts TLS connections from the paired iPhone on the local network; no server. It runs only while Sync is on and Pro is active, refuses non-local addresses and authenticates each session with a secret set at pairing. (2) Sign in with OpenRouter (Settings > AI): while the user signs in, a listener on 127.0.0.1 waits for the browser's OAuth callback, then closes (10-minute limit).
+
+No noFriction account or login is required. The app provides no hosted AI model or cloud-provider account.
+
+SETUP AND RECORDING
+1. Setup is one screen: allow Microphone, Screen & System Audio Recording and Calendar. The speech model downloads in the background; later transcription works offline.
+2. On Record, click Record. Keep Meeting, pick a length (No limit is fine) and click Start recording.
+3. Type a few words in Type a note under the transcript and press Return. Click Mark, or press Control-Option-Command-M with another app in front.
+4. With another app in front, press Control-Option-Command-N: one text field opens over it; Return keeps the line as a note. These are registered hot keys (no Accessibility access, no key monitoring) and never start a recording.
+5. Click Stop. The recording opens on Notes.
+
+NEW IN 4.2.0
+• Settings > Storage shows what the app keeps on the Mac and each recording's size. Make smaller re-saves screens at 1600 px; Remove screens (asks first) deletes one recording's screens and keeps its transcript and notes. Nothing is sent.
+• The URL scheme nofriction://settings/<page> only opens Settings at that page. It carries no data and starts nothing.
+
+FROM 4.1.0
+• Ask (Pro): a panel beside the live transcript, and Control-Option-Command-A from another app. It sends one question the user types, with the recording's recent lines, notes and attendee names, to the user's own AI; same consent and Pro check as Make notes. Nothing is asked by itself.
+• Read the screens (Pro, Notes > On the screens): a picture of a screen or photo is sent to the user's own AI only when they press it; a dialog first shows each picture and the destination, and only the ticked ones go. Nothing else sends an image.
+• No screenshot is taken while a password app or a private browser window is in front.
+• Up next offers a starting calendar event or a call (the app asks macOS which apps hold the microphone; it reads no content). Record by itself is off by default.
+
+PRO AND RESTORE
+6. Settings (gear) > Subscription offers plans, Restore Purchases and Manage subscription. Without Pro, an AI action, Make lesson, Sync or Export to Obsidian opens the paywall naming that feature. Product IDs: com.nofriction.meetings.pro.monthly and com.nofriction.meetings.pro.yearly. All AI features, including local AI, require Pro; recording, transcription and typed notes don't.
+
+OFFLINE AI PATH
+On a Mac with macOS 26+ and Apple Intelligence enabled, the app uses Apple's on-device model; no cloud account or API key needed. Or Settings > AI > Find AI on this Mac finds a local OpenAI-compatible server (it asks 127.0.0.1 only, on click). Then Notes > Make notes, or ask in Chat. No AI runs by itself during a recording.
+
+REVIEW, MAKE LESSON AND EXPORT
+7. A Class recording offers Study guide and Make lesson (both Pro); taking lessons, including the built-in course, is free and offline. Export… (Command-E) is free; its AI buttons need Pro.
+
+AI CONNECTION
+Settings > AI: Sign in with OpenRouter (OAuth PKCE; the user's own key goes to the Keychain), Paste key and connect, or provider cards that only fill in the endpoint and model. The user supplies their own key or sign-in, nothing is sent until they consent, and no provider is active by default. Connect and Test connection send only the word "Hi". The speech model is a data file (Whisper weights), not code.
+```
+
+iOS, **3999 / 4000 characters**
+
+```text
+No noFriction account or app login is required. The app provides no hosted AI model or cloud-provider account.
+
+RECORD, TRANSCRIBE AND TYPE A NOTE (free)
+1. Open Record and tap Record. After the one-time recording notice, keep Meeting in What is it?, pick a length in How long? (No limit is fine), optionally a Notebook (type BIO 101), and tap Record.
+2. Allow Microphone and Speech Recognition. On a physical device, speak and check the live transcript.
+3. Type a few words in Type a note under the transcript and press Return: the line is kept with its moment. Tap Mark this moment, then ? Question or the third mark.
+4. Stop. The recording opens on Notes, which starts with What you wrote. A timed recording stops by itself after a warning with +15 min.
+
+NEW IN 2.1.0
+• Settings > Storage shows what the app uses on the device and what is free, and lists the largest recordings. Each recording shows its size.
+• Remove audio (asks first) deletes one recording's audio file and keeps its transcript, notes and photos. Keep audio for is set to Forever; a shorter time removes older audio and asks first.
+• Make photos smaller re-saves photos over 2048 pixels at that size. New photos are saved that way.
+• Nothing here is sent anywhere. Free.
+
+FROM 2.0.0
+• Up next: a card on the Record tab offers a calendar event that is starting, or a notebook usually recorded at this time.
+• Reminders are local notifications; the iOS prompt appears only after the user taps Continue. Settings > Remind me when something starts turns them off.
+• The app never starts recording by itself. The Start Recording App Shortcut opens the app, then starts a recording.
+• Fill in the blanks (Pro, only when pressed) adds to the notes; same AI, consent and Pro check as Make notes.
+• Automatic notes after Stop run only with Pro, an AI already set up and consent already given.
+
+PRO AND RESTORE
+5. Open the recording and choose Make notes. Without Pro, the paywall opens and names the feature. Pro covers notes, follow-up email, topics, review guides, Chat, Sync with your Mac and Transcribe what's playing. Settings > Subscription offers the plans, Restore Purchases and Manage Subscription.
+6. Test with the App Store sandbox. Product IDs: com.nofriction.meetings.pro.monthly and com.nofriction.meetings.pro.yearly. All AI features, including local AI, require Pro; recording, microphone transcription and typed notes don't.
+
+OFFLINE AI PATH
+Use an Apple Intelligence-compatible device running iOS 26 or later with Apple Intelligence enabled and its model downloaded. In the AI setup sheet or Settings > Connect, choose Apple on-device, then return to Make notes. No provider account or API key.
+
+Alternatively, enter your own OpenAI-compatible model server and model in Settings. Provider presets only fill in the endpoint and model (OpenRouter's Sign in returns the user's own key); the user supplies their own key, nothing is sent until they consent, and no provider is active by default. No provider credential is supplied.
+
+REVIEW (Pro)
+7. The recording's Review section makes the guide (Study guide for a Class); its share button exports flashcards as CSV and the guide as Markdown.
+
+SCREEN CAPTURE (physical device only)
+8. On the Record sheet, turn on Capture screen and tap Record. Apple's broadcast sheet opens with noFriction selected; tap Start Broadcast and open another app. Stop ends both; the screens appear in the recording. Free. With Pro, Transcribe what's playing also transcribes the sound playing, on the device.
+
+APPLE WATCH
+The watch app records and sends the audio to the iPhone, which transcribes it on the device. Needs a physical iPhone and Apple Watch.
+
+EDITING
+Select transcript text in a recording. Delete has an undo. Strike from the record is permanent and leaves a marker.
+
+SYNC WITH YOUR MAC (Pro; a Mac with noFriction on the same Wi-Fi)
+Mac: Settings > Sync > Pair a device. iPhone: Settings > Sync with your Mac > Pair with your Mac; scan the code, allow Local Network. No server.
+```
 
 #### macOS 4.1.0 (50)
 
