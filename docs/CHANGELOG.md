@@ -13,8 +13,9 @@ On `main`, not in a build yet.
 
 ## [Mac 4.2.0 (51) · iPhone and iPad 2.1.0 (16)] - 2026-11-24
 
-Storage on both apps (docs/STORAGE.md). Built from `main` and uploaded on
-2026-11-24; see docs/RELEASE_STATUS.md for whether it has been submitted.
+Storage on both apps (docs/STORAGE.md). Built from `main` (`9a799e7`),
+uploaded and submitted for review on 2026-11-24; each is released
+automatically when Apple approves it (docs/RELEASE_STATUS.md).
 
 ### Added
 - **Storage (Mac).** Settings → Storage shows what noFriction keeps on
